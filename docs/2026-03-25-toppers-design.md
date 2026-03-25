@@ -114,21 +114,49 @@ pub trait Component {
 | `NetComponent` | Scroll | Yes | per-interface tx/rx |
 | `DiskComponent` | Scroll | Yes | per-device r/w throughput |
 | `ProcessComponent` | Full | Yes | list, filter, sort, detail, tree |
+| `DebugComponent` | No | No — right sidebar overlay | dev-only state inspector, hidden by default |
 
 ### ComponentId
 
 Used by `App` to track focus and full-screen state:
 
 ```rust
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display, strum::EnumIter)]
 pub enum ComponentId {
     Cpu,
     Mem,
     Net,
     Disk,
     Proc,
-    // StatusBar is excluded — it is never focusable
+    // StatusBar and DebugComponent are excluded — never focusable
 }
+```
+
+`EnumIter` is used by `App` to fan out focus-switch key handling and iterate over all focusable components when rebuilding the layout.
+
+### Debug Component
+
+`DebugComponent` is a development-aid actor that renders a right-side sidebar showing the `{:#?}` formatted state of each component actor. It is:
+
+- **Hidden by default** in all builds — not a debug-only compile target
+- **Enabled** via `--debug` CLI flag or the `` ` `` (backtick) key at runtime
+- **Rendered as a sidebar overlay** on the right edge of the terminal, using `Layout::horizontal` with a `Constraint::Fill` that collapses to zero when hidden
+- **Not part of the slot system** — like `StatusBarComponent`, it is allocated independently by `App`
+
+Each component implements `Debug` (derived) so `DebugComponent` can render their state without any additional trait work. The sidebar is scrollable for large state trees.
+
+```
+┌───────────────────────────┬──────────────────┐
+│   normal layout           │ [DEBUG]           │
+│                           │ CpuComponent {    │
+│                           │   per_core: [...] │
+│                           │   aggregate: 42.1 │
+│                           │ }                 │
+│                           │ ProcessComponent {│
+│                           │   sort: Cpu,      │
+│                           │   filter: None,   │
+│                           │ }                 │
+└───────────────────────────┴──────────────────┘
 ```
 
 ### Stats Collector Actor
@@ -235,7 +263,7 @@ Each preset defines named slots. Slot overrides in config or CLI replace the def
 |---|---|---|
 | `left_top` | `cpu` | Top of left stack |
 | `left_mid` | `mem` | Middle of left stack |
-| `left_bot` | `net` or `disk` | Bottom of left stack |
+| `left_bot` | `net` | Bottom of left stack (override to `disk` via slot config) |
 | `right` | `proc` | Full right column |
 
 **`classic` slots:**
@@ -300,6 +328,7 @@ A non-interactive fixed strip, not part of the slot system. Allocated before lay
 | `f` | Toggle full-screen for focused component |
 | `Esc` / `q` | Exit full-screen; or quit if not in full-screen (only if component does not consume first) |
 | `?` | Help overlay |
+| `` ` `` | Toggle debug sidebar |
 
 ### Process Component (when focused)
 
@@ -353,6 +382,7 @@ focus_net  = "n"
 focus_disk = "d"
 fullscreen = "f"
 help       = "?"
+debug      = "`"
 ```
 
 ---
@@ -374,6 +404,7 @@ Options:
   --status-bar <POS>        top | bottom | hidden
   --config <PATH>           alternate config file path
   --init-config             Print default config (all options commented out) to stdout, then exit
+  --debug                   Show debug sidebar on startup (state inspector)
   -v, --verbose             Increase log verbosity (repeatable: -vv for debug)
   -h, --help
   -V, --version
@@ -411,16 +442,40 @@ Options:
 | `anyhow` | Application-level error context |
 | `chrono` | Time formatting for status bar |
 | `strum` | Display / iteration for UI-facing enums: `SortColumn`, `Theme`, `LayoutPreset`, `ComponentId` |
+| `insta` (dev) | Snapshot testing of component `draw()` output via `TestBackend` |
 
 ---
 
 ## Testing Strategy
+
+### Unit & Integration Tests
 
 - Unit tests for snapshot types, sort/filter logic, config parsing, layout slot resolution, `--show`/`--hide` conflict resolution
 - Integration tests for the stats collector (real `sysinfo` calls, no mocks)
 - `compile_fail` doctests for type-state enforcement where applicable
 - Components are tested by calling `update(action)` directly with constructed `Action` variants — no channel mocking required
 - Target: 80% line coverage via `cargo-llvm-cov`
+
+### Snapshot Testing with `insta`
+
+Component `draw()` methods are tested using `ratatui`'s `TestBackend` combined with the `insta` crate for snapshot assertions. Each test renders a component at a fixed terminal size (e.g., 80×24) and asserts the rendered output matches the stored snapshot. Snapshots are committed to the repo and reviewed via `cargo insta review` when intentional UI changes are made.
+
+```rust
+#[test]
+fn cpu_component_renders_aggregate_bar() {
+    let mut component = CpuComponent::default();
+    component.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap();
+
+    let mut terminal = Terminal::new(TestBackend::new(80, 10)).unwrap();
+    terminal.draw(|frame| component.draw(frame, frame.area()).unwrap()).unwrap();
+
+    insta::assert_snapshot!(terminal.backend());
+}
+```
+
+Each component should provide a `stub()` constructor on its snapshot type that returns a deterministic value for use in tests. Snapshot tests are kept in a dedicated `tests/snapshots/` directory.
+
+Note: `insta` snapshots capture rendered characters only — color/style attributes are not captured, so visual style changes do not break snapshot tests.
 
 ---
 
