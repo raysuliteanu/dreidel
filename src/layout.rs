@@ -21,6 +21,7 @@ pub enum SlotId {
     LeftTop,
     LeftMid,
     LeftBot,
+    LeftExtra,
     Right,
     // classic preset
     TopLeft,
@@ -95,6 +96,7 @@ impl LayoutPreset {
                 (LeftTop, Cpu),
                 (LeftMid, Mem),
                 (LeftBot, Net),
+                (LeftExtra, Disk),
                 (Right, Process),
             ]),
             Self::Classic => HashMap::from([
@@ -123,14 +125,15 @@ impl LayoutPreset {
                 let top_constraint = hints
                     .left_top
                     .map(Constraint::Length)
-                    .unwrap_or(Constraint::Percentage(40));
+                    .unwrap_or(Constraint::Percentage(30));
                 let mid_constraint = hints
                     .left_mid
                     .map(Constraint::Length)
-                    .unwrap_or(Constraint::Percentage(30));
+                    .unwrap_or(Constraint::Length(4));
                 let left = Layout::vertical([
                     top_constraint,
                     mid_constraint,
+                    Constraint::Fill(1),
                     Constraint::Fill(1),
                 ])
                 .split(cols[0]);
@@ -138,6 +141,7 @@ impl LayoutPreset {
                     (LeftTop, left[0]),
                     (LeftMid, left[1]),
                     (LeftBot, left[2]),
+                    (LeftExtra, left[3]),
                     (Right, cols[1]),
                 ]
             }
@@ -181,10 +185,27 @@ mod tests {
     use ratatui::layout::Rect;
 
     #[test]
-    fn sidebar_preset_allocates_right_column_to_proc() {
+    fn sidebar_preset_has_slot_for_every_main_component() {
         let area = Rect::new(0, 0, 200, 50);
         let map = LayoutPreset::Sidebar.compute(area, &SlotOverrides::default(), &LayoutHints::default());
-        assert!(map.contains_key(&SlotId::Right));
+        // All five main components must have a slot so they can be focused and rendered
+        let ids: std::collections::HashSet<ComponentId> =
+            map.values().map(|(id, _)| *id).collect();
+        use ComponentId::*;
+        assert!(ids.contains(&Cpu));
+        assert!(ids.contains(&Mem));
+        assert!(ids.contains(&Net));
+        assert!(ids.contains(&Disk));
+        assert!(ids.contains(&Process));
+    }
+
+    #[test]
+    fn layout_hints_shrink_cpu_slot() {
+        let area = Rect::new(0, 0, 200, 50);
+        let hints = LayoutHints { left_top: Some(8), left_mid: Some(4) };
+        let map = LayoutPreset::Sidebar.compute(area, &SlotOverrides::default(), &hints);
+        let cpu_rect = map.values().find(|(id, _)| *id == ComponentId::Cpu).map(|(_, r)| r).unwrap();
+        assert_eq!(cpu_rect.height, 8);
     }
 
     #[test]

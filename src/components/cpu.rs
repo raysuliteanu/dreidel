@@ -51,9 +51,9 @@ impl Component for CpuComponent {
     }
 
     fn preferred_height(&self) -> Option<u16> {
-        // 2 border rows + 3 sparkline rows + one row per core (capped at 8)
+        // 2 border rows + 1 sparkline row + one row per core (capped at 8)
         let cores = self.latest.as_ref().map(|s| s.per_core.len().min(8)).unwrap_or(0);
-        Some(2 + 3 + cores as u16)
+        Some(2 + 1 + cores as u16)
     }
 
     fn update(&mut self, action: Action) -> Result<Option<Action>> {
@@ -89,8 +89,8 @@ impl Component for CpuComponent {
             return Ok(());
         };
 
-        // Top rows: sparkline for aggregate history; bottom: per-core gauges
-        let rows = Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(inner);
+        // One-row sparkline at the top; per-core gauges fill the rest
+        let rows = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).split(inner);
 
         let data: Vec<u64> = self.history.iter().copied().collect();
         let sparkline = Sparkline::default()

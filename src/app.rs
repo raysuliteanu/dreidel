@@ -35,6 +35,10 @@ pub struct App {
     slot_overrides: SlotOverrides,
     status_pos: StatusBarPosition,
     visible: HashSet<ComponentId>,
+    /// Ordered list of component IDs that currently have a layout slot AND are
+    /// in `visible`. Kept in sync each render; used to restrict Tab cycling to
+    /// components the user can actually see.
+    rendered_ids: Vec<ComponentId>,
 }
 
 impl App {
@@ -101,6 +105,7 @@ impl App {
             slot_overrides: SlotOverrides::default(),
             status_pos,
             visible,
+            rendered_ids: Vec::new(),
             config,
             components,
         })
@@ -217,12 +222,9 @@ impl App {
             }
         }
         if key.code == KeyCode::Tab || key.code == KeyCode::BackTab {
-            let visible_ids: Vec<ComponentId> = self
-                .components
-                .iter()
-                .map(|(id, _)| *id)
-                .filter(|id| self.visible.contains(id))
-                .collect();
+            // Only cycle through components that have a layout slot AND are visible;
+            // cycling through a component with no slot would appear to do nothing.
+            let visible_ids = &self.rendered_ids;
             if !visible_ids.is_empty() {
                 let focused_id = match &self.focus {
                     FocusState::Normal { focused } | FocusState::FullScreen(focused) => *focused,
@@ -333,6 +335,16 @@ impl App {
                 .find(|(id, _)| *id == ComponentId::Mem)
                 .and_then(|(_, c)| c.preferred_height()),
         };
+        // Compute which component IDs have a layout slot so Tab cycling only
+        // visits components the user can see. Use a zero-size rect — we only
+        // need the ID mapping, not actual coordinates.
+        let probe_map = preset.compute(Rect::new(0, 0, 0, 0), &slot_overrides, &hints);
+        self.rendered_ids = self
+            .components
+            .iter()
+            .map(|(id, _)| *id)
+            .filter(|id| visible.contains(id) && probe_map.values().any(|(cid, _)| cid == id))
+            .collect();
 
         tui.draw(|frame| {
             let total_area = frame.area();
