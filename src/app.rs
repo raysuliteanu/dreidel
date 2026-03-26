@@ -216,6 +216,31 @@ impl App {
                 let _ = self.action_tx.try_send(Action::Quit);
             }
         }
+        if key.code == KeyCode::Tab || key.code == KeyCode::BackTab {
+            let visible_ids: Vec<ComponentId> = self
+                .components
+                .iter()
+                .map(|(id, _)| *id)
+                .filter(|id| self.visible.contains(id))
+                .collect();
+            if !visible_ids.is_empty() {
+                let focused_id = match &self.focus {
+                    FocusState::Normal { focused } | FocusState::FullScreen(focused) => *focused,
+                };
+                let cur = visible_ids
+                    .iter()
+                    .position(|id| *id == focused_id)
+                    .unwrap_or(0);
+                let next = if key.code == KeyCode::Tab {
+                    (cur + 1) % visible_ids.len()
+                } else {
+                    (cur + visible_ids.len() - 1) % visible_ids.len()
+                };
+                let _ = self
+                    .action_tx
+                    .try_send(Action::FocusComponent(visible_ids[next]));
+            }
+        }
         if key.code == KeyCode::Esc {
             match &self.focus {
                 FocusState::FullScreen(_) => {
