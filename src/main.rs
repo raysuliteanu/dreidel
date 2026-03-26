@@ -96,7 +96,7 @@ const DEFAULT_CONFIG_TEMPLATE: &str = r#"# toppers default configuration
 # status_bar = "top"   # "top" | "bottom" | "hidden"
 
 # Which components to show (omit to hide).
-# show = ["cpu", "mem", "net", "disk", "proc"]
+# show = ["cpu", "mem", "net", "disk", "process"]
 
 # Slot overrides — replace default component in a named slot.
 # Sidebar slots: left_top, left_mid, left_bot, right

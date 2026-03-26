@@ -60,7 +60,7 @@ impl Default for LayoutConfig {
                 "mem".into(),
                 "net".into(),
                 "disk".into(),
-                "proc".into(),
+                "process".into(),
             ],
             left_top: None,
             left_mid: None,
