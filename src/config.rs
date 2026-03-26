@@ -115,7 +115,7 @@ impl Default for KeyBindings {
             focus_cpu: 'c',
             focus_mem: 'm',
             focus_net: 'n',
-            focus_disk: 'd',
+            focus_disk: 'i',
             fullscreen: 'f',
             help: '?',
             debug: '`',
