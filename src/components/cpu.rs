@@ -2,17 +2,14 @@ use std::collections::VecDeque;
 
 use anyhow::Result;
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::Style,
     widgets::{Block, Borders, Gauge, Sparkline},
-    Frame,
 };
 
 use crate::{
-    action::Action,
-    components::Component,
-    stats::snapshots::CpuSnapshot,
-    theme::ColorPalette,
+    action::Action, components::Component, stats::snapshots::CpuSnapshot, theme::ColorPalette,
 };
 
 /// Maximum number of aggregate CPU samples retained for the sparkline.
@@ -70,8 +67,7 @@ impl Component for CpuComponent {
         };
 
         // Top rows: sparkline for aggregate history; bottom: per-core gauges
-        let rows =
-            Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(inner);
+        let rows = Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(inner);
 
         let data: Vec<u64> = self.history.iter().copied().collect();
         let sparkline = Sparkline::default()
@@ -103,7 +99,7 @@ mod tests {
     use super::*;
     use crate::{action::Action, stats::snapshots::CpuSnapshot};
     use insta::assert_snapshot;
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{Terminal, backend::TestBackend};
 
     #[test]
     fn renders_without_data() {

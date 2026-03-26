@@ -1,17 +1,14 @@
 use anyhow::Result;
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Gauge, Paragraph},
-    Frame,
 };
 
 use crate::{
-    action::Action,
-    components::Component,
-    stats::snapshots::MemSnapshot,
-    theme::ColorPalette,
+    action::Action, components::Component, stats::snapshots::MemSnapshot, theme::ColorPalette,
 };
 
 #[derive(Debug)]
@@ -78,9 +75,7 @@ impl Component for MemComponent {
         let show_swap_activity = false;
 
         let row_count = if show_swap_activity { 3 } else { 2 };
-        let constraints: Vec<Constraint> = (0..row_count)
-            .map(|_| Constraint::Length(1))
-            .collect();
+        let constraints: Vec<Constraint> = (0..row_count).map(|_| Constraint::Length(1)).collect();
         let rows = Layout::vertical(constraints).split(inner);
 
         // RAM gauge
@@ -150,7 +145,7 @@ mod tests {
     use super::*;
     use crate::{action::Action, stats::snapshots::MemSnapshot};
     use insta::assert_snapshot;
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{Terminal, backend::TestBackend};
 
     #[test]
     fn renders_without_data() {

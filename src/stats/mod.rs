@@ -156,10 +156,7 @@ fn build_proc(sys: &System) -> ProcSnapshot {
                         .iter()
                         .map(|s| s.to_string_lossy().into_owned())
                         .collect(),
-                    user: p
-                        .user_id()
-                        .map(|u| u.to_string())
-                        .unwrap_or_default(),
+                    user: p.user_id().map(|u| u.to_string()).unwrap_or_default(),
                     cpu_pct: p.cpu_usage(),
                     mem_bytes: p.memory(),
                     mem_pct: if sys.total_memory() > 0 {
@@ -210,11 +207,8 @@ mod tests {
 
         let mut got_cpu = false;
         for _ in 0..20 {
-            if let Ok(action) = tokio::time::timeout(
-                std::time::Duration::from_millis(500),
-                rx.recv(),
-            )
-            .await
+            if let Ok(action) =
+                tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv()).await
             {
                 if matches!(action, Some(crate::action::Action::CpuUpdate(_))) {
                     got_cpu = true;

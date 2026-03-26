@@ -1,16 +1,13 @@
 use anyhow::Result;
 use ratatui::{
+    Frame,
     layout::Rect,
     style::Style,
     text::{Line, Span},
-    Frame,
 };
 
 use crate::{
-    action::Action,
-    components::Component,
-    stats::snapshots::SysSnapshot,
-    theme::ColorPalette,
+    action::Action, components::Component, stats::snapshots::SysSnapshot, theme::ColorPalette,
 };
 
 #[derive(Debug)]
@@ -80,7 +77,7 @@ mod tests {
     use super::*;
     use crate::{action::Action, stats::snapshots::SysSnapshot};
     use insta::assert_snapshot;
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{Terminal, backend::TestBackend};
 
     fn fixed_snapshot() -> SysSnapshot {
         use chrono::TimeZone;

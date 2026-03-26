@@ -1,18 +1,15 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
+    Frame,
     layout::Rect,
     style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState},
-    Frame,
 };
 
 use crate::{
-    action::Action,
-    components::Component,
-    stats::snapshots::DiskSnapshot,
-    theme::ColorPalette,
+    action::Action, components::Component, stats::snapshots::DiskSnapshot, theme::ColorPalette,
 };
 
 #[derive(Debug)]
@@ -150,7 +147,7 @@ mod tests {
     use super::*;
     use crate::{action::Action, stats::snapshots::DiskSnapshot};
     use insta::assert_snapshot;
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{Terminal, backend::TestBackend};
 
     #[test]
     fn renders_without_data() {
@@ -163,7 +160,8 @@ mod tests {
     #[test]
     fn renders_with_disk_data() {
         let mut comp = DiskComponent::default();
-        comp.update(Action::DiskUpdate(DiskSnapshot::stub())).unwrap();
+        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+            .unwrap();
         let mut terminal = Terminal::new(TestBackend::new(70, 8)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
         assert_snapshot!("disk_with_data", terminal.backend());

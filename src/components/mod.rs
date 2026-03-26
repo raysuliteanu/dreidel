@@ -1,6 +1,6 @@
 use anyhow::Result;
 use crossterm::event::KeyEvent;
-use ratatui::{layout::Rect, Frame};
+use ratatui::{Frame, layout::Rect};
 use strum::{Display, EnumIter};
 
 pub mod cpu;
@@ -11,7 +11,8 @@ pub mod net;
 pub mod process;
 pub mod status_bar;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, EnumIter)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, EnumIter, strum::EnumString)]
+#[strum(serialize_all = "lowercase")]
 pub enum ComponentId {
     StatusBar,
     Cpu,
@@ -26,7 +27,7 @@ pub enum ComponentId {
 ///
 /// Default no-op implementations are provided so panels only override what
 /// they actually need.
-pub trait Component {
+pub trait Component: std::fmt::Debug {
     fn handle_key_event(&mut self, _key: KeyEvent) -> Result<Option<crate::action::Action>> {
         Ok(None)
     }

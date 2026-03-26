@@ -1,18 +1,15 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
+    Frame,
     layout::Rect,
     style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState},
-    Frame,
 };
 
 use crate::{
-    action::Action,
-    components::Component,
-    stats::snapshots::NetSnapshot,
-    theme::ColorPalette,
+    action::Action, components::Component, stats::snapshots::NetSnapshot, theme::ColorPalette,
 };
 
 #[derive(Debug)]
@@ -138,7 +135,7 @@ mod tests {
     use super::*;
     use crate::{action::Action, stats::snapshots::NetSnapshot};
     use insta::assert_snapshot;
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{Terminal, backend::TestBackend};
 
     #[test]
     fn renders_without_data() {
