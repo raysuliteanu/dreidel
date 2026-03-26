@@ -118,5 +118,5 @@ const DEFAULT_CONFIG_TEMPLATE: &str = r#"# toppers default configuration
 # focus_disk = "i"
 # fullscreen = "f"
 # help       = "?"
-# debug      = "`"
+# debug      = "d"
 "#;

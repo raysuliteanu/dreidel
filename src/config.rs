@@ -118,7 +118,7 @@ impl Default for KeyBindings {
             focus_disk: 'i',
             fullscreen: 'f',
             help: '?',
-            debug: '`',
+            debug: 'd',
         }
     }
 }
