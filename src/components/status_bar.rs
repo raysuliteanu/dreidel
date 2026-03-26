@@ -82,10 +82,23 @@ mod tests {
     use insta::assert_snapshot;
     use ratatui::{backend::TestBackend, Terminal};
 
+    fn fixed_snapshot() -> SysSnapshot {
+        use chrono::TimeZone;
+        SysSnapshot {
+            hostname: "dev-box".into(),
+            uptime: 273_600,
+            load_avg: [1.24, 0.98, 0.87],
+            // Fixed timestamp so the snapshot is deterministic across runs
+            timestamp: chrono::Local
+                .with_ymd_and_hms(2026, 3, 25, 12, 0, 0)
+                .unwrap(),
+        }
+    }
+
     #[test]
     fn renders_hostname_and_uptime() {
         let mut comp = StatusBarComponent::new(ColorPalette::dark());
-        comp.update(Action::SysUpdate(SysSnapshot::stub())).unwrap();
+        comp.update(Action::SysUpdate(fixed_snapshot())).unwrap();
 
         let mut terminal = Terminal::new(TestBackend::new(80, 1)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
