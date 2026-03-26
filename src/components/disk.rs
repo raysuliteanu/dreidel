@@ -3,7 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState},
 };
@@ -17,6 +17,7 @@ pub struct DiskComponent {
     palette: ColorPalette,
     latest: Option<DiskSnapshot>,
     list_state: ListState,
+    focused: bool,
 }
 
 impl DiskComponent {
@@ -25,6 +26,7 @@ impl DiskComponent {
             palette,
             latest: None,
             list_state: ListState::default(),
+            focused: false,
         }
     }
 }
@@ -49,6 +51,10 @@ fn fmt_rate(bytes_per_sec: u64) -> String {
 }
 
 impl Component for DiskComponent {
+    fn set_focused(&mut self, focused: bool) {
+        self.focused = focused;
+    }
+
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
         let Some(snap) = &self.latest else {
             return Ok(None);
@@ -87,10 +93,20 @@ impl Component for DiskComponent {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        let border_color = if self.focused {
+            self.palette.accent
+        } else {
+            self.palette.border
+        };
+        let title_style = if self.focused {
+            Style::new().fg(self.palette.fg).add_modifier(Modifier::BOLD)
+        } else {
+            Style::new().fg(self.palette.fg)
+        };
         let block = Block::default()
-            .title(" DISK ")
+            .title(Span::styled(" DISK ", title_style))
             .borders(Borders::ALL)
-            .border_style(Style::new().fg(self.palette.border));
+            .border_style(Style::new().fg(border_color));
         let inner = block.inner(area);
         frame.render_widget(block, area);
 

@@ -4,7 +4,8 @@ use anyhow::Result;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    style::Style,
+    style::{Modifier, Style},
+    text::Span,
     widgets::{Block, Borders, Gauge, Sparkline},
 };
 
@@ -21,6 +22,7 @@ pub struct CpuComponent {
     latest: Option<CpuSnapshot>,
     /// Aggregate CPU usage history (0–100) for the sparkline.
     pub history: VecDeque<u64>,
+    focused: bool,
 }
 
 impl Default for CpuComponent {
@@ -29,6 +31,7 @@ impl Default for CpuComponent {
             palette: ColorPalette::dark(),
             latest: None,
             history: VecDeque::new(),
+            focused: false,
         }
     }
 }
@@ -43,6 +46,10 @@ impl CpuComponent {
 }
 
 impl Component for CpuComponent {
+    fn set_focused(&mut self, focused: bool) {
+        self.focused = focused;
+    }
+
     fn update(&mut self, action: Action) -> Result<Option<Action>> {
         if let Action::CpuUpdate(snap) = action {
             if self.history.len() >= HISTORY_LEN {
@@ -55,10 +62,20 @@ impl Component for CpuComponent {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        let border_color = if self.focused {
+            self.palette.accent
+        } else {
+            self.palette.border
+        };
+        let title_style = if self.focused {
+            Style::new().fg(self.palette.fg).add_modifier(Modifier::BOLD)
+        } else {
+            Style::new().fg(self.palette.fg)
+        };
         let block = Block::default()
-            .title(" CPU ")
+            .title(Span::styled(" CPU ", title_style))
             .borders(Borders::ALL)
-            .border_style(Style::new().fg(self.palette.border));
+            .border_style(Style::new().fg(border_color));
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
@@ -84,11 +101,19 @@ impl Component for CpuComponent {
         let constraints: Vec<Constraint> = (0..n).map(|_| Constraint::Length(1)).collect();
         let core_rows = Layout::vertical(constraints).split(rows[1]);
         for (i, (pct, rect)) in snap.per_core.iter().zip(core_rows.iter()).enumerate() {
+            // Split each row: bar on the left, label on the right
+            let cols = Layout::horizontal([Constraint::Fill(1), Constraint::Length(10)]).split(*rect);
+            let ratio = (*pct as f64 / 100.0).clamp(0.0, 1.0);
             let gauge = Gauge::default()
-                .ratio((*pct as f64 / 100.0).clamp(0.0, 1.0))
-                .label(format!("c{:<2} {:>5.1}%", i, pct))
+                .ratio(ratio)
+                .label("")
                 .gauge_style(Style::new().fg(self.palette.accent));
-            frame.render_widget(gauge, *rect);
+            frame.render_widget(gauge, cols[0]);
+            let label = Span::styled(
+                format!("c{:<2}{:>5.1}%", i, pct),
+                Style::new().fg(self.palette.fg),
+            );
+            frame.render_widget(label, cols[1]);
         }
         Ok(())
     }

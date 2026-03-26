@@ -2,7 +2,7 @@ use anyhow::Result;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Gauge, Paragraph},
 };
@@ -15,6 +15,7 @@ use crate::{
 pub struct MemComponent {
     palette: ColorPalette,
     latest: Option<MemSnapshot>,
+    focused: bool,
 }
 
 impl MemComponent {
@@ -22,6 +23,7 @@ impl MemComponent {
         Self {
             palette,
             latest: None,
+            focused: false,
         }
     }
 }
@@ -49,6 +51,10 @@ fn fmt_bytes(bytes: u64) -> String {
 }
 
 impl Component for MemComponent {
+    fn set_focused(&mut self, focused: bool) {
+        self.focused = focused;
+    }
+
     fn update(&mut self, action: Action) -> Result<Option<Action>> {
         if let Action::MemUpdate(snap) = action {
             self.latest = Some(snap);
@@ -57,10 +63,20 @@ impl Component for MemComponent {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        let border_color = if self.focused {
+            self.palette.accent
+        } else {
+            self.palette.border
+        };
+        let title_style = if self.focused {
+            Style::new().fg(self.palette.fg).add_modifier(Modifier::BOLD)
+        } else {
+            Style::new().fg(self.palette.fg)
+        };
         let block = Block::default()
-            .title(" MEM ")
+            .title(Span::styled(" MEM ", title_style))
             .borders(Borders::ALL)
-            .border_style(Style::new().fg(self.palette.border));
+            .border_style(Style::new().fg(border_color));
         let inner = block.inner(area);
         frame.render_widget(block, area);
 

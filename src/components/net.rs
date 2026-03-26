@@ -2,8 +2,8 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
-    layout::Rect,
-    style::Style,
+    layout::{Constraint, Layout, Rect},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState},
 };
@@ -17,6 +17,7 @@ pub struct NetComponent {
     palette: ColorPalette,
     latest: Option<NetSnapshot>,
     list_state: ListState,
+    focused: bool,
 }
 
 impl NetComponent {
@@ -25,6 +26,7 @@ impl NetComponent {
             palette,
             latest: None,
             list_state: ListState::default(),
+            focused: false,
         }
     }
 }
@@ -49,6 +51,10 @@ fn fmt_rate(bytes_per_sec: u64) -> String {
 }
 
 impl Component for NetComponent {
+    fn set_focused(&mut self, focused: bool) {
+        self.focused = focused;
+    }
+
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
         let Some(snap) = &self.latest else {
             return Ok(None);
@@ -87,16 +93,46 @@ impl Component for NetComponent {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        let border_color = if self.focused {
+            self.palette.accent
+        } else {
+            self.palette.border
+        };
+        let title_style = if self.focused {
+            Style::new().fg(self.palette.fg).add_modifier(Modifier::BOLD)
+        } else {
+            Style::new().fg(self.palette.fg)
+        };
         let block = Block::default()
-            .title(" NET ")
+            .title(Span::styled(" NET ", title_style))
             .borders(Borders::ALL)
-            .border_style(Style::new().fg(self.palette.border));
+            .border_style(Style::new().fg(border_color));
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
         let Some(snap) = &self.latest else {
             return Ok(());
         };
+
+        // Header row + list area
+        let chunks =
+            Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).split(inner);
+
+        let header = Line::from(vec![
+            Span::styled(
+                format!("{:<12}", "Iface"),
+                Style::new().fg(self.palette.accent).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{:>13}", "TX"),
+                Style::new().fg(self.palette.accent).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{:>14}", "RX"),
+                Style::new().fg(self.palette.accent).add_modifier(Modifier::BOLD),
+            ),
+        ]);
+        frame.render_widget(header, chunks[0]);
 
         let items: Vec<ListItem> = snap
             .interfaces
@@ -107,14 +143,12 @@ impl Component for NetComponent {
                         format!("{:<12}", iface.name),
                         Style::new().fg(self.palette.fg),
                     ),
-                    Span::styled(" ▲ ", Style::new().fg(self.palette.dim)),
                     Span::styled(
-                        format!("{:>12}", fmt_rate(iface.tx_bytes)),
+                        format!("{:>13}", fmt_rate(iface.tx_bytes)),
                         Style::new().fg(self.palette.accent),
                     ),
-                    Span::styled("  ▼ ", Style::new().fg(self.palette.dim)),
                     Span::styled(
-                        format!("{:>12}", fmt_rate(iface.rx_bytes)),
+                        format!("{:>14}", fmt_rate(iface.rx_bytes)),
                         Style::new().fg(self.palette.highlight),
                     ),
                 ]);
@@ -125,7 +159,7 @@ impl Component for NetComponent {
         let list = List::new(items)
             .highlight_style(Style::new().bg(self.palette.border).fg(self.palette.fg));
 
-        frame.render_stateful_widget(list, inner, &mut self.list_state);
+        frame.render_stateful_widget(list, chunks[1], &mut self.list_state);
         Ok(())
     }
 }

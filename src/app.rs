@@ -283,6 +283,13 @@ impl App {
     }
 
     fn render(&mut self, tui: &mut Tui) -> Result<()> {
+        let focused_id = match &self.focus {
+            FocusState::Normal { focused } | FocusState::FullScreen(focused) => *focused,
+        };
+        for (id, comp) in &mut self.components {
+            comp.set_focused(*id == focused_id);
+        }
+
         let focus = self.focus.clone();
         let preset = self.preset;
         let visible = self.visible.clone();

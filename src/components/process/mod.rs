@@ -35,6 +35,7 @@ pub struct ProcessComponent {
     sort_col: SortColumn,
     sort_dir: SortDir,
     pub state: ProcessState,
+    focused: bool,
 }
 
 impl std::fmt::Debug for ProcessComponent {
@@ -60,6 +61,7 @@ impl Default for ProcessComponent {
             sort_col: SortColumn::default(),
             sort_dir: SortDir::default(),
             state: ProcessState::NormalList,
+            focused: false,
         }
     }
 }
@@ -100,6 +102,10 @@ impl ProcessComponent {
 }
 
 impl Component for ProcessComponent {
+    fn set_focused(&mut self, focused: bool) {
+        self.focused = focused;
+    }
+
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
         match &self.state.clone() {
             ProcessState::FilterMode { input } => {
@@ -241,10 +247,20 @@ impl Component for ProcessComponent {
             ProcessState::FilterMode { input } => format!(" Processes [filter: {}▌] ", input),
             _ => " Processes ".to_string(),
         };
+        let border_color = if self.focused {
+            self.palette.accent
+        } else {
+            self.palette.border
+        };
+        let title_style = if self.focused {
+            Style::new().fg(self.palette.fg).add_modifier(Modifier::BOLD)
+        } else {
+            Style::new().fg(self.palette.fg)
+        };
         let block = Block::default()
-            .title(title)
+            .title(Span::styled(title, title_style))
             .borders(Borders::ALL)
-            .border_style(Style::new().fg(self.palette.border));
+            .border_style(Style::new().fg(border_color));
         let inner = block.inner(area);
         frame.render_widget(block, area);
 

@@ -28,6 +28,10 @@ pub enum ComponentId {
 /// Default no-op implementations are provided so panels only override what
 /// they actually need.
 pub trait Component: std::fmt::Debug {
+    /// Called before every render pass so the component can style itself
+    /// differently when it holds keyboard focus.
+    fn set_focused(&mut self, _focused: bool) {}
+
     fn handle_key_event(&mut self, _key: KeyEvent) -> Result<Option<crate::action::Action>> {
         Ok(None)
     }
