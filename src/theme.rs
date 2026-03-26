@@ -15,6 +15,8 @@ pub enum Theme {
 
 #[derive(Debug, Clone)]
 pub struct ColorPalette {
+    // bg is part of the palette API even if not all renderers use it yet
+    #[allow(dead_code)]
     pub bg: ratatui::style::Color,
     pub fg: ratatui::style::Color,
     pub border: ratatui::style::Color,

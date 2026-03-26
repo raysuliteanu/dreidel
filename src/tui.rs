@@ -18,6 +18,9 @@ use tokio::{sync::mpsc, task::JoinHandle, time::interval};
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 
+// These variants are part of the event vocabulary even if not all are
+// dispatched to app logic yet; suppress dead-code lint for the whole enum.
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub enum Event {
     Init,
@@ -63,11 +66,13 @@ impl Tui {
         })
     }
 
+    #[allow(dead_code)]
     pub fn tick_rate(mut self, r: f64) -> Self {
         self.tick_rate = r;
         self
     }
 
+    #[allow(dead_code)]
     pub fn frame_rate(mut self, r: f64) -> Self {
         self.frame_rate = r;
         self
