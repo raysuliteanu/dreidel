@@ -39,10 +39,10 @@ pub enum Action {
     DebugSnapshot(String),
 }
 
-impl PartialEq for Action {
-    fn eq(&self, other: &Self) -> bool {
-        // Discriminant-only equality is used to filter Tick/Render from debug logs
-        // without requiring PartialEq on snapshot payloads.
+impl Action {
+    /// Returns true if two Actions are the same variant, ignoring payload.
+    /// Use this for filtering Tick/Render from debug logs, not for equality checks.
+    pub fn same_variant(&self, other: &Self) -> bool {
         std::mem::discriminant(self) == std::mem::discriminant(other)
     }
 }

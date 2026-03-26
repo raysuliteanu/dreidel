@@ -2,7 +2,7 @@
 
 #[derive(Debug, Clone)]
 pub struct CpuSnapshot {
-    pub per_core: Vec<f32>,  // 0.0–100.0 per logical core
+    pub per_core: Vec<f32>, // 0.0–100.0 per logical core
     pub aggregate: f32,
     pub frequency: Vec<u64>, // MHz per core
     #[cfg(target_os = "linux")]
@@ -75,7 +75,7 @@ impl NetSnapshot {
 #[derive(Debug, Clone)]
 pub struct DiskDeviceSnapshot {
     pub name: String,
-    pub read_bytes: u64,  // bytes/s
+    pub read_bytes: u64, // bytes/s
     pub write_bytes: u64,
     pub usage_pct: f32, // 0.0–100.0
 }
@@ -117,6 +117,31 @@ impl SysSnapshot {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcessStatus {
+    Running,
+    Sleeping,
+    Idle,
+    Stopped,
+    Zombie,
+    Dead,
+    Unknown,
+}
+
+impl std::fmt::Display for ProcessStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProcessStatus::Running => write!(f, "running"),
+            ProcessStatus::Sleeping => write!(f, "sleeping"),
+            ProcessStatus::Idle => write!(f, "idle"),
+            ProcessStatus::Stopped => write!(f, "stopped"),
+            ProcessStatus::Zombie => write!(f, "zombie"),
+            ProcessStatus::Dead => write!(f, "dead"),
+            ProcessStatus::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ProcessEntry {
     pub pid: u32,
@@ -127,7 +152,7 @@ pub struct ProcessEntry {
     pub mem_bytes: u64,
     pub mem_pct: f32,
     pub virt_bytes: u64,
-    pub status: String,
+    pub status: ProcessStatus,
     pub start_time: u64, // unix timestamp
     pub run_time: u64,   // seconds
     pub nice: i32,
@@ -154,7 +179,7 @@ impl ProcSnapshot {
                 mem_bytes: 536_870_912,
                 mem_pct: 3.2,
                 virt_bytes: 2_147_483_648,
-                status: "running".into(),
+                status: ProcessStatus::Running,
                 start_time: 0,
                 run_time: 3600,
                 nice: 0,
