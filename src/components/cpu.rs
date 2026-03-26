@@ -50,6 +50,12 @@ impl Component for CpuComponent {
         self.focused = focused;
     }
 
+    fn preferred_height(&self) -> Option<u16> {
+        // 2 border rows + 3 sparkline rows + one row per core (capped at 8)
+        let cores = self.latest.as_ref().map(|s| s.per_core.len().min(8)).unwrap_or(0);
+        Some(2 + 3 + cores as u16)
+    }
+
     fn update(&mut self, action: Action) -> Result<Option<Action>> {
         if let Action::CpuUpdate(snap) = action {
             if self.history.len() >= HISTORY_LEN {

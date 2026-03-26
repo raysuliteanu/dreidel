@@ -32,6 +32,13 @@ pub trait Component: std::fmt::Debug {
     /// differently when it holds keyboard focus.
     fn set_focused(&mut self, _focused: bool) {}
 
+    /// Preferred height in terminal rows, used by the layout engine to size
+    /// the panel tightly to its content. Returns `None` when the component
+    /// has no preference and should fill available space.
+    fn preferred_height(&self) -> Option<u16> {
+        None
+    }
+
     fn handle_key_event(&mut self, _key: KeyEvent) -> Result<Option<crate::action::Action>> {
         Ok(None)
     }

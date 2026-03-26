@@ -9,7 +9,7 @@ use crate::{
     action::Action,
     components::{Component, ComponentId},
     config::Config,
-    layout::{LayoutPreset, SlotOverrides, StatusBarPosition, split_status_bar},
+    layout::{LayoutHints, LayoutPreset, SlotOverrides, StatusBarPosition, split_status_bar},
     stats::spawn_collector,
     tui::{Event, Tui},
 };
@@ -321,6 +321,18 @@ impl App {
         let show_debug = self.show_debug;
         let status_pos = self.status_pos;
         let slot_overrides = self.slot_overrides.clone();
+        let hints = LayoutHints {
+            left_top: self
+                .components
+                .iter()
+                .find(|(id, _)| *id == ComponentId::Cpu)
+                .and_then(|(_, c)| c.preferred_height()),
+            left_mid: self
+                .components
+                .iter()
+                .find(|(id, _)| *id == ComponentId::Mem)
+                .and_then(|(_, c)| c.preferred_height()),
+        };
 
         tui.draw(|frame| {
             let total_area = frame.area();
@@ -352,7 +364,7 @@ impl App {
                     }
                 }
                 FocusState::Normal { .. } => {
-                    let slot_map = preset.compute(main_area, &slot_overrides);
+                    let slot_map = preset.compute(main_area, &slot_overrides, &hints);
                     for (component_id, rect) in slot_map.values() {
                         if !visible.contains(component_id) {
                             continue;

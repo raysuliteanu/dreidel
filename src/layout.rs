@@ -5,6 +5,16 @@ use strum::{Display, EnumString};
 
 use crate::components::ComponentId;
 
+/// Per-slot height hints supplied by the app so the layout engine can size
+/// panels tightly to their content rather than using fixed percentages.
+#[derive(Debug, Default, Clone)]
+pub struct LayoutHints {
+    /// Preferred height for the top-left slot (e.g. CPU in Sidebar).
+    pub left_top: Option<u16>,
+    /// Preferred height for the middle-left slot (e.g. Mem in Sidebar).
+    pub left_mid: Option<u16>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SlotId {
     // sidebar preset
@@ -63,10 +73,10 @@ pub fn split_status_bar(area: Rect, pos: StatusBarPosition) -> (Rect, Rect) {
 }
 
 impl LayoutPreset {
-    pub fn compute(&self, area: Rect, overrides: &SlotOverrides) -> SlotMap {
+    pub fn compute(&self, area: Rect, overrides: &SlotOverrides, hints: &LayoutHints) -> SlotMap {
         let defaults = self.default_slots();
         let mut map = SlotMap::new();
-        for (slot_id, rect) in self.split_area(area) {
+        for (slot_id, rect) in self.split_area(area, hints) {
             let component = overrides
                 .0
                 .get(&slot_id)
@@ -102,15 +112,25 @@ impl LayoutPreset {
         }
     }
 
-    fn split_area(&self, area: Rect) -> Vec<(SlotId, Rect)> {
+    fn split_area(&self, area: Rect, hints: &LayoutHints) -> Vec<(SlotId, Rect)> {
         use SlotId::*;
         match self {
             Self::Sidebar => {
                 let cols = Layout::horizontal([Constraint::Percentage(35), Constraint::Fill(1)])
                     .split(area);
+                // Use preferred heights from components when available so the
+                // panels are tight to their content rather than percentage-based.
+                let top_constraint = hints
+                    .left_top
+                    .map(Constraint::Length)
+                    .unwrap_or(Constraint::Percentage(40));
+                let mid_constraint = hints
+                    .left_mid
+                    .map(Constraint::Length)
+                    .unwrap_or(Constraint::Percentage(30));
                 let left = Layout::vertical([
-                    Constraint::Percentage(40),
-                    Constraint::Percentage(30),
+                    top_constraint,
+                    mid_constraint,
                     Constraint::Fill(1),
                 ])
                 .split(cols[0]);
@@ -163,7 +183,7 @@ mod tests {
     #[test]
     fn sidebar_preset_allocates_right_column_to_proc() {
         let area = Rect::new(0, 0, 200, 50);
-        let map = LayoutPreset::Sidebar.compute(area, &SlotOverrides::default());
+        let map = LayoutPreset::Sidebar.compute(area, &SlotOverrides::default(), &LayoutHints::default());
         assert!(map.contains_key(&SlotId::Right));
     }
 

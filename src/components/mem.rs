@@ -55,6 +55,11 @@ impl Component for MemComponent {
         self.focused = focused;
     }
 
+    fn preferred_height(&self) -> Option<u16> {
+        // 2 border rows + RAM row + SWAP row; swap activity line only on Linux
+        Some(4)
+    }
+
     fn update(&mut self, action: Action) -> Result<Option<Action>> {
         if let Action::MemUpdate(snap) = action {
             self.latest = Some(snap);
