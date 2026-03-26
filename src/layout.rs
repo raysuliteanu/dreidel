@@ -164,7 +164,7 @@ mod tests {
     fn sidebar_preset_allocates_right_column_to_proc() {
         let area = Rect::new(0, 0, 200, 50);
         let map = LayoutPreset::Sidebar.compute(area, &SlotOverrides::default());
-        assert!(map.get(&SlotId::Right).is_some());
+        assert!(map.contains_key(&SlotId::Right));
     }
 
     #[test]

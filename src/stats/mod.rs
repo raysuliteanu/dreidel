@@ -209,11 +209,10 @@ mod tests {
         for _ in 0..20 {
             if let Ok(action) =
                 tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv()).await
+                && matches!(action, Some(crate::action::Action::CpuUpdate(_)))
             {
-                if matches!(action, Some(crate::action::Action::CpuUpdate(_))) {
-                    got_cpu = true;
-                    break;
-                }
+                got_cpu = true;
+                break;
             }
         }
         token.cancel();
