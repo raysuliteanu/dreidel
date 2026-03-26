@@ -3,6 +3,14 @@ name = "toppers"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "toppers"
+path = "src/lib.rs"
+
+[[bin]]
+name = "toppers"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1.0.102"
 chrono = "0.4.44"

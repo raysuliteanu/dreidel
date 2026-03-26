@@ -17,3 +17,5 @@
   the user know what the keyboard shortcuts are without having to memorize them
 - tab should cycle through the components and maybe left arrow/right arrow
   between the available key actions within a component
+
+- the --init-config option should just print the config to stdout and then exit
