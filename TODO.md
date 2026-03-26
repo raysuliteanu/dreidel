@@ -1,0 +1,1 @@
+- ensure `tokio` minimal feature set; don't use 'full', only what's required
