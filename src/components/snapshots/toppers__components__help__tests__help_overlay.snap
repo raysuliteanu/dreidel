@@ -1,0 +1,28 @@
+---
+source: src/components/help.rs
+expression: terminal.backend()
+---
+"                                                            "
+"                                                            "
+"       ┌ toppers v0.1.0 ────────────────────────────┐       "
+"       │Global keys                                 │       "
+"       │ p    focus process                         │       "
+"       │ c    focus cpu                             │       "
+"       │ m    focus mem                             │       "
+"       │ n    focus net                             │       "
+"       │ i    focus disk                            │       "
+"       │ f    fullscreen toggle                     │       "
+"       │ d    debug sidebar toggle                  │       "
+"       │ q    quit                                  │       "
+"       │ Tab  cycle focus                           │       "
+"       │                                            │       "
+"       │Process keys                                │       "
+"       │ /    filter                                │       "
+"       │ s    cycle sort column                     │       "
+"       │ k    kill process                          │       "
+"       │                                            │       "
+"       │https://github.com/raygard/toppers          │       "
+"       │change: lmvyrqwq                            │       "
+"       └────────────────────────────────────────────┘       "
+"                                                            "
+"                                                            "

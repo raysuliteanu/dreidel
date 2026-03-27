@@ -1,5 +1,6 @@
 ---
 source: tests/snapshots.rs
+assertion_line: 25
 expression: t.backend()
 ---
 "┌ MEM ─────────────────────────────────────────────────────┐"

@@ -8,6 +8,7 @@ use tracing::debug;
 use crate::{
     action::Action,
     components::{Component, ComponentId},
+    components::help::HelpComponent,
     config::Config,
     layout::{LayoutHints, LayoutPreset, SlotOverrides, StatusBarPosition, split_status_bar},
     stats::spawn_collector,
@@ -27,8 +28,10 @@ pub struct App {
     components: Vec<(ComponentId, Box<dyn Component>)>,
     status_bar: Box<dyn Component>,
     debug_comp: Box<dyn Component>,
+    help_comp: Box<dyn Component>,
     focus: FocusState,
     show_debug: bool,
+    show_help: bool,
     should_quit: bool,
     should_suspend: bool,
     preset: LayoutPreset,
@@ -95,10 +98,15 @@ impl App {
             debug_comp: Box::new(crate::components::debug::DebugComponent::new(
                 palette.clone(),
             )),
+            help_comp: Box::new(HelpComponent::new(
+                palette.clone(),
+                config.keybindings.clone(),
+            )),
             focus: FocusState::Normal {
                 focused: ComponentId::Process,
             },
             show_debug,
+            show_help: false,
             should_quit: false,
             should_suspend: false,
             preset,
@@ -150,6 +158,21 @@ impl App {
         let Some(event) = tui.next_event().await else {
             return Ok(());
         };
+
+        // When the help overlay is visible, only Esc and ? close it; all other
+        // keys are swallowed so nothing behind the overlay reacts.
+        if self.show_help {
+            if let Event::Key(key) = &event {
+                use crossterm::event::KeyCode;
+                let is_close = key.code == KeyCode::Esc
+                    || key.code == KeyCode::Char(self.config.keybindings.help);
+                if is_close {
+                    let _ = self.action_tx.try_send(Action::ToggleHelp);
+                }
+            }
+            return Ok(());
+        }
+
         let tx = &self.action_tx;
         match &event {
             Event::Quit => {
@@ -220,6 +243,10 @@ impl App {
             } else if c == 'q' {
                 let _ = self.action_tx.try_send(Action::Quit);
             }
+            // help key uses the raw char (not lowercased) since '?' requires Shift
+            if key.code == KeyCode::Char(kb.help) {
+                let _ = self.action_tx.try_send(Action::ToggleHelp);
+            }
         }
         if key.code == KeyCode::Tab || key.code == KeyCode::BackTab {
             // Only cycle through components that have a layout slot AND are visible;
@@ -270,6 +297,7 @@ impl App {
                     tui.terminal.clear().context("clearing screen")?;
                 }
                 Action::ToggleDebug => self.show_debug = !self.show_debug,
+                Action::ToggleHelp => self.show_help = !self.show_help,
                 Action::ToggleFullScreen => {
                     self.focus = match &self.focus {
                         FocusState::Normal { focused } => FocusState::FullScreen(*focused),
@@ -321,6 +349,7 @@ impl App {
         let preset = self.preset;
         let visible = self.visible.clone();
         let show_debug = self.show_debug;
+        let show_help = self.show_help;
         let status_pos = self.status_pos;
         let slot_overrides = self.slot_overrides.clone();
         let hints = LayoutHints {
@@ -390,6 +419,11 @@ impl App {
                         }
                     }
                 }
+            }
+
+            // Help overlay is drawn last so it appears on top of everything else.
+            if show_help {
+                let _ = self.help_comp.draw(frame, total_area);
             }
         })?;
         Ok(())

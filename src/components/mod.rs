@@ -6,6 +6,7 @@ use strum::{Display, EnumIter};
 pub mod cpu;
 pub mod debug;
 pub mod disk;
+pub mod help;
 pub mod mem;
 pub mod net;
 pub mod process;
