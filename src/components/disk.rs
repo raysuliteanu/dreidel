@@ -3,27 +3,32 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState},
 };
 
 use crate::{
-    action::Action, components::Component, stats::snapshots::DiskSnapshot, theme::ColorPalette,
+    action::Action,
+    components::{Component, keyed_title},
+    stats::snapshots::DiskSnapshot,
+    theme::ColorPalette,
 };
 
 #[derive(Debug)]
 pub struct DiskComponent {
     palette: ColorPalette,
+    focus_key: char,
     latest: Option<DiskSnapshot>,
     list_state: ListState,
     focused: bool,
 }
 
 impl DiskComponent {
-    pub fn new(palette: ColorPalette) -> Self {
+    pub fn new(palette: ColorPalette, focus_key: char) -> Self {
         Self {
             palette,
+            focus_key,
             latest: None,
             list_state: ListState::default(),
             focused: false,
@@ -33,7 +38,7 @@ impl DiskComponent {
 
 impl Default for DiskComponent {
     fn default() -> Self {
-        Self::new(ColorPalette::dark())
+        Self::new(ColorPalette::dark(), 'i')
     }
 }
 
@@ -98,15 +103,8 @@ impl Component for DiskComponent {
         } else {
             self.palette.border
         };
-        let title_style = if self.focused {
-            Style::new()
-                .fg(self.palette.fg)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::new().fg(self.palette.fg)
-        };
         let block = Block::default()
-            .title(Span::styled(" DISK ", title_style))
+            .title(keyed_title(self.focus_key, "DISK", &self.palette))
             .borders(Borders::ALL)
             .border_style(Style::new().fg(border_color));
         let inner = block.inner(area);

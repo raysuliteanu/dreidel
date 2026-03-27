@@ -50,23 +50,34 @@ impl App {
         let (action_tx, action_rx) = mpsc::channel(config.general.channel_capacity);
         let palette = config.general.theme.palette();
 
+        let kb = &config.keybindings;
         let components: Vec<(ComponentId, Box<dyn Component>)> = vec![
             (
                 ComponentId::Cpu,
-                Box::new(crate::components::cpu::CpuComponent::new(palette.clone())),
+                Box::new(crate::components::cpu::CpuComponent::new(
+                    palette.clone(),
+                    kb.focus_cpu,
+                )),
             ),
             (
                 ComponentId::Net,
-                Box::new(crate::components::net::NetComponent::new(palette.clone())),
+                Box::new(crate::components::net::NetComponent::new(
+                    palette.clone(),
+                    kb.focus_net,
+                )),
             ),
             (
                 ComponentId::Disk,
-                Box::new(crate::components::disk::DiskComponent::new(palette.clone())),
+                Box::new(crate::components::disk::DiskComponent::new(
+                    palette.clone(),
+                    kb.focus_disk,
+                )),
             ),
             (
                 ComponentId::Process,
                 Box::new(crate::components::process::ProcessComponent::new(
                     palette.clone(),
+                    kb.focus_proc,
                     &config.process,
                 )),
             ),

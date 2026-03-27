@@ -12,7 +12,10 @@ use ratatui::{
 };
 
 use crate::{
-    action::Action, components::Component, stats::snapshots::NetSnapshot, theme::ColorPalette,
+    action::Action,
+    components::{Component, keyed_title},
+    stats::snapshots::NetSnapshot,
+    theme::ColorPalette,
 };
 
 pub const HISTORY_LEN: usize = 100;
@@ -29,6 +32,7 @@ enum NetView {
 #[derive(Debug)]
 pub struct NetComponent {
     palette: ColorPalette,
+    focus_key: char,
     latest: Option<NetSnapshot>,
     list_state: ListState,
     /// Per-interface ring buffers: (tx_bytes_per_sec, rx_bytes_per_sec).
@@ -38,9 +42,10 @@ pub struct NetComponent {
 }
 
 impl NetComponent {
-    pub fn new(palette: ColorPalette) -> Self {
+    pub fn new(palette: ColorPalette, focus_key: char) -> Self {
         Self {
             palette,
+            focus_key,
             latest: None,
             list_state: ListState::default(),
             history: HashMap::new(),
@@ -52,7 +57,7 @@ impl NetComponent {
 
 impl Default for NetComponent {
     fn default() -> Self {
-        Self::new(ColorPalette::dark())
+        Self::new(ColorPalette::dark(), 'n')
     }
 }
 
@@ -151,27 +156,20 @@ impl Component for NetComponent {
 }
 
 impl NetComponent {
-    fn border_block(&self, title: String) -> Block<'static> {
+    fn border_block(&self, rest: &str) -> Block<'static> {
         let border_color = if self.focused {
             self.palette.accent
         } else {
             self.palette.border
         };
-        let title_style = if self.focused {
-            Style::new()
-                .fg(self.palette.fg)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::new().fg(self.palette.fg)
-        };
         Block::default()
-            .title(Span::styled(title, title_style))
+            .title(keyed_title(self.focus_key, rest, &self.palette))
             .borders(Borders::ALL)
             .border_style(Style::new().fg(border_color))
     }
 
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        let block = self.border_block(" NET ".to_string());
+        let block = self.border_block("ET");
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
@@ -234,8 +232,8 @@ impl NetComponent {
     }
 
     fn draw_graph(&mut self, frame: &mut Frame, area: Rect, name: &str) -> Result<()> {
-        let title = format!(" NET: {name} ");
-        let block = self.border_block(title);
+        let rest = format!("ET: {name}");
+        let block = self.border_block(&rest);
         let inner = block.inner(area);
         frame.render_widget(block, area);
 

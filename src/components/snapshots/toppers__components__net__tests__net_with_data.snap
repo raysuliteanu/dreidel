@@ -2,7 +2,7 @@
 source: src/components/net.rs
 expression: terminal.backend()
 ---
-"┌ NET ─────────────────────────────────────────────────────┐"
+"┌ [N]ET ───────────────────────────────────────────────────┐"
 "│Iface                  TX            RX                   │"
 "│eth0             1.2 MB/s      4.8 MB/s                   │"
 "│                                                          │"

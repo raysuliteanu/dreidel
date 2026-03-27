@@ -4,13 +4,16 @@ use anyhow::Result;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::Span,
+    style::{Color, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, Gauge, Sparkline},
 };
 
 use crate::{
-    action::Action, components::Component, stats::snapshots::CpuSnapshot, theme::ColorPalette,
+    action::Action,
+    components::{Component, keyed_title},
+    stats::snapshots::CpuSnapshot,
+    theme::ColorPalette,
 };
 
 /// Maximum number of aggregate CPU samples retained for the sparkline.
@@ -31,6 +34,7 @@ fn cpu_color(pct: f32, palette: &ColorPalette) -> Color {
 #[derive(Debug)]
 pub struct CpuComponent {
     palette: ColorPalette,
+    focus_key: char,
     latest: Option<CpuSnapshot>,
     /// Aggregate CPU usage history (0–100) for the sparkline.
     pub history: VecDeque<u64>,
@@ -41,6 +45,7 @@ impl Default for CpuComponent {
     fn default() -> Self {
         Self {
             palette: ColorPalette::dark(),
+            focus_key: 'c',
             latest: None,
             history: VecDeque::new(),
             focused: false,
@@ -49,9 +54,10 @@ impl Default for CpuComponent {
 }
 
 impl CpuComponent {
-    pub fn new(palette: ColorPalette) -> Self {
+    pub fn new(palette: ColorPalette, focus_key: char) -> Self {
         Self {
             palette,
+            focus_key,
             ..Default::default()
         }
     }
@@ -89,15 +95,9 @@ impl Component for CpuComponent {
         } else {
             self.palette.border
         };
-        let title_style = if self.focused {
-            Style::new()
-                .fg(self.palette.fg)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::new().fg(self.palette.fg)
-        };
+        let title: Line = keyed_title(self.focus_key, "PU", &self.palette);
         let block = Block::default()
-            .title(Span::styled(" CPU ", title_style))
+            .title(title)
             .borders(Borders::ALL)
             .border_style(Style::new().fg(border_color));
         let inner = block.inner(area);

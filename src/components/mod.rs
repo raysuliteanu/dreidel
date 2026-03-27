@@ -1,7 +1,14 @@
 use anyhow::Result;
 use crossterm::event::KeyEvent;
-use ratatui::{Frame, layout::Rect};
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::{Modifier, Style},
+    text::{Line, Span},
+};
 use strum::{Display, EnumIter};
+
+use crate::theme::ColorPalette;
 
 pub mod cpu;
 pub mod debug;
@@ -20,6 +27,18 @@ pub enum ComponentId {
     Disk,
     Process,
     Debug,
+}
+
+/// Build a block title with the focus key highlighted: ` [K]rest `.
+/// The bracket and uppercase key are accent+bold; the rest is fg.
+pub(crate) fn keyed_title(key: char, rest: &str, palette: &ColorPalette) -> Line<'static> {
+    let accent_bold = Style::new().fg(palette.accent).add_modifier(Modifier::BOLD);
+    let fg = Style::new().fg(palette.fg);
+    Line::from(vec![
+        Span::styled(" [".to_string(), accent_bold),
+        Span::styled(key.to_ascii_uppercase().to_string(), accent_bold),
+        Span::styled(format!("]{rest} "), fg),
+    ])
 }
 
 /// Core interface every TUI panel must implement.

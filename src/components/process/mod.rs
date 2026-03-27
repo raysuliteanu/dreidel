@@ -12,7 +12,10 @@ use ratatui::{
 };
 
 use crate::{
-    action::Action, components::Component, config::ProcessConfig, stats::snapshots::ProcessEntry,
+    action::Action,
+    components::{Component, keyed_title},
+    config::ProcessConfig,
+    stats::snapshots::ProcessEntry,
     theme::ColorPalette,
 };
 use filter::ProcessFilter;
@@ -40,6 +43,7 @@ pub enum ProcessState {
 
 pub struct ProcessComponent {
     palette: ColorPalette,
+    focus_key: char,
     raw: Vec<ProcessEntry>,
     displayed: Vec<ProcessEntry>,
     table_state: TableState,
@@ -68,6 +72,7 @@ impl Default for ProcessComponent {
         table_state.select(Some(0));
         Self {
             palette: ColorPalette::dark(),
+            focus_key: 'p',
             raw: Vec::new(),
             displayed: Vec::new(),
             table_state,
@@ -81,7 +86,7 @@ impl Default for ProcessComponent {
 }
 
 impl ProcessComponent {
-    pub fn new(palette: ColorPalette, config: &ProcessConfig) -> Self {
+    pub fn new(palette: ColorPalette, focus_key: char, config: &ProcessConfig) -> Self {
         let sort_col = config.default_sort.parse().unwrap_or_default();
         let sort_dir = if config.default_sort_dir == "asc" {
             SortDir::Asc
@@ -90,6 +95,7 @@ impl ProcessComponent {
         };
         Self {
             palette,
+            focus_key,
             sort_col,
             sort_dir,
             ..Default::default()
@@ -257,24 +263,17 @@ impl Component for ProcessComponent {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        let title = match &self.state {
-            ProcessState::FilterMode { input } => format!(" Processes [filter: {}▌] ", input),
-            _ => " Processes ".to_string(),
+        let title_rest = match &self.state {
+            ProcessState::FilterMode { input } => format!("rocesses [filter: {}▌]", input),
+            _ => "rocesses".to_string(),
         };
         let border_color = if self.focused {
             self.palette.accent
         } else {
             self.palette.border
         };
-        let title_style = if self.focused {
-            Style::new()
-                .fg(self.palette.fg)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::new().fg(self.palette.fg)
-        };
         let block = Block::default()
-            .title(Span::styled(title, title_style))
+            .title(keyed_title(self.focus_key, &title_rest, &self.palette))
             .borders(Borders::ALL)
             .border_style(Style::new().fg(border_color));
         let inner = block.inner(area);

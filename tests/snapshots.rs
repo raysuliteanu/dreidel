@@ -9,7 +9,7 @@ use toppers::{
 
 #[test]
 fn cpu_component_snapshot() {
-    let mut comp = CpuComponent::new(ColorPalette::dark());
+    let mut comp = CpuComponent::new(ColorPalette::dark(), 'c');
     comp.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap();
     let mut t = Terminal::new(TestBackend::new(80, 20)).unwrap();
     t.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
