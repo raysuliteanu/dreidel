@@ -161,12 +161,15 @@ impl LayoutPreset {
                 ]
             }
             Self::Dashboard => {
-                let rows = Layout::vertical([
-                    Constraint::Length(5),
-                    Constraint::Length(8),
-                    Constraint::Fill(1),
-                ])
-                .split(area);
+                // CPU height from hint (capped at 8 cores inside CpuComponent);
+                // fall back to a minimal height until the first snapshot arrives.
+                let cpu_constraint = hints
+                    .left_top
+                    .map(Constraint::Length)
+                    .unwrap_or(Constraint::Length(5));
+                let rows =
+                    Layout::vertical([cpu_constraint, Constraint::Length(8), Constraint::Fill(1)])
+                        .split(area);
                 let mid = Layout::horizontal([Constraint::Percentage(50), Constraint::Fill(1)])
                     .split(rows[1]);
                 vec![
@@ -268,5 +271,37 @@ mod tests {
             .map(|(_, r)| r)
             .unwrap();
         assert_eq!(cpu_rect.height, 11);
+    }
+
+    #[test]
+    fn dashboard_preset_cpu_height_follows_hint() {
+        let area = Rect::new(0, 0, 200, 50);
+        let hints = LayoutHints {
+            left_top: Some(11),
+            right_top: None,
+        };
+        let map = LayoutPreset::Dashboard.compute(area, &SlotOverrides::default(), &hints);
+        let cpu_rect = map
+            .values()
+            .find(|(id, _)| *id == ComponentId::Cpu)
+            .map(|(_, r)| r)
+            .unwrap();
+        assert_eq!(cpu_rect.height, 11);
+    }
+
+    #[test]
+    fn dashboard_preset_cpu_height_fallback_without_hint() {
+        let area = Rect::new(0, 0, 200, 50);
+        let map = LayoutPreset::Dashboard.compute(
+            area,
+            &SlotOverrides::default(),
+            &LayoutHints::default(),
+        );
+        let cpu_rect = map
+            .values()
+            .find(|(id, _)| *id == ComponentId::Cpu)
+            .map(|(_, r)| r)
+            .unwrap();
+        assert_eq!(cpu_rect.height, 5);
     }
 }
