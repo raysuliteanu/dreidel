@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
     layout::{Constraint, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Row, Table, TableState},
 };
@@ -17,6 +17,18 @@ use crate::{
 };
 use filter::ProcessFilter;
 use sort::{SortColumn, SortDir, sort_processes};
+
+/// Returns a color from the palette based on CPU usage percentage.
+/// >95% → critical (red), >80% → warn (orange), else → fg (normal).
+fn cpu_color(pct: f32, palette: &ColorPalette) -> Color {
+    if pct >= 95.0 {
+        palette.critical
+    } else if pct >= 80.0 {
+        palette.warn
+    } else {
+        palette.fg
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ProcessState {
@@ -340,6 +352,7 @@ impl Component for ProcessComponent {
                     format!("{:.1}%", p.mem_pct),
                     p.status.to_string(),
                 ])
+                .style(Style::new().fg(cpu_color(p.cpu_pct, &self.palette)))
             })
             .collect();
 
@@ -420,6 +433,17 @@ mod tests {
         comp.handle_key_event(key('/')).unwrap();
         comp.handle_key_event(key_code(KeyCode::Esc)).unwrap();
         assert_eq!(comp.state, ProcessState::NormalList);
+    }
+
+    #[test]
+    fn cpu_color_tiers() {
+        let palette = ColorPalette::dark();
+        assert_eq!(cpu_color(96.0, &palette), palette.critical);
+        assert_eq!(cpu_color(95.0, &palette), palette.critical);
+        assert_eq!(cpu_color(81.0, &palette), palette.warn);
+        assert_eq!(cpu_color(80.0, &palette), palette.warn);
+        assert_eq!(cpu_color(79.9, &palette), palette.fg);
+        assert_eq!(cpu_color(0.0, &palette), palette.fg);
     }
 
     #[test]
