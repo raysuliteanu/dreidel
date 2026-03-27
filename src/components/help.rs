@@ -11,7 +11,7 @@ use crate::{components::Component, config::KeyBindings, theme::ColorPalette};
 
 // Popup dimensions
 const POPUP_WIDTH: u16 = 46;
-const POPUP_HEIGHT: u16 = 20;
+const POPUP_HEIGHT: u16 = 19;
 
 #[derive(Debug)]
 pub struct HelpComponent {
@@ -84,7 +84,6 @@ impl Component for HelpComponent {
             )),
             key_line(kb.focus_proc, "focus process", &key, &dim),
             key_line(kb.focus_cpu, "focus cpu", &key, &dim),
-            key_line(kb.focus_mem, "focus mem", &key, &dim),
             key_line(kb.focus_net, "focus net", &key, &dim),
             key_line(kb.focus_disk, "focus disk", &key, &dim),
             key_line(kb.fullscreen, "fullscreen toggle", &key, &dim),

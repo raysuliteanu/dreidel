@@ -64,11 +64,13 @@ impl std::fmt::Debug for ProcessComponent {
 
 impl Default for ProcessComponent {
     fn default() -> Self {
+        let mut table_state = TableState::default();
+        table_state.select(Some(0));
         Self {
             palette: ColorPalette::dark(),
             raw: Vec::new(),
             displayed: Vec::new(),
-            table_state: TableState::default(),
+            table_state,
             filter: ProcessFilter::None,
             sort_col: SortColumn::default(),
             sort_dir: SortDir::default(),
@@ -102,12 +104,12 @@ impl ProcessComponent {
             .cloned()
             .collect();
         sort_processes(&mut list, self.sort_col, self.sort_dir);
-        // Clamp selection to the new list length
-        let max = list.len().saturating_sub(1);
-        if let Some(sel) = self.table_state.selected()
-            && sel > max
-        {
-            self.table_state.select(Some(max));
+        if list.is_empty() {
+            self.table_state.select(None);
+        } else {
+            let max = list.len() - 1;
+            let sel = self.table_state.selected().unwrap_or(0).min(max);
+            self.table_state.select(Some(sel));
         }
         self.displayed = list;
     }
@@ -333,6 +335,7 @@ impl Component for ProcessComponent {
                 "MEM" if self.sort_col == SortColumn::Mem => format!("MEM{}", dir_sym),
                 "PID" if self.sort_col == SortColumn::Pid => format!("PID{}", dir_sym),
                 "Name" if self.sort_col == SortColumn::Name => format!("Name{}", dir_sym),
+                "Status" if self.sort_col == SortColumn::Status => format!("Status{}", dir_sym),
                 _ => h.to_string(),
             };
             ratatui::widgets::Cell::from(label).style(
@@ -446,6 +449,14 @@ mod tests {
         assert_eq!(cpu_color(80.0, &palette), palette.warn);
         assert_eq!(cpu_color(79.9, &palette), palette.fg);
         assert_eq!(cpu_color(0.0, &palette), palette.fg);
+    }
+
+    #[test]
+    fn first_row_selected_on_proc_update() {
+        let mut comp = ProcessComponent::default();
+        comp.update(Action::ProcUpdate(ProcSnapshot::stub()))
+            .unwrap();
+        assert_eq!(comp.table_state.selected(), Some(0));
     }
 
     #[test]

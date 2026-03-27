@@ -18,11 +18,12 @@ use crate::stats::snapshots::ProcessEntry;
 )]
 #[strum(serialize_all = "lowercase")]
 pub enum SortColumn {
+    Pid,
+    Name,
     #[default]
     Cpu,
     Mem,
-    Pid,
-    Name,
+    Status,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -42,6 +43,7 @@ pub fn sort_processes(procs: &mut [ProcessEntry], col: SortColumn, dir: SortDir)
             SortColumn::Mem => a.mem_bytes.cmp(&b.mem_bytes),
             SortColumn::Pid => a.pid.cmp(&b.pid),
             SortColumn::Name => a.name.cmp(&b.name),
+            SortColumn::Status => a.status.to_string().cmp(&b.status.to_string()),
         };
         if dir == SortDir::Desc {
             ord.reverse()
@@ -63,6 +65,22 @@ mod tests {
             cpu_pct: cpu,
             ..base.clone()
         }
+    }
+
+    #[test]
+    fn sort_columns_cycle_in_table_column_order() {
+        use strum::IntoEnumIterator;
+        let order: Vec<SortColumn> = SortColumn::iter().collect();
+        assert_eq!(
+            order,
+            vec![
+                SortColumn::Pid,
+                SortColumn::Name,
+                SortColumn::Cpu,
+                SortColumn::Mem,
+                SortColumn::Status,
+            ]
+        );
     }
 
     #[test]

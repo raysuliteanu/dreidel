@@ -2,7 +2,7 @@ use clap::Parser;
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
-#[command(name = "toppers", about = "A modern TUI system monitor", version)]
+#[command(name = "toppers", about = "A modern TUI system monitor", version = env!("TOPPERS_VERSION"))]
 pub struct Args {
     #[arg(long, help = "Color theme: auto | light | dark")]
     pub theme: Option<String>,

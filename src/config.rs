@@ -40,7 +40,6 @@ pub struct LayoutConfig {
     pub status_bar: String,
     pub show: Vec<String>,
     pub left_top: Option<String>,
-    pub left_mid: Option<String>,
     pub left_bot: Option<String>,
     pub right: Option<String>,
     pub top_left: Option<String>,
@@ -57,15 +56,8 @@ impl Default for LayoutConfig {
         Self {
             preset: "sidebar".into(),
             status_bar: "top".into(),
-            show: vec![
-                "cpu".into(),
-                "mem".into(),
-                "net".into(),
-                "disk".into(),
-                "process".into(),
-            ],
+            show: vec!["cpu".into(), "net".into(), "disk".into(), "process".into()],
             left_top: None,
-            left_mid: None,
             left_bot: None,
             right: None,
             top_left: None,
@@ -102,7 +94,6 @@ impl Default for ProcessConfig {
 pub struct KeyBindings {
     pub focus_proc: char,
     pub focus_cpu: char,
-    pub focus_mem: char,
     pub focus_net: char,
     pub focus_disk: char,
     pub fullscreen: char,
@@ -115,7 +106,6 @@ impl Default for KeyBindings {
         Self {
             focus_proc: 'p',
             focus_cpu: 'c',
-            focus_mem: 'm',
             focus_net: 'n',
             focus_disk: 'i',
             fullscreen: 'f',

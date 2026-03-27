@@ -7,7 +7,6 @@ pub mod cpu;
 pub mod debug;
 pub mod disk;
 pub mod help;
-pub mod mem;
 pub mod net;
 pub mod process;
 pub mod status_bar;
@@ -17,7 +16,6 @@ pub mod status_bar;
 pub enum ComponentId {
     StatusBar,
     Cpu,
-    Mem,
     Net,
     Disk,
     Process,

@@ -56,10 +56,6 @@ impl App {
                 Box::new(crate::components::cpu::CpuComponent::new(palette.clone())),
             ),
             (
-                ComponentId::Mem,
-                Box::new(crate::components::mem::MemComponent::new(palette.clone())),
-            ),
-            (
                 ComponentId::Net,
                 Box::new(crate::components::net::NetComponent::new(palette.clone())),
             ),
@@ -243,10 +239,6 @@ impl App {
                 let _ = self
                     .action_tx
                     .try_send(Action::FocusComponent(ComponentId::Cpu));
-            } else if c == kb.focus_mem {
-                let _ = self
-                    .action_tx
-                    .try_send(Action::FocusComponent(ComponentId::Mem));
             } else if c == kb.focus_net {
                 let _ = self
                     .action_tx
@@ -384,11 +376,6 @@ impl App {
             .and_then(|(_, c)| c.preferred_height());
         let hints = LayoutHints {
             left_top: cpu_height,
-            left_mid: self
-                .components
-                .iter()
-                .find(|(id, _)| *id == ComponentId::Mem)
-                .and_then(|(_, c)| c.preferred_height()),
             right_top: cpu_height,
         };
         // Compute which component IDs have a layout slot so Tab cycling only

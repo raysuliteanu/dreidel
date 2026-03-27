@@ -11,8 +11,6 @@ use crate::components::ComponentId;
 pub struct LayoutHints {
     /// Preferred height for the top-left slot (e.g. CPU in Sidebar).
     pub left_top: Option<u16>,
-    /// Preferred height for the middle-left slot (e.g. Mem in Sidebar).
-    pub left_mid: Option<u16>,
     /// Preferred height for the top-right slot (e.g. CPU in Grid).
     pub right_top: Option<u16>,
 }
@@ -21,7 +19,6 @@ pub struct LayoutHints {
 pub enum SlotId {
     // sidebar preset
     LeftTop,
-    LeftMid,
     LeftBot,
     LeftExtra,
     Right,
@@ -34,8 +31,7 @@ pub enum SlotId {
     Top,
     MidLeft,
     MidRight,
-    // grid preset: left col = [Mem, Disk, Net], right col = [Cpu, Process]
-    GridLeftTop,
+    // grid preset: left col = [Disk, Net], right col = [Cpu, Process]
     GridLeftMid,
     GridLeftBot,
     GridRightTop,
@@ -72,11 +68,11 @@ pub fn split_status_bar(area: Rect, pos: StatusBarPosition) -> (Rect, Rect) {
     match pos {
         StatusBarPosition::Hidden => (Rect::default(), area),
         StatusBarPosition::Top => {
-            let chunks = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).split(area);
+            let chunks = Layout::vertical([Constraint::Length(4), Constraint::Fill(1)]).split(area);
             (chunks[0], chunks[1])
         }
         StatusBarPosition::Bottom => {
-            let chunks = Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).split(area);
+            let chunks = Layout::vertical([Constraint::Fill(1), Constraint::Length(4)]).split(area);
             (chunks[1], chunks[0])
         }
     }
@@ -103,25 +99,23 @@ impl LayoutPreset {
         match self {
             Self::Sidebar => HashMap::from([
                 (LeftTop, Cpu),
-                (LeftMid, Mem),
                 (LeftBot, Net),
                 (LeftExtra, Disk),
                 (Right, Process),
             ]),
             Self::Classic => HashMap::from([
                 (TopLeft, Cpu),
-                (TopRightTop, Mem),
+                (TopRightTop, Disk),
                 (TopRightBot, Net),
                 (Bottom, Process),
             ]),
             Self::Dashboard => HashMap::from([
                 (Top, Cpu),
-                (MidLeft, Mem),
+                (MidLeft, Disk),
                 (MidRight, Net),
                 (Bottom, Process),
             ]),
             Self::Grid => HashMap::from([
-                (GridLeftTop, Mem),
                 (GridLeftMid, Disk),
                 (GridLeftBot, Net),
                 (GridRightTop, Cpu),
@@ -142,22 +136,13 @@ impl LayoutPreset {
                     .left_top
                     .map(Constraint::Length)
                     .unwrap_or(Constraint::Percentage(30));
-                let mid_constraint = hints
-                    .left_mid
-                    .map(Constraint::Length)
-                    .unwrap_or(Constraint::Length(4));
-                let left = Layout::vertical([
-                    top_constraint,
-                    mid_constraint,
-                    Constraint::Fill(1),
-                    Constraint::Fill(1),
-                ])
-                .split(cols[0]);
+                let left =
+                    Layout::vertical([top_constraint, Constraint::Fill(1), Constraint::Fill(1)])
+                        .split(cols[0]);
                 vec![
                     (LeftTop, left[0]),
-                    (LeftMid, left[1]),
-                    (LeftBot, left[2]),
-                    (LeftExtra, left[3]),
+                    (LeftBot, left[1]),
+                    (LeftExtra, left[2]),
                     (Right, cols[1]),
                 ]
             }
@@ -192,25 +177,20 @@ impl LayoutPreset {
                 ]
             }
             Self::Grid => {
-                // Two columns: left 40% has [Mem, Disk, Net], right 60% has [Cpu, Process].
+                // Two columns: left 40% has [Disk, Net], right 60% has [Cpu, Process].
                 // CPU height comes from right_top hint; Process fills the rest.
                 let cols = Layout::horizontal([Constraint::Percentage(40), Constraint::Fill(1)])
                     .split(area);
-                let left = Layout::vertical([
-                    Constraint::Fill(1),
-                    Constraint::Fill(1),
-                    Constraint::Fill(1),
-                ])
-                .split(cols[0]);
+                let left =
+                    Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)]).split(cols[0]);
                 let cpu_constraint = hints
                     .right_top
                     .map(Constraint::Length)
                     .unwrap_or(Constraint::Percentage(30));
                 let right = Layout::vertical([cpu_constraint, Constraint::Fill(1)]).split(cols[1]);
                 vec![
-                    (GridLeftTop, left[0]),
-                    (GridLeftMid, left[1]),
-                    (GridLeftBot, left[2]),
+                    (GridLeftMid, left[0]),
+                    (GridLeftBot, left[1]),
                     (GridRightTop, right[0]),
                     (GridRightBot, right[1]),
                 ]
@@ -229,11 +209,9 @@ mod tests {
         let area = Rect::new(0, 0, 200, 50);
         let map =
             LayoutPreset::Sidebar.compute(area, &SlotOverrides::default(), &LayoutHints::default());
-        // All five main components must have a slot so they can be focused and rendered
         let ids: std::collections::HashSet<ComponentId> = map.values().map(|(id, _)| *id).collect();
         use ComponentId::*;
         assert!(ids.contains(&Cpu));
-        assert!(ids.contains(&Mem));
         assert!(ids.contains(&Net));
         assert!(ids.contains(&Disk));
         assert!(ids.contains(&Process));
@@ -244,7 +222,6 @@ mod tests {
         let area = Rect::new(0, 0, 200, 50);
         let hints = LayoutHints {
             left_top: Some(8),
-            left_mid: Some(4),
             right_top: None,
         };
         let map = LayoutPreset::Sidebar.compute(area, &SlotOverrides::default(), &hints);
@@ -260,8 +237,8 @@ mod tests {
     fn status_bar_reduces_available_area() {
         let area = Rect::new(0, 0, 200, 50);
         let (bar, rest) = split_status_bar(area, StatusBarPosition::Top);
-        assert_eq!(bar.height, 1);
-        assert_eq!(rest.height, 49);
+        assert_eq!(bar.height, 4);
+        assert_eq!(rest.height, 46);
     }
 
     #[test]
@@ -272,7 +249,6 @@ mod tests {
         let ids: std::collections::HashSet<ComponentId> = map.values().map(|(id, _)| *id).collect();
         use ComponentId::*;
         assert!(ids.contains(&Cpu));
-        assert!(ids.contains(&Mem));
         assert!(ids.contains(&Net));
         assert!(ids.contains(&Disk));
         assert!(ids.contains(&Process));
@@ -283,7 +259,6 @@ mod tests {
         let area = Rect::new(0, 0, 200, 50);
         let hints = LayoutHints {
             left_top: None,
-            left_mid: None,
             right_top: Some(11),
         };
         let map = LayoutPreset::Grid.compute(area, &SlotOverrides::default(), &hints);

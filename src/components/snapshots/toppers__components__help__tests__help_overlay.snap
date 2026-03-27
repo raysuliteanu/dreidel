@@ -4,11 +4,11 @@ expression: terminal.backend()
 ---
 "                                                            "
 "                                                            "
+"                                                            "
 "       ┌ toppers v0.1.0 ────────────────────────────┐       "
 "       │Global keys                                 │       "
 "       │ p    focus process                         │       "
 "       │ c    focus cpu                             │       "
-"       │ m    focus mem                             │       "
 "       │ n    focus net                             │       "
 "       │ i    focus disk                            │       "
 "       │ f    fullscreen toggle                     │       "
