@@ -4,7 +4,7 @@ use anyhow::Result;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::Span,
     widgets::{Block, Borders, Gauge, Sparkline},
 };
@@ -15,6 +15,18 @@ use crate::{
 
 /// Maximum number of aggregate CPU samples retained for the sparkline.
 pub const HISTORY_LEN: usize = 100;
+
+/// Returns a color from the palette based on CPU usage percentage.
+/// >95% → critical (red), >80% → warn (orange), else → accent (blue).
+fn cpu_color(pct: f32, palette: &ColorPalette) -> Color {
+    if pct >= 95.0 {
+        palette.critical
+    } else if pct >= 80.0 {
+        palette.warn
+    } else {
+        palette.accent
+    }
+}
 
 #[derive(Debug)]
 pub struct CpuComponent {
@@ -110,14 +122,15 @@ impl Component for CpuComponent {
             // Split each row: bar on the left, label on the right
             let cols = Layout::horizontal([Constraint::Fill(1), Constraint::Length(10)]).split(*rect);
             let ratio = (*pct as f64 / 100.0).clamp(0.0, 1.0);
+            let color = cpu_color(*pct, &self.palette);
             let gauge = Gauge::default()
                 .ratio(ratio)
                 .label("")
-                .gauge_style(Style::new().fg(self.palette.accent));
+                .gauge_style(Style::new().fg(color));
             frame.render_widget(gauge, cols[0]);
             let label = Span::styled(
                 format!("c{:<2}{:>5.1}%", i, pct),
-                Style::new().fg(self.palette.fg),
+                Style::new().fg(color),
             );
             frame.render_widget(label, cols[1]);
         }
@@ -128,7 +141,7 @@ impl Component for CpuComponent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{action::Action, stats::snapshots::CpuSnapshot};
+    use crate::{action::Action, stats::snapshots::CpuSnapshot, theme::ColorPalette};
     use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
 
@@ -156,5 +169,16 @@ mod tests {
             comp.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap();
         }
         assert!(comp.history.len() <= HISTORY_LEN);
+    }
+
+    #[test]
+    fn cpu_color_tiers() {
+        let palette = ColorPalette::dark();
+        assert_eq!(cpu_color(96.0, &palette), palette.critical);
+        assert_eq!(cpu_color(95.0, &palette), palette.critical);
+        assert_eq!(cpu_color(90.0, &palette), palette.warn);
+        assert_eq!(cpu_color(80.0, &palette), palette.warn);
+        assert_eq!(cpu_color(79.9, &palette), palette.accent);
+        assert_eq!(cpu_color(0.0, &palette), palette.accent);
     }
 }
