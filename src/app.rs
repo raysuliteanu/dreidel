@@ -32,6 +32,7 @@ pub struct App {
     focus: FocusState,
     show_debug: bool,
     show_help: bool,
+    loading: bool,
     should_quit: bool,
     should_suspend: bool,
     preset: LayoutPreset,
@@ -107,6 +108,7 @@ impl App {
             },
             show_debug,
             show_help: false,
+            loading: true,
             should_quit: false,
             should_suspend: false,
             preset,
@@ -332,6 +334,7 @@ impl App {
                     self.render(tui).context("re-rendering after resize")?;
                 }
                 Action::Render => self.render(tui).context("rendering")?,
+                Action::SysUpdate(_) => self.loading = false,
                 _ => {}
             }
             // Fan out to all components
@@ -370,6 +373,8 @@ impl App {
         let visible = self.visible.clone();
         let show_debug = self.show_debug;
         let show_help = self.show_help;
+        let loading = self.loading;
+        let palette = self.config.general.theme.palette();
         let status_pos = self.status_pos;
         let slot_overrides = self.slot_overrides.clone();
         let cpu_height = self
@@ -446,6 +451,45 @@ impl App {
             // Help overlay is drawn last so it appears on top of everything else.
             if show_help {
                 let _ = self.help_comp.draw(frame, total_area);
+            }
+
+            // Loading overlay: shown until the first SysUpdate arrives.
+            // Drawn after help so it covers both (help won't be open on startup).
+            if loading {
+                use ratatui::{
+                    layout::{Constraint, Layout},
+                    style::{Modifier, Style},
+                    text::{Line, Span},
+                    widgets::{Block, Borders, Clear, Paragraph},
+                };
+                const W: u16 = 26;
+                const H: u16 = 3;
+                let cols = Layout::horizontal([
+                    Constraint::Fill(1),
+                    Constraint::Length(W.min(total_area.width)),
+                    Constraint::Fill(1),
+                ])
+                .split(total_area);
+                let popup = Layout::vertical([
+                    Constraint::Fill(1),
+                    Constraint::Length(H.min(total_area.height)),
+                    Constraint::Fill(1),
+                ])
+                .split(cols[1])[1];
+                frame.render_widget(Clear, popup);
+                let block = Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::new().fg(palette.accent));
+                let inner = block.inner(popup);
+                frame.render_widget(block, popup);
+                frame.render_widget(
+                    Paragraph::new(Line::from(Span::styled(
+                        "Loading stats...",
+                        Style::new().fg(palette.fg).add_modifier(Modifier::BOLD),
+                    )))
+                    .centered(),
+                    inner,
+                );
             }
         })?;
         Ok(())
