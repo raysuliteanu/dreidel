@@ -106,7 +106,9 @@ impl Component for NetComponent {
                     KeyCode::Enter => {
                         let idx = self.list_state.selected().unwrap_or(0);
                         if let Some(iface) = snap.interfaces.get(idx) {
-                            self.view = NetView::Graph { name: iface.name.clone() };
+                            self.view = NetView::Graph {
+                                name: iface.name.clone(),
+                            };
                             return Ok(Some(Action::Render));
                         }
                     }
@@ -156,7 +158,9 @@ impl NetComponent {
             self.palette.border
         };
         let title_style = if self.focused {
-            Style::new().fg(self.palette.fg).add_modifier(Modifier::BOLD)
+            Style::new()
+                .fg(self.palette.fg)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::new().fg(self.palette.fg)
         };
@@ -176,21 +180,26 @@ impl NetComponent {
         };
 
         // Header row + list area
-        let chunks =
-            Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).split(inner);
+        let chunks = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).split(inner);
 
         let header = Line::from(vec![
             Span::styled(
                 format!("{:<12}", "Iface"),
-                Style::new().fg(self.palette.accent).add_modifier(Modifier::BOLD),
+                Style::new()
+                    .fg(self.palette.accent)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!("{:>13}", "TX"),
-                Style::new().fg(self.palette.accent).add_modifier(Modifier::BOLD),
+                Style::new()
+                    .fg(self.palette.accent)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!("{:>14}", "RX"),
-                Style::new().fg(self.palette.accent).add_modifier(Modifier::BOLD),
+                Style::new()
+                    .fg(self.palette.accent)
+                    .add_modifier(Modifier::BOLD),
             ),
         ]);
         frame.render_widget(header, chunks[0]);
@@ -282,7 +291,10 @@ impl NetComponent {
                     .bounds([0.0, y_max])
                     .labels([
                         Span::styled("0", Style::new().fg(self.palette.dim)),
-                        Span::styled(fmt_rate(y_max as u64 / 2), Style::new().fg(self.palette.dim)),
+                        Span::styled(
+                            fmt_rate(y_max as u64 / 2),
+                            Style::new().fg(self.palette.dim),
+                        ),
                         Span::styled(fmt_rate(y_max as u64), Style::new().fg(self.palette.dim)),
                     ])
                     .style(Style::new().fg(self.palette.dim)),
@@ -298,9 +310,15 @@ impl NetComponent {
         {
             let summary = Line::from(vec![
                 Span::styled("TX: ", Style::new().fg(self.palette.dim)),
-                Span::styled(fmt_rate(iface.tx_bytes), Style::new().fg(self.palette.accent)),
+                Span::styled(
+                    fmt_rate(iface.tx_bytes),
+                    Style::new().fg(self.palette.accent),
+                ),
                 Span::styled("   RX: ", Style::new().fg(self.palette.dim)),
-                Span::styled(fmt_rate(iface.rx_bytes), Style::new().fg(self.palette.highlight)),
+                Span::styled(
+                    fmt_rate(iface.rx_bytes),
+                    Style::new().fg(self.palette.highlight),
+                ),
                 Span::styled("   Esc: back", Style::new().fg(self.palette.dim)),
             ]);
             frame.render_widget(summary, rows[1]);
@@ -359,7 +377,7 @@ mod tests {
             comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
         }
         // All interfaces in the stub should have history
-        for (_, (tx, rx)) in &comp.history {
+        for (tx, rx) in comp.history.values() {
             assert_eq!(tx.len(), 50);
             assert_eq!(rx.len(), 50);
         }
@@ -371,7 +389,7 @@ mod tests {
         for _ in 0..200 {
             comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
         }
-        for (_, (tx, rx)) in &comp.history {
+        for (tx, rx) in comp.history.values() {
             assert!(tx.len() <= HISTORY_LEN);
             assert!(rx.len() <= HISTORY_LEN);
         }
