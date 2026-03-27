@@ -1,6 +1,9 @@
 use anyhow::{Context, Result};
 use crossterm::event::KeyEvent;
-use ratatui::layout::Rect;
+use ratatui::{
+    layout::{Constraint, Layout, Rect},
+    widgets::Clear,
+};
 use std::{collections::HashSet, str::FromStr};
 use tokio::sync::mpsc;
 use tracing::debug;
@@ -19,6 +22,24 @@ use crate::{
 pub enum FocusState {
     Normal { focused: ComponentId },
     FullScreen(ComponentId),
+}
+
+/// Returns a rect centered in `area` at `pct_w`% width and `pct_h`% height.
+fn centered_pct(area: Rect, pct_w: u16, pct_h: u16) -> Rect {
+    let w = area.width * pct_w / 100;
+    let h = area.height * pct_h / 100;
+    let cols = Layout::horizontal([
+        Constraint::Fill(1),
+        Constraint::Length(w),
+        Constraint::Fill(1),
+    ])
+    .split(area);
+    Layout::vertical([
+        Constraint::Fill(1),
+        Constraint::Length(h),
+        Constraint::Fill(1),
+    ])
+    .split(cols[1])[1]
 }
 
 pub struct App {
@@ -416,11 +437,8 @@ impl App {
             }
 
             let (main_area, debug_area) = if show_debug {
-                let cols = ratatui::layout::Layout::horizontal([
-                    ratatui::layout::Constraint::Fill(1),
-                    ratatui::layout::Constraint::Length(40),
-                ])
-                .split(content_area);
+                let cols = Layout::horizontal([Constraint::Fill(1), Constraint::Length(40)])
+                    .split(content_area);
                 (cols[0], Some(cols[1]))
             } else {
                 (content_area, None)
@@ -433,7 +451,9 @@ impl App {
             match &focus {
                 FocusState::FullScreen(id) => {
                     if let Some((_, comp)) = self.components.iter_mut().find(|(cid, _)| cid == id) {
-                        let _ = comp.draw(frame, main_area);
+                        let modal = centered_pct(main_area, 90, 90);
+                        frame.render_widget(Clear, modal);
+                        let _ = comp.draw(frame, modal);
                     }
                 }
                 FocusState::Normal { .. } => {
