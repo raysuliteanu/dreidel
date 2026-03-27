@@ -384,11 +384,16 @@ impl Component for ProcessComponent {
 
 fn kill_process(pid: u32) -> Result<()> {
     use anyhow::Context;
-    std::process::Command::new("kill")
+    let status = std::process::Command::new("kill")
         .arg("-TERM")
         .arg(pid.to_string())
         .status()
         .context("sending SIGTERM")?;
+    if !status.success() {
+        // Log the failure — there is no in-TUI notification system yet.
+        // This surfaces in ~/.local/share/toppers/toppers.log.
+        tracing::warn!(pid, ?status, "kill -TERM returned non-zero exit status");
+    }
     Ok(())
 }
 

@@ -10,7 +10,7 @@ use ratatui::{
 
 use crate::{
     action::Action,
-    components::{Component, keyed_title},
+    components::{Component, fmt_rate_col, keyed_title, truncate},
     stats::snapshots::DiskSnapshot,
     theme::ColorPalette,
 };
@@ -47,31 +47,6 @@ const COL_W: u16 = 12;
 /// Width of the usage percentage column.
 const USAGE_W: u16 = 7;
 
-/// Format a byte rate without the "/s" suffix — the column header carries
-/// the "(B/s)" unit context.
-fn fmt_rate_col(bytes_per_sec: u64) -> String {
-    const MB: u64 = 1_000_000;
-    const KB: u64 = 1_000;
-    if bytes_per_sec >= MB {
-        format!("{:.1} MB", bytes_per_sec as f64 / MB as f64)
-    } else if bytes_per_sec >= KB {
-        format!("{:.1} KB", bytes_per_sec as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes_per_sec)
-    }
-}
-
-/// Truncate `s` to `max` chars, replacing the last 3 with `...` if truncated.
-fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
-    } else if max <= 3 {
-        s[..max].to_string()
-    } else {
-        format!("{}...", &s[..max - 3])
-    }
-}
-
 impl Component for DiskComponent {
     fn set_focused(&mut self, focused: bool) {
         self.focused = focused;
@@ -89,11 +64,13 @@ impl Component for DiskComponent {
             KeyCode::Up => {
                 let i = self.list_state.selected().unwrap_or(0);
                 self.list_state.select(Some(i.saturating_sub(1)));
+                return Ok(Some(Action::Render));
             }
             KeyCode::Down => {
                 let i = self.list_state.selected().unwrap_or(0);
                 if i + 1 < len {
                     self.list_state.select(Some(i + 1));
+                    return Ok(Some(Action::Render));
                 }
             }
             _ => {}
@@ -211,7 +188,11 @@ impl Component for DiskComponent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{action::Action, stats::snapshots::DiskSnapshot};
+    use crate::{
+        action::Action,
+        components::{fmt_rate_col, truncate},
+        stats::snapshots::DiskSnapshot,
+    };
     use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
 
@@ -254,5 +235,45 @@ mod tests {
     #[test]
     fn truncate_short_name() {
         assert_eq!(truncate("sda", 10), "sda");
+    }
+
+    #[test]
+    fn up_down_return_render() {
+        use crate::stats::snapshots::DiskDeviceSnapshot;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let mut comp = DiskComponent::default();
+        // Two devices so Down can actually advance from row 0 to row 1.
+        let two_devices = DiskSnapshot {
+            devices: vec![
+                DiskDeviceSnapshot {
+                    name: "sda".into(),
+                    read_bytes: 0,
+                    write_bytes: 0,
+                    usage_pct: 10.0,
+                },
+                DiskDeviceSnapshot {
+                    name: "sdb".into(),
+                    read_bytes: 0,
+                    write_bytes: 0,
+                    usage_pct: 20.0,
+                },
+            ],
+        };
+        comp.update(Action::DiskUpdate(two_devices)).unwrap();
+        comp.list_state.select(Some(0));
+        let down = comp
+            .handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE))
+            .unwrap();
+        assert!(
+            matches!(down, Some(Action::Render)),
+            "Down should trigger Render"
+        );
+        let up = comp
+            .handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE))
+            .unwrap();
+        assert!(
+            matches!(up, Some(Action::Render)),
+            "Up should trigger Render"
+        );
     }
 }

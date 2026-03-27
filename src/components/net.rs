@@ -13,7 +13,7 @@ use ratatui::{
 
 use crate::{
     action::Action,
-    components::{Component, keyed_title},
+    components::{Component, fmt_rate_col, keyed_title, truncate},
     stats::snapshots::NetSnapshot,
     theme::ColorPalette,
 };
@@ -74,31 +74,6 @@ fn fmt_rate(bytes_per_sec: u64) -> String {
         format!("{:.1} KB/s", bytes_per_sec as f64 / KB as f64)
     } else {
         format!("{} B/s", bytes_per_sec)
-    }
-}
-
-/// Format a byte rate without the "/s" suffix — used in list columns where
-/// the header already carries the "(B/s)" unit context.
-fn fmt_rate_col(bytes_per_sec: u64) -> String {
-    const MB: u64 = 1_000_000;
-    const KB: u64 = 1_000;
-    if bytes_per_sec >= MB {
-        format!("{:.1} MB", bytes_per_sec as f64 / MB as f64)
-    } else if bytes_per_sec >= KB {
-        format!("{:.1} KB", bytes_per_sec as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes_per_sec)
-    }
-}
-
-/// Truncate `s` to `max` chars, replacing the last 3 with `...` if truncated.
-fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
-    } else if max <= 3 {
-        s[..max].to_string()
-    } else {
-        format!("{}...", &s[..max - 3])
     }
 }
 
@@ -363,7 +338,11 @@ impl NetComponent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{action::Action, stats::snapshots::NetSnapshot};
+    use crate::{
+        action::Action,
+        components::{fmt_rate_col, truncate},
+        stats::snapshots::NetSnapshot,
+    };
     use crossterm::event::KeyModifiers;
     use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};

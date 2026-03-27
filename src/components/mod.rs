@@ -41,6 +41,75 @@ pub(crate) fn keyed_title(key: char, rest: &str, palette: &ColorPalette) -> Line
     ])
 }
 
+/// Truncate `s` to at most `max` Unicode scalar values, replacing the last 3
+/// with `...` if truncated. Uses character-aware indexing to avoid panics on
+/// multi-byte UTF-8 sequences (e.g. interface names with non-ASCII characters).
+pub(crate) fn truncate(s: &str, max: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count <= max {
+        return s.to_string();
+    }
+    if max <= 3 {
+        return s.chars().take(max).collect();
+    }
+    // Find the byte offset of the (max-3)th char so we can slice safely.
+    let byte_end = s
+        .char_indices()
+        .nth(max - 3)
+        .map(|(i, _)| i)
+        .unwrap_or(s.len());
+    format!("{}...", &s[..byte_end])
+}
+
+/// Format a byte rate without the "/s" suffix.
+/// The column header carries the "(B/s)" unit context, so individual cells
+/// can omit it to save horizontal space.
+pub(crate) fn fmt_rate_col(bytes_per_sec: u64) -> String {
+    const MB: u64 = 1_000_000;
+    const KB: u64 = 1_000;
+    if bytes_per_sec >= MB {
+        format!("{:.1} MB", bytes_per_sec as f64 / MB as f64)
+    } else if bytes_per_sec >= KB {
+        format!("{:.1} KB", bytes_per_sec as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes_per_sec)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_ascii_long() {
+        assert_eq!(truncate("wlp0s20f3u1u2", 10), "wlp0s20...");
+    }
+
+    #[test]
+    fn truncate_ascii_short() {
+        assert_eq!(truncate("lo", 10), "lo");
+    }
+
+    #[test]
+    fn truncate_multibyte_utf8_does_not_panic() {
+        // "café" is 5 bytes but 4 chars; max=3 (≤3) → take 3 chars = "caf".
+        // The old byte-slicing implementation would panic here on some inputs;
+        // this verifies we use char-aware indexing.
+        let result = truncate("café", 3);
+        assert_eq!(result, "caf");
+    }
+
+    #[test]
+    fn truncate_multibyte_utf8_longer() {
+        // "cáféö" = 5 chars; truncate to 4 → 1 char + "..." = "c...".
+        // (max - 3 = 1 char before the ellipsis)
+        let result = truncate("cáféö", 4);
+        assert_eq!(result, "c...");
+        // Verify the result is valid UTF-8 (i.e. no mid-codepoint slicing).
+        assert!(std::str::from_utf8(result.as_bytes()).is_ok());
+    }
+}
+
 /// Core interface every TUI panel must implement.
 ///
 /// Default no-op implementations are provided so panels only override what

@@ -26,8 +26,8 @@ pub enum FocusState {
 
 /// Returns a rect centered in `area` at `pct_w`% width and `pct_h`% height.
 fn centered_pct(area: Rect, pct_w: u16, pct_h: u16) -> Rect {
-    let w = area.width * pct_w / 100;
-    let h = area.height * pct_h / 100;
+    let w = (area.width * pct_w / 100).max(1);
+    let h = (area.height * pct_h / 100).max(1);
     let cols = Layout::horizontal([
         Constraint::Fill(1),
         Constraint::Length(w),
@@ -595,5 +595,24 @@ mod tests {
             "expected ToggleFullScreen for 'Q', got {actions:?}"
         );
         assert!(!actions.iter().any(|a| matches!(a, Action::Quit)));
+    }
+
+    #[test]
+    fn esc_in_fullscreen_mode_sends_toggle_fullscreen() {
+        let mut app = make_app();
+        app.focus = FocusState::FullScreen(ComponentId::Cpu);
+        app.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .unwrap();
+        let actions = drain(&mut app);
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, Action::ToggleFullScreen)),
+            "expected ToggleFullScreen on Esc in fullscreen, got {actions:?}"
+        );
+        assert!(
+            !actions.iter().any(|a| matches!(a, Action::Quit)),
+            "should not quit when Esc pressed in fullscreen mode"
+        );
     }
 }
