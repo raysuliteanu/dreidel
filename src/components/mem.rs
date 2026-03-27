@@ -11,6 +11,9 @@ use crate::{
     action::Action, components::Component, stats::snapshots::MemSnapshot, theme::ColorPalette,
 };
 
+// Right-column width: fits "SWAP  xx.x/xx.x GiB  xx.x%" with some margin.
+const LABEL_WIDTH: u16 = 28;
+
 #[derive(Debug)]
 pub struct MemComponent {
     palette: ColorPalette,
@@ -56,7 +59,7 @@ impl Component for MemComponent {
     }
 
     fn preferred_height(&self) -> Option<u16> {
-        // 2 border rows + RAM row + SWAP row; swap activity line only on Linux
+        // 2 border rows + RAM row + SWAP row
         Some(4)
     }
 
@@ -99,45 +102,59 @@ impl Component for MemComponent {
         let constraints: Vec<Constraint> = (0..row_count).map(|_| Constraint::Length(1)).collect();
         let rows = Layout::vertical(constraints).split(inner);
 
-        // RAM gauge
+        // RAM row: bar on the left, label on the right
         let ram_ratio = if snap.ram_total > 0 {
             (snap.ram_used as f64 / snap.ram_total as f64).clamp(0.0, 1.0)
         } else {
             0.0
         };
-        let ram_label = format!(
-            "RAM  {} / {}",
-            fmt_bytes(snap.ram_used),
-            fmt_bytes(snap.ram_total)
-        );
+        let ram_cols =
+            Layout::horizontal([Constraint::Fill(1), Constraint::Length(LABEL_WIDTH)]).split(rows[0]);
         let ram_gauge = Gauge::default()
             .ratio(ram_ratio)
-            .label(ram_label)
+            .label("")
             .gauge_style(Style::new().fg(self.palette.accent));
-        frame.render_widget(ram_gauge, rows[0]);
+        frame.render_widget(ram_gauge, ram_cols[0]);
+        let ram_label = Span::styled(
+            format!(
+                "RAM  {}/{} {:>5.1}%",
+                fmt_bytes(snap.ram_used),
+                fmt_bytes(snap.ram_total),
+                ram_ratio * 100.0,
+            ),
+            Style::new().fg(self.palette.fg),
+        );
+        frame.render_widget(ram_label, ram_cols[1]);
 
-        // Swap gauge
+        // SWAP row: bar on the left, label on the right
         let swap_ratio = if snap.swap_total > 0 {
             (snap.swap_used as f64 / snap.swap_total as f64).clamp(0.0, 1.0)
         } else {
             0.0
         };
-        let swap_label = format!(
-            "SWAP {} / {}",
-            fmt_bytes(snap.swap_used),
-            fmt_bytes(snap.swap_total)
-        );
         // Warn color when swap is being actively used
         let swap_color = if snap.swap_used > 0 {
             self.palette.warn
         } else {
             self.palette.dim
         };
+        let swap_cols =
+            Layout::horizontal([Constraint::Fill(1), Constraint::Length(LABEL_WIDTH)]).split(rows[1]);
         let swap_gauge = Gauge::default()
             .ratio(swap_ratio)
-            .label(swap_label)
+            .label("")
             .gauge_style(Style::new().fg(swap_color));
-        frame.render_widget(swap_gauge, rows[1]);
+        frame.render_widget(swap_gauge, swap_cols[0]);
+        let swap_label = Span::styled(
+            format!(
+                "SWAP {}/{} {:>5.1}%",
+                fmt_bytes(snap.swap_used),
+                fmt_bytes(snap.swap_total),
+                swap_ratio * 100.0,
+            ),
+            Style::new().fg(swap_color),
+        );
+        frame.render_widget(swap_label, swap_cols[1]);
 
         // Linux-only: swap activity rate
         #[cfg(target_os = "linux")]
