@@ -7,8 +7,8 @@ use tracing::debug;
 
 use crate::{
     action::Action,
-    components::{Component, ComponentId},
     components::help::HelpComponent,
+    components::{Component, ComponentId},
     config::Config,
     layout::{LayoutHints, LayoutPreset, SlotOverrides, StatusBarPosition, split_status_bar},
     stats::spawn_collector,
@@ -120,13 +120,13 @@ impl App {
     }
 
     pub async fn run(&mut self) -> Result<()> {
-        let mut tui = Tui::new()?.mouse(true);
+        // Render and tick at the same rate as the stats collector so we don't
+        // burn CPU redrawing frames that are identical to the previous one.
+        // Key presses trigger an immediate render (see handle_events) to keep
+        // UI response snappy independent of this rate.
+        let fps = 1000.0 / self.config.general.refresh_rate_ms as f64;
+        let mut tui = Tui::new()?.mouse(true).frame_rate(fps).tick_rate(fps);
         tui.enter().context("entering TUI")?;
-
-        let size = tui.size().context("getting terminal size")?;
-        // Initialize components with terminal size so they can pre-allocate layout state.
-        // Components that need size hints implement init() implicitly via draw(); no-op here.
-        let _ = size;
 
         let collector_token = tokio_util::sync::CancellationToken::new();
         spawn_collector(
@@ -218,6 +218,10 @@ impl App {
                 } else {
                     self.handle_key_event(*key)?;
                 }
+                // Render immediately on any key press so focus changes and
+                // other state updates are visible without waiting for the
+                // next periodic Render tick.
+                let _ = self.action_tx.try_send(Action::Render);
             }
             _ => {}
         }

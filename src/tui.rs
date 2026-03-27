@@ -59,8 +59,8 @@ impl Tui {
             cancellation_token: CancellationToken::new(),
             event_rx,
             event_tx,
-            frame_rate: 60.0,
-            tick_rate: 4.0,
+            frame_rate: 1.0,
+            tick_rate: 1.0,
             mouse: false,
             paste: false,
         })
@@ -182,6 +182,8 @@ impl Tui {
         self.cancellation_token.cancel();
     }
 
+    // TODO: do we even need this method since it's not used
+    #[allow(dead_code)]
     pub fn size(&self) -> anyhow::Result<ratatui::layout::Size> {
         self.terminal.size().context("getting terminal size")
     }

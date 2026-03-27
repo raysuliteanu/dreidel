@@ -17,6 +17,7 @@ fn deserialize_duration<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u64, D
         .map_err(serde::de::Error::custom)
 }
 
+// TODO: address magic number; it's duplicated below in default()
 fn default_refresh() -> u64 {
     1000
 }
@@ -26,6 +27,7 @@ impl Default for GeneralConfig {
         Self {
             refresh_rate_ms: 1000,
             theme: Theme::Auto,
+            // TODO: address magic number
             channel_capacity: 128,
         }
     }
