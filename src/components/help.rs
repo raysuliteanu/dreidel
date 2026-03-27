@@ -99,7 +99,7 @@ impl Component for HelpComponent {
                 Span::styled(change_id, Style::new().fg(self.palette.dim)),
             ]));
         }
-        lines.push(Line::from(Span::styled("Press ? or Esc to close", dim)));
+        lines.push(Line::from(Span::styled("Press ?, h or Esc to close", dim)));
 
         frame.render_widget(Paragraph::new(lines), inner);
         Ok(())
@@ -121,9 +121,15 @@ mod tests {
 
     #[test]
     fn renders_help_overlay() {
-        let mut comp = HelpComponent::new(ColorPalette::dark(), KeyBindings::default());
-        let mut terminal = Terminal::new(TestBackend::new(60, 24)).unwrap();
-        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
-        assert_snapshot!("help_overlay", terminal.backend());
+        let mut settings = insta::Settings::clone_current();
+        // JJ change IDs are baked in at compile time and change every commit;
+        // redact them so the snapshot stays stable across commits.
+        settings.add_filter(r"change: [a-z0-9]+", "change: [CHANGE_ID]");
+        settings.bind(|| {
+            let mut comp = HelpComponent::new(ColorPalette::dark(), KeyBindings::default());
+            let mut terminal = Terminal::new(TestBackend::new(60, 24)).unwrap();
+            terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+            assert_snapshot!("help_overlay", terminal.backend());
+        });
     }
 }

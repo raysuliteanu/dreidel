@@ -159,16 +159,29 @@ impl App {
             return Ok(());
         };
 
-        // When the help overlay is visible, only Esc and ? close it; all other
+        // When the help overlay is visible, only Esc/? /h close it; all other
         // keys are swallowed so nothing behind the overlay reacts.
+        // Render and Tick events are still forwarded so the dashboard keeps
+        // refreshing behind the overlay.
         if self.show_help {
-            if let Event::Key(key) = &event {
-                use crossterm::event::KeyCode;
-                let is_close = key.code == KeyCode::Esc
-                    || key.code == KeyCode::Char(self.config.keybindings.help);
-                if is_close {
-                    let _ = self.action_tx.try_send(Action::ToggleHelp);
+            match &event {
+                Event::Key(key) => {
+                    use crossterm::event::KeyCode;
+                    let is_close = key.code == KeyCode::Esc
+                        || key.code == KeyCode::Char(self.config.keybindings.help)
+                        || key.code == KeyCode::Char('h')
+                        || key.code == KeyCode::Char('H');
+                    if is_close {
+                        let _ = self.action_tx.try_send(Action::ToggleHelp);
+                    }
                 }
+                Event::Render => {
+                    let _ = self.action_tx.try_send(Action::Render);
+                }
+                Event::Tick => {
+                    let _ = self.action_tx.try_send(Action::Tick);
+                }
+                _ => {}
             }
             return Ok(());
         }
@@ -243,8 +256,8 @@ impl App {
             } else if c == 'q' {
                 let _ = self.action_tx.try_send(Action::Quit);
             }
-            // help key uses the raw char (not lowercased) since '?' requires Shift
-            if key.code == KeyCode::Char(kb.help) {
+            // help key: '?' (requires Shift) or 'h'/'H'
+            if key.code == KeyCode::Char(kb.help) || c == 'h' {
                 let _ = self.action_tx.try_send(Action::ToggleHelp);
             }
         }
@@ -297,7 +310,10 @@ impl App {
                     tui.terminal.clear().context("clearing screen")?;
                 }
                 Action::ToggleDebug => self.show_debug = !self.show_debug,
-                Action::ToggleHelp => self.show_help = !self.show_help,
+                Action::ToggleHelp => {
+                    self.show_help = !self.show_help;
+                    self.render(tui).context("rendering after help toggle")?;
+                }
                 Action::ToggleFullScreen => {
                     self.focus = match &self.focus {
                         FocusState::Normal { focused } => FocusState::FullScreen(*focused),
