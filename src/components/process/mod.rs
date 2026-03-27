@@ -265,7 +265,9 @@ impl Component for ProcessComponent {
             self.palette.border
         };
         let title_style = if self.focused {
-            Style::new().fg(self.palette.fg).add_modifier(Modifier::BOLD)
+            Style::new()
+                .fg(self.palette.fg)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::new().fg(self.palette.fg)
         };

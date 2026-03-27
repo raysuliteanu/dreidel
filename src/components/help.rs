@@ -57,7 +57,12 @@ impl Component for HelpComponent {
 
         let title = format!(" toppers v{version} ");
         let block = Block::default()
-            .title(Span::styled(title, Style::new().fg(self.palette.fg).add_modifier(Modifier::BOLD)))
+            .title(Span::styled(
+                title,
+                Style::new()
+                    .fg(self.palette.fg)
+                    .add_modifier(Modifier::BOLD),
+            ))
             .borders(Borders::ALL)
             .border_style(Style::new().fg(self.palette.accent));
         let inner = block.inner(popup);
@@ -65,11 +70,18 @@ impl Component for HelpComponent {
 
         let kb = &self.kb;
         let dim = Style::new().fg(self.palette.dim);
-        let key = Style::new().fg(self.palette.accent).add_modifier(Modifier::BOLD);
+        let key = Style::new()
+            .fg(self.palette.accent)
+            .add_modifier(Modifier::BOLD);
         let fg = Style::new().fg(self.palette.fg);
 
         let mut lines: Vec<Line> = vec![
-            Line::from(Span::styled("Global keys", Style::new().fg(self.palette.fg).add_modifier(Modifier::UNDERLINED))),
+            Line::from(Span::styled(
+                "Global keys",
+                Style::new()
+                    .fg(self.palette.fg)
+                    .add_modifier(Modifier::UNDERLINED),
+            )),
             key_line(kb.focus_proc, "focus process", &key, &dim),
             key_line(kb.focus_cpu, "focus cpu", &key, &dim),
             key_line(kb.focus_mem, "focus mem", &key, &dim),
@@ -83,7 +95,12 @@ impl Component for HelpComponent {
                 Span::styled(" cycle focus", dim),
             ]),
             Line::from(""),
-            Line::from(Span::styled("Process keys", Style::new().fg(self.palette.fg).add_modifier(Modifier::UNDERLINED))),
+            Line::from(Span::styled(
+                "Process keys",
+                Style::new()
+                    .fg(self.palette.fg)
+                    .add_modifier(Modifier::UNDERLINED),
+            )),
             key_line('/', "filter", &key, &dim),
             key_line('s', "cycle sort column", &key, &dim),
             key_line('k', "kill process", &key, &dim),

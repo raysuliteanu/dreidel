@@ -64,7 +64,11 @@ impl Component for CpuComponent {
 
     fn preferred_height(&self) -> Option<u16> {
         // 2 border rows + 1 sparkline row + one row per core (capped at 8)
-        let cores = self.latest.as_ref().map(|s| s.per_core.len().min(8)).unwrap_or(0);
+        let cores = self
+            .latest
+            .as_ref()
+            .map(|s| s.per_core.len().min(8))
+            .unwrap_or(0);
         Some(2 + 1 + cores as u16)
     }
 
@@ -86,7 +90,9 @@ impl Component for CpuComponent {
             self.palette.border
         };
         let title_style = if self.focused {
-            Style::new().fg(self.palette.fg).add_modifier(Modifier::BOLD)
+            Style::new()
+                .fg(self.palette.fg)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::new().fg(self.palette.fg)
         };
@@ -120,7 +126,8 @@ impl Component for CpuComponent {
         let core_rows = Layout::vertical(constraints).split(rows[1]);
         for (i, (pct, rect)) in snap.per_core.iter().zip(core_rows.iter()).enumerate() {
             // Split each row: bar on the left, label on the right
-            let cols = Layout::horizontal([Constraint::Fill(1), Constraint::Length(10)]).split(*rect);
+            let cols =
+                Layout::horizontal([Constraint::Fill(1), Constraint::Length(10)]).split(*rect);
             let ratio = (*pct as f64 / 100.0).clamp(0.0, 1.0);
             let color = cpu_color(*pct, &self.palette);
             let gauge = Gauge::default()
@@ -128,10 +135,7 @@ impl Component for CpuComponent {
                 .label("")
                 .gauge_style(Style::new().fg(color));
             frame.render_widget(gauge, cols[0]);
-            let label = Span::styled(
-                format!("c{:<2}{:>5.1}%", i, pct),
-                Style::new().fg(color),
-            );
+            let label = Span::styled(format!("c{:<2}{:>5.1}%", i, pct), Style::new().fg(color));
             frame.render_widget(label, cols[1]);
         }
         Ok(())

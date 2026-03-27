@@ -77,7 +77,9 @@ impl Component for MemComponent {
             self.palette.border
         };
         let title_style = if self.focused {
-            Style::new().fg(self.palette.fg).add_modifier(Modifier::BOLD)
+            Style::new()
+                .fg(self.palette.fg)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::new().fg(self.palette.fg)
         };
@@ -108,8 +110,8 @@ impl Component for MemComponent {
         } else {
             0.0
         };
-        let ram_cols =
-            Layout::horizontal([Constraint::Fill(1), Constraint::Length(LABEL_WIDTH)]).split(rows[0]);
+        let ram_cols = Layout::horizontal([Constraint::Fill(1), Constraint::Length(LABEL_WIDTH)])
+            .split(rows[0]);
         let ram_gauge = Gauge::default()
             .ratio(ram_ratio)
             .label("")
@@ -138,8 +140,8 @@ impl Component for MemComponent {
         } else {
             self.palette.dim
         };
-        let swap_cols =
-            Layout::horizontal([Constraint::Fill(1), Constraint::Length(LABEL_WIDTH)]).split(rows[1]);
+        let swap_cols = Layout::horizontal([Constraint::Fill(1), Constraint::Length(LABEL_WIDTH)])
+            .split(rows[1]);
         let swap_gauge = Gauge::default()
             .ratio(swap_ratio)
             .label("")

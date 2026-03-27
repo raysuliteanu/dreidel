@@ -227,10 +227,10 @@ mod tests {
     #[test]
     fn sidebar_preset_has_slot_for_every_main_component() {
         let area = Rect::new(0, 0, 200, 50);
-        let map = LayoutPreset::Sidebar.compute(area, &SlotOverrides::default(), &LayoutHints::default());
+        let map =
+            LayoutPreset::Sidebar.compute(area, &SlotOverrides::default(), &LayoutHints::default());
         // All five main components must have a slot so they can be focused and rendered
-        let ids: std::collections::HashSet<ComponentId> =
-            map.values().map(|(id, _)| *id).collect();
+        let ids: std::collections::HashSet<ComponentId> = map.values().map(|(id, _)| *id).collect();
         use ComponentId::*;
         assert!(ids.contains(&Cpu));
         assert!(ids.contains(&Mem));
@@ -242,9 +242,17 @@ mod tests {
     #[test]
     fn layout_hints_shrink_cpu_slot() {
         let area = Rect::new(0, 0, 200, 50);
-        let hints = LayoutHints { left_top: Some(8), left_mid: Some(4), right_top: None };
+        let hints = LayoutHints {
+            left_top: Some(8),
+            left_mid: Some(4),
+            right_top: None,
+        };
         let map = LayoutPreset::Sidebar.compute(area, &SlotOverrides::default(), &hints);
-        let cpu_rect = map.values().find(|(id, _)| *id == ComponentId::Cpu).map(|(_, r)| r).unwrap();
+        let cpu_rect = map
+            .values()
+            .find(|(id, _)| *id == ComponentId::Cpu)
+            .map(|(_, r)| r)
+            .unwrap();
         assert_eq!(cpu_rect.height, 8);
     }
 
@@ -259,9 +267,9 @@ mod tests {
     #[test]
     fn grid_preset_has_slot_for_every_main_component() {
         let area = Rect::new(0, 0, 200, 50);
-        let map = LayoutPreset::Grid.compute(area, &SlotOverrides::default(), &LayoutHints::default());
-        let ids: std::collections::HashSet<ComponentId> =
-            map.values().map(|(id, _)| *id).collect();
+        let map =
+            LayoutPreset::Grid.compute(area, &SlotOverrides::default(), &LayoutHints::default());
+        let ids: std::collections::HashSet<ComponentId> = map.values().map(|(id, _)| *id).collect();
         use ComponentId::*;
         assert!(ids.contains(&Cpu));
         assert!(ids.contains(&Mem));
@@ -273,9 +281,17 @@ mod tests {
     #[test]
     fn grid_preset_cpu_height_follows_hint() {
         let area = Rect::new(0, 0, 200, 50);
-        let hints = LayoutHints { left_top: None, left_mid: None, right_top: Some(11) };
+        let hints = LayoutHints {
+            left_top: None,
+            left_mid: None,
+            right_top: Some(11),
+        };
         let map = LayoutPreset::Grid.compute(area, &SlotOverrides::default(), &hints);
-        let cpu_rect = map.values().find(|(id, _)| *id == ComponentId::Cpu).map(|(_, r)| r).unwrap();
+        let cpu_rect = map
+            .values()
+            .find(|(id, _)| *id == ComponentId::Cpu)
+            .map(|(_, r)| r)
+            .unwrap();
         assert_eq!(cpu_rect.height, 11);
     }
 }
