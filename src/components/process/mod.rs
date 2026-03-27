@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Row, Table, TableState},
+    widgets::{Block, Borders, Clear, Paragraph, Row, Table, TableState, Wrap},
 };
 
 use crate::{
@@ -36,9 +36,20 @@ fn cpu_color(pct: f32, palette: &ColorPalette) -> Color {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ProcessState {
     NormalList,
-    FilterMode { input: String },
-    DetailView { pid: u32 },
-    KillConfirm { pid: u32, name: String },
+    FilterMode {
+        input: String,
+    },
+    DetailView {
+        pid: u32,
+    },
+    KillConfirm {
+        pid: u32,
+        name: String,
+    },
+    /// Kill command was attempted but failed — show an error dialog to the user.
+    KillError {
+        message: String,
+    },
 }
 
 pub struct ProcessComponent {
@@ -171,11 +182,26 @@ impl Component for ProcessComponent {
                 let _name = name.clone();
                 match key.code {
                     KeyCode::Char('y') | KeyCode::Enter => {
-                        kill_process(pid)?;
-                        self.state = ProcessState::NormalList;
+                        if let Err(e) = kill_process(pid) {
+                            self.state = ProcessState::KillError {
+                                message: e.to_string(),
+                            };
+                        } else {
+                            self.state = ProcessState::NormalList;
+                        }
                         return Ok(Some(Action::Render));
                     }
                     KeyCode::Char('n') | KeyCode::Esc => {
+                        self.state = ProcessState::NormalList;
+                        return Ok(Some(Action::Render));
+                    }
+                    _ => {}
+                }
+                Ok(None)
+            }
+            ProcessState::KillError { .. } => {
+                match key.code {
+                    KeyCode::Enter | KeyCode::Esc | KeyCode::Char(' ') => {
                         self.state = ProcessState::NormalList;
                         return Ok(Some(Action::Render));
                     }
@@ -278,6 +304,43 @@ impl Component for ProcessComponent {
             .border_style(Style::new().fg(border_color));
         let inner = block.inner(area);
         frame.render_widget(block, area);
+
+        // Kill error dialog — shown when kill -TERM fails
+        if let ProcessState::KillError { message } = &self.state {
+            let dialog_w = (inner.width * 3 / 4).max(30).min(inner.width);
+            let dialog_h = 6_u16.min(inner.height);
+            let dialog = Rect::new(
+                inner.x + (inner.width.saturating_sub(dialog_w)) / 2,
+                inner.y + (inner.height.saturating_sub(dialog_h)) / 2,
+                dialog_w,
+                dialog_h,
+            );
+            frame.render_widget(Clear, dialog);
+            let err_block = Block::default()
+                .title(Span::styled(
+                    " Kill Failed ",
+                    Style::new().fg(self.palette.critical).bold(),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::new().fg(self.palette.critical));
+            let dialog_inner = err_block.inner(dialog);
+            frame.render_widget(err_block, dialog);
+            let body = Paragraph::new(vec![
+                Line::from(Span::styled(
+                    message.as_str(),
+                    Style::new().fg(self.palette.fg),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "[ Enter / Esc ]  OK",
+                    Style::new().fg(self.palette.dim),
+                )),
+            ])
+            .wrap(Wrap { trim: false })
+            .centered();
+            frame.render_widget(body, dialog_inner);
+            return Ok(());
+        }
 
         // Kill confirm overlay — shown in place of the table
         if let ProcessState::KillConfirm { pid, name } = &self.state {
@@ -383,16 +446,22 @@ impl Component for ProcessComponent {
 }
 
 fn kill_process(pid: u32) -> Result<()> {
-    use anyhow::Context;
+    use anyhow::{Context, bail};
     let status = std::process::Command::new("kill")
         .arg("-TERM")
         .arg(pid.to_string())
         .status()
         .context("sending SIGTERM")?;
     if !status.success() {
-        // Log the failure — there is no in-TUI notification system yet.
-        // This surfaces in ~/.local/share/toppers/toppers.log.
-        tracing::warn!(pid, ?status, "kill -TERM returned non-zero exit status");
+        let code = status
+            .code()
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        tracing::warn!(pid, exit_code = %code, "kill -TERM returned non-zero exit status");
+        bail!(
+            "kill -TERM pid {pid} failed (exit code {code}) — \
+             the process may not exist or you may lack permission to signal it"
+        );
     }
     Ok(())
 }
@@ -471,5 +540,37 @@ mod tests {
         comp.table_state.select(Some(0));
         comp.handle_key_event(key_code(KeyCode::Enter)).unwrap();
         assert!(matches!(comp.state, ProcessState::DetailView { .. }));
+    }
+
+    #[test]
+    fn kill_error_state_dismisses_on_enter_or_esc() {
+        let mut comp = ProcessComponent::default();
+        // Directly place the component in KillError state (simulates a failed kill)
+        comp.state = ProcessState::KillError {
+            message: "kill -TERM pid 99 failed (exit code 1)".to_string(),
+        };
+        // Enter dismisses and returns to NormalList
+        comp.handle_key_event(key_code(KeyCode::Enter)).unwrap();
+        assert_eq!(comp.state, ProcessState::NormalList);
+
+        // Same with Esc
+        comp.state = ProcessState::KillError {
+            message: "some error".to_string(),
+        };
+        comp.handle_key_event(key_code(KeyCode::Esc)).unwrap();
+        assert_eq!(comp.state, ProcessState::NormalList);
+    }
+
+    #[test]
+    fn kill_error_renders_without_panic() {
+        let mut comp = ProcessComponent::default();
+        comp.state = ProcessState::KillError {
+            message: "kill -TERM pid 1 failed (exit code 1) — permission denied".to_string(),
+        };
+        let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        // Verify the error text appears somewhere in the rendered output
+        let rendered = format!("{:?}", terminal.backend());
+        assert!(rendered.contains("Kill Failed") || rendered.contains("permission"));
     }
 }
