@@ -2,8 +2,8 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
-    layout::Rect,
-    style::Style,
+    layout::{Constraint, Layout, Rect},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState},
 };
@@ -42,16 +42,33 @@ impl Default for DiskComponent {
     }
 }
 
-/// Format bytes/s as KB/s or MB/s for I/O rate display.
-fn fmt_rate(bytes_per_sec: u64) -> String {
+/// Width of each metric column (Read, Write) — right-aligned.
+const COL_W: u16 = 12;
+/// Width of the usage percentage column.
+const USAGE_W: u16 = 7;
+
+/// Format a byte rate without the "/s" suffix — the column header carries
+/// the "(B/s)" unit context.
+fn fmt_rate_col(bytes_per_sec: u64) -> String {
     const MB: u64 = 1_000_000;
     const KB: u64 = 1_000;
     if bytes_per_sec >= MB {
-        format!("{:.1} MB/s", bytes_per_sec as f64 / MB as f64)
+        format!("{:.1} MB", bytes_per_sec as f64 / MB as f64)
     } else if bytes_per_sec >= KB {
-        format!("{:.1} KB/s", bytes_per_sec as f64 / KB as f64)
+        format!("{:.1} KB", bytes_per_sec as f64 / KB as f64)
     } else {
-        format!("{} B/s", bytes_per_sec)
+        format!("{} B", bytes_per_sec)
+    }
+}
+
+/// Truncate `s` to `max` chars, replacing the last 3 with `...` if truncated.
+fn truncate(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else if max <= 3 {
+        s[..max].to_string()
+    } else {
+        format!("{}...", &s[..max - 3])
     }
 }
 
@@ -114,6 +131,33 @@ impl Component for DiskComponent {
             return Ok(());
         };
 
+        // Derive name column width from available space.
+        let fixed = (COL_W * 2 + USAGE_W) as usize;
+        let name_w = (inner.width as usize).saturating_sub(fixed);
+
+        // Header row + list area
+        let chunks = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).split(inner);
+
+        let accent_bold = Style::new()
+            .fg(self.palette.accent)
+            .add_modifier(Modifier::BOLD);
+        let header = Line::from(vec![
+            Span::styled(format!("{:<width$}", "Device", width = name_w), accent_bold),
+            Span::styled(
+                format!("{:>width$}", "Read (B/s)", width = COL_W as usize),
+                accent_bold,
+            ),
+            Span::styled(
+                format!("{:>width$}", "Write (B/s)", width = COL_W as usize),
+                accent_bold,
+            ),
+            Span::styled(
+                format!("{:>width$}", "Use%", width = USAGE_W as usize),
+                accent_bold,
+            ),
+        ]);
+        frame.render_widget(header, chunks[0]);
+
         let items: Vec<ListItem> = snap
             .devices
             .iter()
@@ -128,21 +172,27 @@ impl Component for DiskComponent {
                 };
                 let line = Line::from(vec![
                     Span::styled(
-                        format!("{:<12}", dev.name),
+                        format!("{:<width$}", truncate(&dev.name, name_w), width = name_w),
                         Style::new().fg(self.palette.fg),
                     ),
-                    Span::styled(" r:", Style::new().fg(self.palette.dim)),
                     Span::styled(
-                        format!("{:>12}", fmt_rate(dev.read_bytes)),
+                        format!(
+                            "{:>width$}",
+                            fmt_rate_col(dev.read_bytes),
+                            width = COL_W as usize
+                        ),
                         Style::new().fg(self.palette.accent),
                     ),
-                    Span::styled("  w:", Style::new().fg(self.palette.dim)),
                     Span::styled(
-                        format!("{:>12}", fmt_rate(dev.write_bytes)),
+                        format!(
+                            "{:>width$}",
+                            fmt_rate_col(dev.write_bytes),
+                            width = COL_W as usize
+                        ),
                         Style::new().fg(self.palette.highlight),
                     ),
                     Span::styled(
-                        format!("  {:>5.1}%", dev.usage_pct),
+                        format!("{:>width$.1}%", dev.usage_pct, width = USAGE_W as usize - 1),
                         Style::new().fg(usage_color),
                     ),
                 ]);
@@ -153,7 +203,7 @@ impl Component for DiskComponent {
         let list = List::new(items)
             .highlight_style(Style::new().bg(self.palette.border).fg(self.palette.fg));
 
-        frame.render_stateful_widget(list, inner, &mut self.list_state);
+        frame.render_stateful_widget(list, chunks[1], &mut self.list_state);
         Ok(())
     }
 }
@@ -184,12 +234,25 @@ mod tests {
     }
 
     #[test]
-    fn fmt_rate_bytes() {
-        assert!(fmt_rate(500).contains("B/s"));
+    fn fmt_rate_col_bytes() {
+        // No "/s" suffix — unit context comes from the column header.
+        let s = fmt_rate_col(500);
+        assert!(s.contains('B') && !s.contains("/s"), "got: {s}");
     }
 
     #[test]
-    fn fmt_rate_kb() {
-        assert!(fmt_rate(500_000).contains("KB/s"));
+    fn fmt_rate_col_kb() {
+        let s = fmt_rate_col(500_000);
+        assert!(s.contains("KB") && !s.contains("/s"), "got: {s}");
+    }
+
+    #[test]
+    fn truncate_long_name() {
+        assert_eq!(truncate("nvme0n1p3_extra", 10), "nvme0n1...");
+    }
+
+    #[test]
+    fn truncate_short_name() {
+        assert_eq!(truncate("sda", 10), "sda");
     }
 }

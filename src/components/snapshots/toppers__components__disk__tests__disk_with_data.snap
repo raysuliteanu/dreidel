@@ -3,8 +3,8 @@ source: src/components/disk.rs
 expression: terminal.backend()
 ---
 "┌ [I]DISK ───────────────────────────────────────────────────────────┐"
-"│sda          r:       0 B/s  w:  102.4 KB/s   45.0%                 │"
-"│                                                                    │"
+"│Device                                 Read (B/s) Write (B/s)   Use%│"
+"│sda                                           0 B    102.4 KB  45.0%│"
 "│                                                                    │"
 "│                                                                    │"
 "│                                                                    │"

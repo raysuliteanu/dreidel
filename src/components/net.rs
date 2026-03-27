@@ -61,7 +61,10 @@ impl Default for NetComponent {
     }
 }
 
-/// Format bytes/s as KB/s or MB/s for display.
+/// Width of the TX and RX metric columns (right-aligned).
+const COL_W: u16 = 12;
+
+/// Format a byte rate with "/s" suffix — used for graph axis labels.
 fn fmt_rate(bytes_per_sec: u64) -> String {
     const MB: u64 = 1_000_000;
     const KB: u64 = 1_000;
@@ -71,6 +74,31 @@ fn fmt_rate(bytes_per_sec: u64) -> String {
         format!("{:.1} KB/s", bytes_per_sec as f64 / KB as f64)
     } else {
         format!("{} B/s", bytes_per_sec)
+    }
+}
+
+/// Format a byte rate without the "/s" suffix — used in list columns where
+/// the header already carries the "(B/s)" unit context.
+fn fmt_rate_col(bytes_per_sec: u64) -> String {
+    const MB: u64 = 1_000_000;
+    const KB: u64 = 1_000;
+    if bytes_per_sec >= MB {
+        format!("{:.1} MB", bytes_per_sec as f64 / MB as f64)
+    } else if bytes_per_sec >= KB {
+        format!("{:.1} KB", bytes_per_sec as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes_per_sec)
+    }
+}
+
+/// Truncate `s` to `max` chars, replacing the last 3 with `...` if truncated.
+fn truncate(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else if max <= 3 {
+        s[..max].to_string()
+    } else {
+        format!("{}...", &s[..max - 3])
     }
 }
 
@@ -177,27 +205,25 @@ impl NetComponent {
             return Ok(());
         };
 
+        // Derive name column width from available space.
+        let fixed = (COL_W * 2) as usize;
+        let name_w = (inner.width as usize).saturating_sub(fixed);
+
         // Header row + list area
         let chunks = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).split(inner);
 
+        let accent_bold = Style::new()
+            .fg(self.palette.accent)
+            .add_modifier(Modifier::BOLD);
         let header = Line::from(vec![
+            Span::styled(format!("{:<width$}", "Iface", width = name_w), accent_bold),
             Span::styled(
-                format!("{:<12}", "Iface"),
-                Style::new()
-                    .fg(self.palette.accent)
-                    .add_modifier(Modifier::BOLD),
+                format!("{:>width$}", "TX (B/s)", width = COL_W as usize),
+                accent_bold,
             ),
             Span::styled(
-                format!("{:>13}", "TX"),
-                Style::new()
-                    .fg(self.palette.accent)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                format!("{:>14}", "RX"),
-                Style::new()
-                    .fg(self.palette.accent)
-                    .add_modifier(Modifier::BOLD),
+                format!("{:>width$}", "RX (B/s)", width = COL_W as usize),
+                accent_bold,
             ),
         ]);
         frame.render_widget(header, chunks[0]);
@@ -208,15 +234,23 @@ impl NetComponent {
             .map(|iface| {
                 let line = Line::from(vec![
                     Span::styled(
-                        format!("{:<12}", iface.name),
+                        format!("{:<width$}", truncate(&iface.name, name_w), width = name_w),
                         Style::new().fg(self.palette.fg),
                     ),
                     Span::styled(
-                        format!("{:>13}", fmt_rate(iface.tx_bytes)),
+                        format!(
+                            "{:>width$}",
+                            fmt_rate_col(iface.tx_bytes),
+                            width = COL_W as usize
+                        ),
                         Style::new().fg(self.palette.accent),
                     ),
                     Span::styled(
-                        format!("{:>14}", fmt_rate(iface.rx_bytes)),
+                        format!(
+                            "{:>width$}",
+                            fmt_rate_col(iface.rx_bytes),
+                            width = COL_W as usize
+                        ),
                         Style::new().fg(self.palette.highlight),
                     ),
                 ]);
@@ -408,11 +442,31 @@ mod tests {
 
     #[test]
     fn fmt_rate_mb_threshold() {
+        // Graph labels keep "/s" suffix.
         assert!(fmt_rate(5_000_000).contains("MB/s"));
     }
 
     #[test]
     fn fmt_rate_kb_threshold() {
         assert!(fmt_rate(50_000).contains("KB/s"));
+    }
+
+    #[test]
+    fn fmt_rate_col_no_suffix() {
+        // Column cells drop "/s" — the header provides the unit context.
+        let s = fmt_rate_col(5_000_000);
+        assert!(s.contains("MB") && !s.contains("/s"), "got: {s}");
+        let s = fmt_rate_col(50_000);
+        assert!(s.contains("KB") && !s.contains("/s"), "got: {s}");
+    }
+
+    #[test]
+    fn truncate_long_iface() {
+        assert_eq!(truncate("wlp0s20f3u1u2", 10), "wlp0s20...");
+    }
+
+    #[test]
+    fn truncate_short_iface() {
+        assert_eq!(truncate("lo", 10), "lo");
     }
 }
