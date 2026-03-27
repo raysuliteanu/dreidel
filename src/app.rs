@@ -352,17 +352,19 @@ impl App {
         let show_help = self.show_help;
         let status_pos = self.status_pos;
         let slot_overrides = self.slot_overrides.clone();
+        let cpu_height = self
+            .components
+            .iter()
+            .find(|(id, _)| *id == ComponentId::Cpu)
+            .and_then(|(_, c)| c.preferred_height());
         let hints = LayoutHints {
-            left_top: self
-                .components
-                .iter()
-                .find(|(id, _)| *id == ComponentId::Cpu)
-                .and_then(|(_, c)| c.preferred_height()),
+            left_top: cpu_height,
             left_mid: self
                 .components
                 .iter()
                 .find(|(id, _)| *id == ComponentId::Mem)
                 .and_then(|(_, c)| c.preferred_height()),
+            right_top: cpu_height,
         };
         // Compute which component IDs have a layout slot so Tab cycling only
         // visits components the user can see. Use a zero-size rect — we only

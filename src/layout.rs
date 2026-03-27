@@ -13,6 +13,8 @@ pub struct LayoutHints {
     pub left_top: Option<u16>,
     /// Preferred height for the middle-left slot (e.g. Mem in Sidebar).
     pub left_mid: Option<u16>,
+    /// Preferred height for the top-right slot (e.g. CPU in Grid).
+    pub right_top: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -32,6 +34,12 @@ pub enum SlotId {
     Top,
     MidLeft,
     MidRight,
+    // grid preset: left col = [Mem, Disk, Net], right col = [Cpu, Process]
+    GridLeftTop,
+    GridLeftMid,
+    GridLeftBot,
+    GridRightTop,
+    GridRightBot,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -49,6 +57,7 @@ pub enum LayoutPreset {
     Sidebar,
     Classic,
     Dashboard,
+    Grid,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -110,6 +119,13 @@ impl LayoutPreset {
                 (MidLeft, Mem),
                 (MidRight, Net),
                 (Bottom, Process),
+            ]),
+            Self::Grid => HashMap::from([
+                (GridLeftTop, Mem),
+                (GridLeftMid, Disk),
+                (GridLeftBot, Net),
+                (GridRightTop, Cpu),
+                (GridRightBot, Process),
             ]),
         }
     }
@@ -175,6 +191,30 @@ impl LayoutPreset {
                     (Bottom, rows[2]),
                 ]
             }
+            Self::Grid => {
+                // Two columns: left 40% has [Mem, Disk, Net], right 60% has [Cpu, Process].
+                // CPU height comes from right_top hint; Process fills the rest.
+                let cols = Layout::horizontal([Constraint::Percentage(40), Constraint::Fill(1)])
+                    .split(area);
+                let left = Layout::vertical([
+                    Constraint::Fill(1),
+                    Constraint::Fill(1),
+                    Constraint::Fill(1),
+                ])
+                .split(cols[0]);
+                let cpu_constraint = hints
+                    .right_top
+                    .map(Constraint::Length)
+                    .unwrap_or(Constraint::Percentage(30));
+                let right = Layout::vertical([cpu_constraint, Constraint::Fill(1)]).split(cols[1]);
+                vec![
+                    (GridLeftTop, left[0]),
+                    (GridLeftMid, left[1]),
+                    (GridLeftBot, left[2]),
+                    (GridRightTop, right[0]),
+                    (GridRightBot, right[1]),
+                ]
+            }
         }
     }
 }
@@ -202,7 +242,7 @@ mod tests {
     #[test]
     fn layout_hints_shrink_cpu_slot() {
         let area = Rect::new(0, 0, 200, 50);
-        let hints = LayoutHints { left_top: Some(8), left_mid: Some(4) };
+        let hints = LayoutHints { left_top: Some(8), left_mid: Some(4), right_top: None };
         let map = LayoutPreset::Sidebar.compute(area, &SlotOverrides::default(), &hints);
         let cpu_rect = map.values().find(|(id, _)| *id == ComponentId::Cpu).map(|(_, r)| r).unwrap();
         assert_eq!(cpu_rect.height, 8);
@@ -214,5 +254,28 @@ mod tests {
         let (bar, rest) = split_status_bar(area, StatusBarPosition::Top);
         assert_eq!(bar.height, 1);
         assert_eq!(rest.height, 49);
+    }
+
+    #[test]
+    fn grid_preset_has_slot_for_every_main_component() {
+        let area = Rect::new(0, 0, 200, 50);
+        let map = LayoutPreset::Grid.compute(area, &SlotOverrides::default(), &LayoutHints::default());
+        let ids: std::collections::HashSet<ComponentId> =
+            map.values().map(|(id, _)| *id).collect();
+        use ComponentId::*;
+        assert!(ids.contains(&Cpu));
+        assert!(ids.contains(&Mem));
+        assert!(ids.contains(&Net));
+        assert!(ids.contains(&Disk));
+        assert!(ids.contains(&Process));
+    }
+
+    #[test]
+    fn grid_preset_cpu_height_follows_hint() {
+        let area = Rect::new(0, 0, 200, 50);
+        let hints = LayoutHints { left_top: None, left_mid: None, right_top: Some(11) };
+        let map = LayoutPreset::Grid.compute(area, &SlotOverrides::default(), &hints);
+        let cpu_rect = map.values().find(|(id, _)| *id == ComponentId::Cpu).map(|(_, r)| r).unwrap();
+        assert_eq!(cpu_rect.height, 11);
     }
 }
