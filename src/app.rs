@@ -263,7 +263,14 @@ impl App {
             } else if c == kb.debug {
                 let _ = self.action_tx.try_send(Action::ToggleDebug);
             } else if c == 'q' {
-                let _ = self.action_tx.try_send(Action::Quit);
+                match &self.focus {
+                    FocusState::FullScreen(_) => {
+                        let _ = self.action_tx.try_send(Action::ToggleFullScreen);
+                    }
+                    FocusState::Normal { .. } => {
+                        let _ = self.action_tx.try_send(Action::Quit);
+                    }
+                }
             }
             // help key: '?' (requires Shift) or 'h'/'H'
             if key.code == KeyCode::Char(kb.help) || c == 'h' {
@@ -491,5 +498,82 @@ impl App {
             }
         })?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyModifiers};
+
+    fn make_app() -> App {
+        App::new(Config::default(), false).expect("app construction should not fail")
+    }
+
+    fn key(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    /// Drain all pending actions from the channel and return them.
+    fn drain(app: &mut App) -> Vec<Action> {
+        let mut actions = Vec::new();
+        while let Ok(a) = app.action_rx.try_recv() {
+            actions.push(a);
+        }
+        actions
+    }
+
+    #[test]
+    fn q_in_normal_mode_sends_quit() {
+        let mut app = make_app();
+        app.focus = FocusState::Normal {
+            focused: ComponentId::Process,
+        };
+        app.handle_key_event(key('q')).unwrap();
+        let actions = drain(&mut app);
+        assert!(
+            actions.iter().any(|a| matches!(a, Action::Quit)),
+            "expected Quit, got {actions:?}"
+        );
+        assert!(
+            !actions
+                .iter()
+                .any(|a| matches!(a, Action::ToggleFullScreen)),
+            "should not toggle fullscreen in normal mode"
+        );
+    }
+
+    #[test]
+    fn q_in_fullscreen_mode_sends_toggle_fullscreen() {
+        let mut app = make_app();
+        app.focus = FocusState::FullScreen(ComponentId::Cpu);
+        app.handle_key_event(key('q')).unwrap();
+        let actions = drain(&mut app);
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, Action::ToggleFullScreen)),
+            "expected ToggleFullScreen, got {actions:?}"
+        );
+        assert!(
+            !actions.iter().any(|a| matches!(a, Action::Quit)),
+            "should not quit when in fullscreen mode"
+        );
+    }
+
+    #[test]
+    fn uppercase_q_in_fullscreen_mode_sends_toggle_fullscreen() {
+        let mut app = make_app();
+        app.focus = FocusState::FullScreen(ComponentId::Cpu);
+        // handle_key_event lowercases the char, so 'Q' == 'q'
+        app.handle_key_event(key('Q')).unwrap();
+        let actions = drain(&mut app);
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, Action::ToggleFullScreen)),
+            "expected ToggleFullScreen for 'Q', got {actions:?}"
+        );
+        assert!(!actions.iter().any(|a| matches!(a, Action::Quit)));
     }
 }
