@@ -273,9 +273,16 @@ impl Component for ProcessComponent {
                         let cols: &[SortColumn] = if self.is_wide_layout {
                             &[
                                 SortColumn::Pid,
+                                SortColumn::User,
+                                SortColumn::Priority,
+                                SortColumn::Nice,
+                                SortColumn::Virt,
+                                SortColumn::Res,
+                                SortColumn::Shr,
                                 SortColumn::Status,
                                 SortColumn::Cpu,
                                 SortColumn::Mem,
+                                SortColumn::Time,
                                 SortColumn::Name,
                             ]
                         } else {
@@ -504,33 +511,32 @@ impl ProcessComponent {
         let accent_bold = Style::new()
             .fg(self.palette.accent)
             .add_modifier(Modifier::BOLD);
-        let header_cells = [
-            ("PID", Constraint::Length(7)),
-            ("User", Constraint::Length(10)),
-            ("PR", Constraint::Length(4)),
-            ("NI", Constraint::Length(4)),
-            ("VIRT", Constraint::Length(10)),
-            ("RES", Constraint::Length(10)),
-            ("SHR", Constraint::Length(10)),
-            ("S", Constraint::Length(2)),
-            ("%CPU", Constraint::Length(6)),
-            ("%MEM", Constraint::Length(6)),
-            ("TIME", Constraint::Length(10)),
-            ("Command", Constraint::Fill(1)),
+        // Pair each header label with its SortColumn so the active column
+        // gets the direction indicator automatically.
+        let header_cells: Vec<_> = [
+            ("PID", SortColumn::Pid),
+            ("User", SortColumn::User),
+            ("PR", SortColumn::Priority),
+            ("NI", SortColumn::Nice),
+            ("VIRT", SortColumn::Virt),
+            ("RES", SortColumn::Res),
+            ("SHR", SortColumn::Shr),
+            ("S", SortColumn::Status),
+            ("%CPU", SortColumn::Cpu),
+            ("%MEM", SortColumn::Mem),
+            ("TIME", SortColumn::Time),
+            ("Command", SortColumn::Name),
         ]
         .iter()
-        .map(|(h, _)| {
-            let label = match *h {
-                "PID" if self.sort_col == SortColumn::Pid => format!("PID{dir_sym}"),
-                "%CPU" if self.sort_col == SortColumn::Cpu => format!("%CPU{dir_sym}"),
-                "%MEM" if self.sort_col == SortColumn::Mem => format!("%MEM{dir_sym}"),
-                "S" if self.sort_col == SortColumn::Status => format!("S{dir_sym}"),
-                "Command" if self.sort_col == SortColumn::Name => format!("Command{dir_sym}"),
-                _ => h.to_string(),
+        .map(|(h, col)| {
+            let label = if *col == self.sort_col {
+                format!("{h}{dir_sym}")
+            } else {
+                h.to_string()
             };
             ratatui::widgets::Cell::from(label).style(accent_bold)
         })
-        .collect::<Vec<_>>();
+        .collect();
         let header = Row::new(header_cells).height(1);
 
         let widths = [
@@ -824,7 +830,7 @@ mod tests {
     }
 
     /// Sort cycle in the extended view follows column left-to-right order:
-    /// PID → S → %CPU → %MEM → Command → PID …
+    /// PID → User → PR → NI → VIRT → RES → SHR → S → %CPU → %MEM → TIME → Command → PID …
     #[test]
     fn extended_view_sort_cycle_follows_column_order() {
         let mut comp = ProcessComponent::default();
@@ -832,65 +838,52 @@ mod tests {
             .unwrap();
         comp.set_focused(true);
 
-        // Use a 140-col terminal to trigger extended layout.
+        // 140-col terminal triggers extended layout.
         let mut terminal = Terminal::new(TestBackend::new(140, 10)).unwrap();
-
-        // Helper: render and return the Debug string of the backend buffer.
         let render = |comp: &mut ProcessComponent, term: &mut Terminal<TestBackend>| {
             term.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
             format!("{:?}", term.backend())
         };
 
-        // Default sort is Cpu — %CPU▼ must be visible first.
+        // Start at default (Cpu, index 8 in the extended cycle).  Cycling
+        // forwards visits every column exactly once before wrapping back.
+        // Cycle order: Pid(0) User(1) PR(2) NI(3) VIRT(4) RES(5) SHR(6)
+        //              S(7) %CPU(8) %MEM(9) TIME(10) Command(11)
+        let steps: &[(&str, &str)] = &[
+            ("%CPU▼", "initial default"),
+            ("%MEM▼", "Cpu→Mem"),
+            ("TIME▼", "Mem→Time"),
+            ("Command▼", "Time→Name"),
+            ("PID▼", "Name→Pid"),
+            ("User▼", "Pid→User"),
+            ("PR▼", "User→Priority"),
+            ("NI▼", "Priority→Nice"),
+            ("VIRT▼", "Nice→Virt"),
+            ("RES▼", "Virt→Res"),
+            ("SHR▼", "Res→Shr"),
+            ("S▼", "Shr→Status"),
+            ("%CPU▼", "Status→Cpu (wrap)"),
+        ];
+
+        // Check initial state without pressing 's'.
         let rendered = render(&mut comp, &mut terminal);
         assert!(
-            rendered.contains("%CPU▼"),
-            "expected %CPU▼; got: {rendered}"
+            rendered.contains(steps[0].0),
+            "step '{}': expected '{}'; got: {rendered}",
+            steps[0].1,
+            steps[0].0
         );
 
-        // Cpu → Mem
-        comp.handle_key_event(key_code(KeyCode::Char('s'))).unwrap();
-        let rendered = render(&mut comp, &mut terminal);
-        assert!(
-            rendered.contains("%MEM▼"),
-            "expected %MEM▼ after Cpu→Mem; got: {rendered}"
-        );
-        assert!(
-            !rendered.contains("%CPU▼"),
-            "unexpected %CPU▼; got: {rendered}"
-        );
-
-        // Mem → Name (shown as Command▼)
-        comp.handle_key_event(key_code(KeyCode::Char('s'))).unwrap();
-        let rendered = render(&mut comp, &mut terminal);
-        assert!(
-            rendered.contains("Command▼"),
-            "expected Command▼ after Mem→Name; got: {rendered}"
-        );
-
-        // Name → Pid
-        comp.handle_key_event(key_code(KeyCode::Char('s'))).unwrap();
-        let rendered = render(&mut comp, &mut terminal);
-        assert!(
-            rendered.contains("PID▼"),
-            "expected PID▼ after Name→Pid; got: {rendered}"
-        );
-
-        // Pid → Status (shown as S▼)
-        comp.handle_key_event(key_code(KeyCode::Char('s'))).unwrap();
-        let rendered = render(&mut comp, &mut terminal);
-        assert!(
-            rendered.contains("S▼"),
-            "expected S▼ after Pid→Status; got: {rendered}"
-        );
-
-        // Status → Cpu (wraps back)
-        comp.handle_key_event(key_code(KeyCode::Char('s'))).unwrap();
-        let rendered = render(&mut comp, &mut terminal);
-        assert!(
-            rendered.contains("%CPU▼"),
-            "expected %CPU▼ after wrap-around; got: {rendered}"
-        );
+        // Walk remaining steps, pressing 's' before each check.
+        // steps[12] is the wrap-around back to %CPU▼.
+        for (expected, label) in &steps[1..] {
+            comp.handle_key_event(key_code(KeyCode::Char('s'))).unwrap();
+            let rendered = render(&mut comp, &mut terminal);
+            assert!(
+                rendered.contains(expected),
+                "step '{label}': expected '{expected}'; got: {rendered}"
+            );
+        }
     }
 
     /// Sort cycle in the normal (narrow) view follows column left-to-right order:

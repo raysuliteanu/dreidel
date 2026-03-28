@@ -18,12 +18,21 @@ use crate::stats::snapshots::ProcessEntry;
 )]
 #[strum(serialize_all = "lowercase")]
 pub enum SortColumn {
+    // Normal-view columns (also appear in extended view)
     Pid,
     Name,
     #[default]
     Cpu,
     Mem,
     Status,
+    // Extended-view-only columns, in their left-to-right display order
+    User,
+    Priority,
+    Nice,
+    Virt,
+    Res,
+    Shr,
+    Time,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -44,6 +53,16 @@ pub fn sort_processes(procs: &mut [ProcessEntry], col: SortColumn, dir: SortDir)
             SortColumn::Pid => a.pid.cmp(&b.pid),
             SortColumn::Name => a.name.cmp(&b.name),
             SortColumn::Status => a.status.to_string().cmp(&b.status.to_string()),
+            SortColumn::User => a.user.cmp(&b.user),
+            SortColumn::Priority => a.priority.cmp(&b.priority),
+            SortColumn::Nice => a.nice.cmp(&b.nice),
+            SortColumn::Virt => a.virt_bytes.cmp(&b.virt_bytes),
+            SortColumn::Res => a.mem_bytes.cmp(&b.mem_bytes),
+            SortColumn::Shr => a.shr_bytes.cmp(&b.shr_bytes),
+            SortColumn::Time => a
+                .cpu_time_secs
+                .partial_cmp(&b.cpu_time_secs)
+                .unwrap_or(std::cmp::Ordering::Equal),
         };
         if dir == SortDir::Desc {
             ord.reverse()
@@ -68,19 +87,23 @@ mod tests {
     }
 
     #[test]
-    fn sort_columns_cycle_in_table_column_order() {
+    fn sort_column_enum_contains_all_expected_variants() {
         use strum::IntoEnumIterator;
-        let order: Vec<SortColumn> = SortColumn::iter().collect();
-        assert_eq!(
-            order,
-            vec![
-                SortColumn::Pid,
-                SortColumn::Name,
-                SortColumn::Cpu,
-                SortColumn::Mem,
-                SortColumn::Status,
-            ]
-        );
+        let all: Vec<SortColumn> = SortColumn::iter().collect();
+        // Normal-view columns
+        assert!(all.contains(&SortColumn::Pid));
+        assert!(all.contains(&SortColumn::Name));
+        assert!(all.contains(&SortColumn::Cpu));
+        assert!(all.contains(&SortColumn::Mem));
+        assert!(all.contains(&SortColumn::Status));
+        // Extended-view-only columns
+        assert!(all.contains(&SortColumn::User));
+        assert!(all.contains(&SortColumn::Priority));
+        assert!(all.contains(&SortColumn::Nice));
+        assert!(all.contains(&SortColumn::Virt));
+        assert!(all.contains(&SortColumn::Res));
+        assert!(all.contains(&SortColumn::Shr));
+        assert!(all.contains(&SortColumn::Time));
     }
 
     #[test]
