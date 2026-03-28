@@ -94,6 +94,8 @@ impl Component for DiskComponent {
 
     fn update(&mut self, action: Action) -> Result<Option<Action>> {
         if let Action::DiskUpdate(snap) = action {
+            let mut snap = snap;
+            snap.devices.sort_by(|left, right| left.name.cmp(&right.name));
             // Keep selection in bounds after refresh
             if let Some(sel) = self.list_state.selected()
                 && sel >= snap.devices.len()
@@ -331,5 +333,46 @@ mod tests {
             Some(0),
             "PageUp must clamp at first item"
         );
+    }
+
+    #[test]
+    fn sorts_devices_by_name_before_rendering() {
+        use crate::stats::snapshots::DiskDeviceSnapshot;
+
+        let mut comp = DiskComponent::default();
+        comp.update(Action::DiskUpdate(DiskSnapshot {
+            devices: vec![
+                DiskDeviceSnapshot {
+                    name: "zfs0".into(),
+                    read_bytes: 0,
+                    write_bytes: 0,
+                    usage_pct: 0.0,
+                },
+                DiskDeviceSnapshot {
+                    name: "nvme0n1".into(),
+                    read_bytes: 0,
+                    write_bytes: 0,
+                    usage_pct: 0.0,
+                },
+                DiskDeviceSnapshot {
+                    name: "sda".into(),
+                    read_bytes: 0,
+                    write_bytes: 0,
+                    usage_pct: 0.0,
+                },
+            ],
+        }))
+        .unwrap();
+
+        let names: Vec<&str> = comp
+            .latest
+            .as_ref()
+            .expect("disk snapshot should be stored")
+            .devices
+            .iter()
+            .map(|device| device.name.as_str())
+            .collect();
+
+        assert_eq!(names, vec!["nvme0n1", "sda", "zfs0"]);
     }
 }

@@ -143,6 +143,9 @@ impl Component for NetComponent {
 
     fn update(&mut self, action: Action) -> Result<Option<Action>> {
         if let Action::NetUpdate(snap) = action {
+            let mut snap = snap;
+            snap.interfaces
+                .sort_by(|left, right| left.name.cmp(&right.name));
             // Keep list selection in bounds after refresh
             if let Some(sel) = self.list_state.selected()
                 && sel >= snap.interfaces.len()
@@ -502,5 +505,41 @@ mod tests {
             Some(0),
             "PageUp must clamp at first item"
         );
+    }
+
+    #[test]
+    fn sorts_interfaces_by_name_before_rendering() {
+        let mut comp = NetComponent::default();
+        comp.update(Action::NetUpdate(NetSnapshot {
+            interfaces: vec![
+                crate::stats::snapshots::InterfaceSnapshot {
+                    name: "wlan0".into(),
+                    rx_bytes: 0,
+                    tx_bytes: 0,
+                },
+                crate::stats::snapshots::InterfaceSnapshot {
+                    name: "eth0".into(),
+                    rx_bytes: 0,
+                    tx_bytes: 0,
+                },
+                crate::stats::snapshots::InterfaceSnapshot {
+                    name: "lo".into(),
+                    rx_bytes: 0,
+                    tx_bytes: 0,
+                },
+            ],
+        }))
+        .unwrap();
+
+        let names: Vec<&str> = comp
+            .latest
+            .as_ref()
+            .expect("net snapshot should be stored")
+            .interfaces
+            .iter()
+            .map(|iface| iface.name.as_str())
+            .collect();
+
+        assert_eq!(names, vec!["eth0", "lo", "wlan0"]);
     }
 }
