@@ -98,6 +98,7 @@ impl Component for NetComponent {
                 if len == 0 {
                     return Ok(None);
                 }
+                const PAGE: usize = 10;
                 match key.code {
                     KeyCode::Up => {
                         let i = self.list_state.selected().unwrap_or(0);
@@ -109,6 +110,17 @@ impl Component for NetComponent {
                         if i + 1 < len {
                             self.list_state.select(Some(i + 1));
                         }
+                        return Ok(Some(Action::Render));
+                    }
+                    KeyCode::PageUp => {
+                        let i = self.list_state.selected().unwrap_or(0);
+                        self.list_state.select(Some(i.saturating_sub(PAGE)));
+                        return Ok(Some(Action::Render));
+                    }
+                    KeyCode::PageDown => {
+                        let i = self.list_state.selected().unwrap_or(0);
+                        self.list_state
+                            .select(Some((i + PAGE).min(len.saturating_sub(1))));
                         return Ok(Some(Action::Render));
                     }
                     KeyCode::Enter => {
@@ -447,5 +459,46 @@ mod tests {
     #[test]
     fn truncate_short_iface() {
         assert_eq!(truncate("lo", 10), "lo");
+    }
+
+    #[test]
+    fn page_up_down_clamp_to_list_bounds() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        // Build a snapshot with 5 interfaces — fewer than PAGE (10).
+        let mut snap = NetSnapshot::stub();
+        snap.interfaces = (0..5)
+            .map(|i| crate::stats::snapshots::InterfaceSnapshot {
+                name: format!("eth{i}"),
+                rx_bytes: 0,
+                tx_bytes: 0,
+            })
+            .collect();
+
+        let mut comp = NetComponent::default();
+        comp.update(Action::NetUpdate(snap)).unwrap();
+        comp.list_state.select(Some(2));
+
+        // PageDown from middle must clamp to last (index 4, not 12).
+        let action = comp
+            .handle_key_event(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE))
+            .unwrap();
+        assert!(matches!(action, Some(Action::Render)));
+        assert_eq!(
+            comp.list_state.selected(),
+            Some(4),
+            "PageDown must clamp at last item"
+        );
+
+        // PageUp from last must clamp to first (index 0).
+        let action = comp
+            .handle_key_event(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE))
+            .unwrap();
+        assert!(matches!(action, Some(Action::Render)));
+        assert_eq!(
+            comp.list_state.selected(),
+            Some(0),
+            "PageUp must clamp at first item"
+        );
     }
 }

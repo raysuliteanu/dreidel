@@ -220,6 +220,7 @@ impl Component for ProcessComponent {
                 Ok(None)
             }
             ProcessState::NormalList => {
+                const PAGE: usize = 10;
                 match key.code {
                     KeyCode::Down => {
                         let next = self
@@ -236,6 +237,25 @@ impl Component for ProcessComponent {
                             .table_state
                             .selected()
                             .and_then(|i| i.checked_sub(1))
+                            .unwrap_or(0);
+                        self.table_state.select(Some(prev));
+                        return Ok(Some(Action::Render));
+                    }
+                    KeyCode::PageDown => {
+                        let next = self
+                            .table_state
+                            .selected()
+                            .map(|i| i + PAGE)
+                            .unwrap_or(0)
+                            .min(self.displayed.len().saturating_sub(1));
+                        self.table_state.select(Some(next));
+                        return Ok(Some(Action::Render));
+                    }
+                    KeyCode::PageUp => {
+                        let prev = self
+                            .table_state
+                            .selected()
+                            .map(|i| i.saturating_sub(PAGE))
                             .unwrap_or(0);
                         self.table_state.select(Some(prev));
                         return Ok(Some(Action::Render));
@@ -697,6 +717,43 @@ mod tests {
         comp.update(Action::ProcUpdate(ProcSnapshot::stub()))
             .unwrap();
         assert_eq!(comp.table_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn page_up_down_clamp_to_list_bounds() {
+        // Build a snapshot with 5 processes — fewer than PAGE (10).
+        let mut snap = ProcSnapshot::stub();
+        let base = snap.processes[0].clone();
+        snap.processes = (0..5)
+            .map(|i| ProcessEntry {
+                pid: i,
+                name: format!("proc{i}"),
+                ..base.clone()
+            })
+            .collect();
+
+        let mut comp = ProcessComponent::default();
+        comp.set_focused(true);
+        comp.update(Action::ProcUpdate(snap)).unwrap();
+        comp.table_state.select(Some(2));
+
+        // PageDown must clamp to last row (index 4, not 12).
+        let action = comp.handle_key_event(key_code(KeyCode::PageDown)).unwrap();
+        assert!(matches!(action, Some(Action::Render)));
+        assert_eq!(
+            comp.table_state.selected(),
+            Some(4),
+            "PageDown must clamp at last row"
+        );
+
+        // PageUp must clamp to first row (index 0).
+        let action = comp.handle_key_event(key_code(KeyCode::PageUp)).unwrap();
+        assert!(matches!(action, Some(Action::Render)));
+        assert_eq!(
+            comp.table_state.selected(),
+            Some(0),
+            "PageUp must clamp at first row"
+        );
     }
 
     #[test]
