@@ -160,6 +160,13 @@ pub struct ProcessEntry {
     pub read_bytes: u64,
     pub write_bytes: u64,
     pub parent_pid: Option<u32>,
+    /// Kernel raw priority from /proc/<pid>/stat field 18.
+    /// For normal processes: 0–39 (20 = nice 0). Negative = RT process.
+    pub priority: i32,
+    /// Shared memory in bytes (SHR) from /proc/<pid>/statm field 3 × page_size.
+    pub shr_bytes: u64,
+    /// Total CPU time in seconds: (utime + stime) / ticks_per_second.
+    pub cpu_time_secs: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -182,11 +189,14 @@ impl ProcSnapshot {
                 status: ProcessStatus::Running,
                 start_time: 0,
                 run_time: 3600,
-                nice: 0,
+                nice: -5,
                 threads: 42,
                 read_bytes: 0,
                 write_bytes: 0,
                 parent_pid: Some(1),
+                priority: 15,
+                shr_bytes: 134_217_728,
+                cpu_time_secs: 123.4,
             }],
         }
     }

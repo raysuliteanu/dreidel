@@ -148,8 +148,9 @@ fn build_proc(sys: &System) -> ProcSnapshot {
             .values()
             .map(|p| {
                 let disk = p.disk_usage();
-                ProcessEntry {
-                    pid: p.pid().as_u32(),
+                let pid = p.pid().as_u32();
+                let mut entry = ProcessEntry {
+                    pid,
                     name: p.name().to_string_lossy().into_owned(),
                     cmd: p
                         .cmd()
@@ -168,14 +169,31 @@ fn build_proc(sys: &System) -> ProcSnapshot {
                     status: map_process_status(p.status()),
                     start_time: p.start_time(),
                     run_time: p.run_time(),
-                    // sysinfo doesn't expose nice value; deferred to v2
                     nice: 0,
-                    // sysinfo doesn't expose thread count directly; deferred to v2
                     threads: 0,
                     read_bytes: disk.read_bytes,
                     write_bytes: disk.written_bytes,
                     parent_pid: p.parent().map(|pid| pid.as_u32()),
+                    priority: 0,
+                    shr_bytes: 0,
+                    cpu_time_secs: 0.0,
+                };
+
+                #[cfg(target_os = "linux")]
+                if let Ok(proc) = procfs::process::Process::new(pid as i32) {
+                    if let Ok(stat) = proc.stat() {
+                        entry.priority = stat.priority as i32;
+                        entry.nice = stat.nice as i32;
+                        entry.threads = stat.num_threads as u32;
+                        entry.cpu_time_secs =
+                            (stat.utime + stat.stime) as f64 / procfs::ticks_per_second() as f64;
+                    }
+                    if let Ok(statm) = proc.statm() {
+                        entry.shr_bytes = statm.shared * procfs::page_size();
+                    }
                 }
+
+                entry
             })
             .collect(),
     }

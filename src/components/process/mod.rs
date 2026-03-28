@@ -13,7 +13,7 @@ use ratatui::{
 
 use crate::{
     action::Action,
-    components::{Component, keyed_title},
+    components::{Component, fmt_rate_col, keyed_title},
     config::ProcessConfig,
     stats::snapshots::ProcessEntry,
     theme::ColorPalette,
@@ -63,6 +63,7 @@ pub struct ProcessComponent {
     sort_dir: SortDir,
     pub state: ProcessState,
     focused: bool,
+    is_fullscreen: bool,
 }
 
 impl std::fmt::Debug for ProcessComponent {
@@ -92,6 +93,7 @@ impl Default for ProcessComponent {
             sort_dir: SortDir::default(),
             state: ProcessState::NormalList,
             focused: false,
+            is_fullscreen: false,
         }
     }
 }
@@ -135,6 +137,9 @@ impl ProcessComponent {
 impl Component for ProcessComponent {
     fn set_focused(&mut self, focused: bool) {
         self.focused = focused;
+        if !focused {
+            self.is_fullscreen = false;
+        }
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
@@ -281,9 +286,15 @@ impl Component for ProcessComponent {
     }
 
     fn update(&mut self, action: Action) -> Result<Option<Action>> {
-        if let Action::ProcUpdate(snap) = action {
-            self.raw = snap.processes;
-            self.refresh_display();
+        match action {
+            Action::ProcUpdate(snap) => {
+                self.raw = snap.processes;
+                self.refresh_display();
+            }
+            Action::ToggleFullScreen if self.focused => {
+                self.is_fullscreen = !self.is_fullscreen;
+            }
+            _ => {}
         }
         Ok(None)
     }
@@ -306,7 +317,7 @@ impl Component for ProcessComponent {
         frame.render_widget(block, area);
 
         // Kill error dialog — shown when kill -TERM fails
-        if let ProcessState::KillError { message } = &self.state {
+        if let ProcessState::KillError { message } = &self.state.clone() {
             let dialog_w = (inner.width * 3 / 4).max(30).min(inner.width);
             let dialog_h = 6_u16.min(inner.height);
             let dialog = Rect::new(
@@ -343,7 +354,7 @@ impl Component for ProcessComponent {
         }
 
         // Kill confirm overlay — shown in place of the table
-        if let ProcessState::KillConfirm { pid, name } = &self.state {
+        if let ProcessState::KillConfirm { pid, name } = &self.state.clone() {
             let msg = format!(" Kill {} (pid {})? [y/n] ", name, pid);
             let line = Line::from(Span::styled(
                 msg,
@@ -356,7 +367,7 @@ impl Component for ProcessComponent {
         // Detail view overlay
         if let ProcessState::DetailView { pid } = &self.state {
             let pid = *pid;
-            if let Some(p) = self.displayed.iter().find(|p| p.pid == pid) {
+            if let Some(p) = self.displayed.iter().find(|p| p.pid == pid).cloned() {
                 let lines: Vec<Line> = vec![
                     Line::from(format!(" PID:     {}", p.pid)),
                     Line::from(format!(" Name:    {}", p.name)),
@@ -385,7 +396,16 @@ impl Component for ProcessComponent {
             }
         }
 
-        // Normal list / table
+        if self.is_fullscreen {
+            self.draw_fullscreen(frame, inner)
+        } else {
+            self.draw_normal(frame, inner)
+        }
+    }
+}
+
+impl ProcessComponent {
+    fn draw_normal(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let dir_sym = if self.sort_dir == SortDir::Desc {
             "▼"
         } else {
@@ -440,9 +460,105 @@ impl Component for ProcessComponent {
             )
             .highlight_symbol("> ");
 
-        frame.render_stateful_widget(table, inner, &mut self.table_state);
+        frame.render_stateful_widget(table, area, &mut self.table_state);
         Ok(())
     }
+
+    fn draw_fullscreen(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        // Column widths: PID(7) User(10) PR(4) NI(4) VIRT(10) RES(10) SHR(10) S(2) %CPU(6) %MEM(6) TIME(10) Command(Fill)
+        let accent_bold = Style::new()
+            .fg(self.palette.accent)
+            .add_modifier(Modifier::BOLD);
+        let header_cells = [
+            ("PID", Constraint::Length(7)),
+            ("User", Constraint::Length(10)),
+            ("PR", Constraint::Length(4)),
+            ("NI", Constraint::Length(4)),
+            ("VIRT", Constraint::Length(10)),
+            ("RES", Constraint::Length(10)),
+            ("SHR", Constraint::Length(10)),
+            ("S", Constraint::Length(2)),
+            ("%CPU", Constraint::Length(6)),
+            ("%MEM", Constraint::Length(6)),
+            ("TIME", Constraint::Length(10)),
+            ("Command", Constraint::Fill(1)),
+        ]
+        .iter()
+        .map(|(h, _)| ratatui::widgets::Cell::from(*h).style(accent_bold))
+        .collect::<Vec<_>>();
+        let header = Row::new(header_cells).height(1);
+
+        let widths = [
+            Constraint::Length(7),
+            Constraint::Length(10),
+            Constraint::Length(4),
+            Constraint::Length(4),
+            Constraint::Length(10),
+            Constraint::Length(10),
+            Constraint::Length(10),
+            Constraint::Length(2),
+            Constraint::Length(6),
+            Constraint::Length(6),
+            Constraint::Length(10),
+            Constraint::Fill(1),
+        ];
+
+        let rows: Vec<Row> = self
+            .displayed
+            .iter()
+            .map(|p| {
+                let status_char = match p.status {
+                    crate::stats::snapshots::ProcessStatus::Running => "R",
+                    crate::stats::snapshots::ProcessStatus::Sleeping => "S",
+                    crate::stats::snapshots::ProcessStatus::Idle => "I",
+                    crate::stats::snapshots::ProcessStatus::Stopped => "T",
+                    crate::stats::snapshots::ProcessStatus::Zombie => "Z",
+                    crate::stats::snapshots::ProcessStatus::Dead => "X",
+                    crate::stats::snapshots::ProcessStatus::Unknown => "?",
+                };
+                let cmd = if p.cmd.is_empty() {
+                    p.name.clone()
+                } else {
+                    p.cmd.join(" ")
+                };
+                Row::new(vec![
+                    p.pid.to_string(),
+                    p.user.clone(),
+                    p.priority.to_string(),
+                    p.nice.to_string(),
+                    fmt_rate_col(p.virt_bytes),
+                    fmt_rate_col(p.mem_bytes),
+                    fmt_rate_col(p.shr_bytes),
+                    status_char.to_string(),
+                    format!("{:.1}", p.cpu_pct),
+                    format!("{:.1}", p.mem_pct),
+                    fmt_cpu_time(p.cpu_time_secs),
+                    cmd,
+                ])
+                .style(Style::new().fg(cpu_color(p.cpu_pct, &self.palette)))
+            })
+            .collect();
+
+        let table = Table::new(rows, widths)
+            .header(header)
+            .row_highlight_style(
+                Style::new()
+                    .fg(self.palette.highlight)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("> ");
+
+        frame.render_stateful_widget(table, area, &mut self.table_state);
+        Ok(())
+    }
+}
+
+/// Format total CPU time as `MM:SS`.
+fn fmt_cpu_time(secs: f64) -> String {
+    let total = secs as u64;
+    let m = total / 60;
+    let s = total % 60;
+    format!("{:02}:{:02}", m, s)
 }
 
 fn kill_process(pid: u32) -> Result<()> {
@@ -572,5 +688,59 @@ mod tests {
         // Verify the error text appears somewhere in the rendered output
         let rendered = format!("{:?}", terminal.backend());
         assert!(rendered.contains("Kill Failed") || rendered.contains("permission"));
+    }
+
+    #[test]
+    fn toggle_fullscreen_via_action_when_focused() {
+        let mut comp = ProcessComponent::default();
+        comp.set_focused(true);
+        assert!(!comp.is_fullscreen);
+
+        comp.update(Action::ToggleFullScreen).unwrap();
+        assert!(comp.is_fullscreen);
+
+        comp.update(Action::ToggleFullScreen).unwrap();
+        assert!(!comp.is_fullscreen);
+    }
+
+    #[test]
+    fn toggle_fullscreen_ignored_when_not_focused() {
+        let mut comp = ProcessComponent::default();
+        // focused defaults to false
+        comp.update(Action::ToggleFullScreen).unwrap();
+        assert!(
+            !comp.is_fullscreen,
+            "unfocused component must not enter fullscreen"
+        );
+    }
+
+    #[test]
+    fn set_focused_false_clears_fullscreen() {
+        let mut comp = ProcessComponent::default();
+        comp.set_focused(true);
+        comp.is_fullscreen = true;
+        comp.set_focused(false);
+        assert!(!comp.is_fullscreen);
+    }
+
+    #[test]
+    fn fullscreen_renders_without_panic() {
+        let mut comp = ProcessComponent::default();
+        comp.update(Action::ProcUpdate(ProcSnapshot::stub()))
+            .unwrap();
+        comp.set_focused(true);
+        comp.update(Action::ToggleFullScreen).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(140, 30)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    fn fmt_cpu_time_formats_correctly() {
+        assert_eq!(fmt_cpu_time(0.0), "00:00");
+        assert_eq!(fmt_cpu_time(59.9), "00:59");
+        assert_eq!(fmt_cpu_time(60.0), "01:00");
+        assert_eq!(fmt_cpu_time(123.4), "02:03");
+        assert_eq!(fmt_cpu_time(3661.0), "61:01");
     }
 }
