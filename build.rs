@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 fn main() {
     let pkg_version = std::env::var("CARGO_PKG_VERSION").unwrap();
 

@@ -3,6 +3,7 @@ name = "toppers"
 version = "0.1.0"
 edition = "2024"
 repository = "https://github.com/raysuliteanu/toppers"
+license = "GPL-3.0-only"
 
 [lib]
 name = "toppers"

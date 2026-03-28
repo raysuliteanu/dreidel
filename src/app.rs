@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use anyhow::{Context, Result};
 use crossterm::event::KeyEvent;
 use ratatui::{
@@ -392,6 +394,17 @@ impl App {
     }
 
     fn render(&mut self, tui: &mut Tui) -> Result<()> {
+        self.render_to(&mut tui.terminal)
+    }
+
+    /// Inner render that accepts any ratatui backend; used directly in tests via TestBackend.
+    fn render_to<B: ratatui::backend::Backend>(
+        &mut self,
+        terminal: &mut ratatui::Terminal<B>,
+    ) -> Result<()>
+    where
+        B::Error: Send + Sync + 'static,
+    {
         let focused_id = match &self.focus {
             FocusState::Normal { focused } | FocusState::FullScreen(focused) => *focused,
         };
@@ -428,7 +441,7 @@ impl App {
             .filter(|id| visible.contains(id) && probe_map.values().any(|(cid, _)| cid == id))
             .collect();
 
-        tui.draw(|frame| {
+        terminal.draw(|frame| {
             let total_area = frame.area();
 
             let (status_rect, content_area) = split_status_bar(total_area, status_pos);
@@ -448,29 +461,29 @@ impl App {
                 let _ = self.debug_comp.draw(frame, da);
             }
 
-            match &focus {
-                FocusState::FullScreen(id) => {
-                    if let Some((_, comp)) = self.components.iter_mut().find(|(cid, _)| cid == id) {
-                        let modal = centered_pct(main_area, 90, 90);
-                        frame.render_widget(Clear, modal);
-                        let _ = comp.draw(frame, modal);
-                    }
+            // Always draw the normal layout first so it remains visible behind
+            // any overlay (fullscreen modal, help, loading).
+            let slot_map = preset.compute(main_area, &slot_overrides, &hints);
+            for (component_id, rect) in slot_map.values() {
+                if !visible.contains(component_id) {
+                    continue;
                 }
-                FocusState::Normal { .. } => {
-                    let slot_map = preset.compute(main_area, &slot_overrides, &hints);
-                    for (component_id, rect) in slot_map.values() {
-                        if !visible.contains(component_id) {
-                            continue;
-                        }
-                        if let Some((_, comp)) = self
-                            .components
-                            .iter_mut()
-                            .find(|(cid, _)| cid == component_id)
-                        {
-                            let _ = comp.draw(frame, *rect);
-                        }
-                    }
+                if let Some((_, comp)) = self
+                    .components
+                    .iter_mut()
+                    .find(|(cid, _)| cid == component_id)
+                {
+                    let _ = comp.draw(frame, *rect);
                 }
+            }
+
+            // Fullscreen overlay: drawn on top of the normal layout like a modal.
+            if let FocusState::FullScreen(id) = &focus
+                && let Some((_, comp)) = self.components.iter_mut().find(|(cid, _)| cid == id)
+            {
+                let modal = centered_pct(main_area, 90, 90);
+                frame.render_widget(Clear, modal);
+                let _ = comp.draw(frame, modal);
             }
 
             // Help overlay is drawn last so it appears on top of everything else.
@@ -525,6 +538,11 @@ impl App {
 mod tests {
     use super::*;
     use crossterm::event::{KeyCode, KeyModifiers};
+    use ratatui::{Terminal, backend::TestBackend};
+
+    use crate::stats::snapshots::{
+        CpuSnapshot, DiskSnapshot, MemSnapshot, NetSnapshot, ProcSnapshot, SysSnapshot,
+    };
 
     fn make_app() -> App {
         App::new(Config::default(), false).expect("app construction should not fail")
@@ -541,6 +559,45 @@ mod tests {
             actions.push(a);
         }
         actions
+    }
+
+    /// Feed stub data to all components and clear the loading overlay so that
+    /// render tests see real component output rather than the loading spinner.
+    fn feed_stubs(app: &mut App) {
+        for (_, comp) in &mut app.components {
+            let _ = comp.update(Action::CpuUpdate(CpuSnapshot::stub()));
+            let _ = comp.update(Action::MemUpdate(MemSnapshot::stub()));
+            let _ = comp.update(Action::NetUpdate(NetSnapshot::stub()));
+            let _ = comp.update(Action::DiskUpdate(DiskSnapshot::stub()));
+            let _ = comp.update(Action::ProcUpdate(ProcSnapshot::stub()));
+            let _ = comp.update(Action::SysUpdate(SysSnapshot::stub()));
+        }
+        app.loading = false;
+    }
+
+    /// Returns true if any cell in `buf` within the given rect has a non-blank symbol.
+    fn has_content(buf: &ratatui::buffer::Buffer, rect: Rect) -> bool {
+        for y in rect.top()..rect.bottom() {
+            for x in rect.left()..rect.right() {
+                if buf[(x, y)].symbol() != " " {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Returns a rect that is strictly outside the modal region — the thin strip
+    /// on the left side of the screen.  With the sidebar preset, CPU occupies
+    /// the left column, so this area is always rendered in every mode.
+    fn outside_modal_strip(terminal_area: Rect) -> Rect {
+        // centered_pct at 90% leaves 5% on each side; use the leftmost 3 cols.
+        Rect::new(
+            terminal_area.x,
+            terminal_area.y + 1,
+            3,
+            terminal_area.height - 1,
+        )
     }
 
     #[test]
@@ -613,6 +670,82 @@ mod tests {
         assert!(
             !actions.iter().any(|a| matches!(a, Action::Quit)),
             "should not quit when Esc pressed in fullscreen mode"
+        );
+    }
+
+    // --- Render tests -------------------------------------------------------
+
+    /// In fullscreen mode the modal overlay is drawn on top of the normal
+    /// layout.  The background components must still be visible — cells outside
+    /// the 90% modal rect must contain content from the normal layout.
+    #[test]
+    fn fullscreen_renders_normal_layout_behind_modal() {
+        let mut app = make_app();
+        feed_stubs(&mut app);
+        app.focus = FocusState::FullScreen(ComponentId::Process);
+
+        let mut terminal = Terminal::new(TestBackend::new(200, 50)).unwrap();
+        app.render_to(&mut terminal).unwrap();
+
+        let buf = terminal.backend().buffer().clone();
+        let terminal_area = Rect::new(0, 0, 200, 50);
+        let strip = outside_modal_strip(terminal_area);
+
+        assert!(
+            has_content(&buf, strip),
+            "cells outside the fullscreen modal must contain background layout content"
+        );
+    }
+
+    /// In normal mode every component slot is drawn and no modal overlay exists,
+    /// so the full content area should have rendered content.
+    #[test]
+    fn normal_mode_renders_full_layout() {
+        let mut app = make_app();
+        feed_stubs(&mut app);
+        app.focus = FocusState::Normal {
+            focused: ComponentId::Process,
+        };
+
+        let mut terminal = Terminal::new(TestBackend::new(200, 50)).unwrap();
+        app.render_to(&mut terminal).unwrap();
+
+        let buf = terminal.backend().buffer().clone();
+        // The left column of the sidebar layout should have content.
+        let left_col = Rect::new(0, 1, 3, 49);
+        assert!(
+            has_content(&buf, left_col),
+            "left column must have content in normal mode"
+        );
+        // The right column (process panel) should also have content.
+        let right_col = Rect::new(197, 1, 3, 49);
+        assert!(
+            has_content(&buf, right_col),
+            "right column must have content in normal mode"
+        );
+    }
+
+    /// Switching from fullscreen back to normal mode must restore full-layout
+    /// rendering (no stale modal geometry in subsequent renders).
+    #[test]
+    fn toggle_back_to_normal_renders_full_layout() {
+        let mut app = make_app();
+        feed_stubs(&mut app);
+
+        // Enter fullscreen then immediately return to normal.
+        app.focus = FocusState::FullScreen(ComponentId::Process);
+        app.focus = FocusState::Normal {
+            focused: ComponentId::Process,
+        };
+
+        let mut terminal = Terminal::new(TestBackend::new(200, 50)).unwrap();
+        app.render_to(&mut terminal).unwrap();
+
+        let buf = terminal.backend().buffer().clone();
+        let left_col = Rect::new(0, 1, 3, 49);
+        assert!(
+            has_content(&buf, left_col),
+            "left column must have content after returning to normal mode"
         );
     }
 }

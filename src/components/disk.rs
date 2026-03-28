@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
@@ -60,6 +62,7 @@ impl Component for DiskComponent {
         if len == 0 {
             return Ok(None);
         }
+        const PAGE: usize = 10;
         match key.code {
             KeyCode::Up => {
                 let i = self.list_state.selected().unwrap_or(0);
@@ -72,6 +75,17 @@ impl Component for DiskComponent {
                     self.list_state.select(Some(i + 1));
                     return Ok(Some(Action::Render));
                 }
+            }
+            KeyCode::PageUp => {
+                let i = self.list_state.selected().unwrap_or(0);
+                self.list_state.select(Some(i.saturating_sub(PAGE)));
+                return Ok(Some(Action::Render));
+            }
+            KeyCode::PageDown => {
+                let i = self.list_state.selected().unwrap_or(0);
+                self.list_state
+                    .select(Some((i + PAGE).min(len.saturating_sub(1))));
+                return Ok(Some(Action::Render));
             }
             _ => {}
         }
@@ -274,6 +288,48 @@ mod tests {
         assert!(
             matches!(up, Some(Action::Render)),
             "Up should trigger Render"
+        );
+    }
+
+    #[test]
+    fn page_up_down_clamp_to_list_bounds() {
+        use crate::stats::snapshots::DiskDeviceSnapshot;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let make_device = |name: &str| DiskDeviceSnapshot {
+            name: name.into(),
+            read_bytes: 0,
+            write_bytes: 0,
+            usage_pct: 0.0,
+        };
+        // 5 devices — fewer than PAGE (10) so clamping is exercised.
+        let snap = DiskSnapshot {
+            devices: (0..5).map(|i| make_device(&format!("sd{i}"))).collect(),
+        };
+        let mut comp = DiskComponent::default();
+        comp.update(Action::DiskUpdate(snap)).unwrap();
+        comp.list_state.select(Some(2));
+
+        // PageDown from middle must jump to last (index 4, not 12).
+        let action = comp
+            .handle_key_event(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE))
+            .unwrap();
+        assert!(matches!(action, Some(Action::Render)));
+        assert_eq!(
+            comp.list_state.selected(),
+            Some(4),
+            "PageDown must clamp at last item"
+        );
+
+        // PageUp from last must jump to first (index 0, not wrap negative).
+        let action = comp
+            .handle_key_event(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE))
+            .unwrap();
+        assert!(matches!(action, Some(Action::Render)));
+        assert_eq!(
+            comp.list_state.selected(),
+            Some(0),
+            "PageUp must clamp at first item"
         );
     }
 }
