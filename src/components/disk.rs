@@ -95,7 +95,8 @@ impl Component for DiskComponent {
     fn update(&mut self, action: Action) -> Result<Option<Action>> {
         if let Action::DiskUpdate(snap) = action {
             let mut snap = snap;
-            snap.devices.sort_by(|left, right| left.name.cmp(&right.name));
+            snap.devices
+                .sort_by(|left, right| left.name.cmp(&right.name));
             // Keep selection in bounds after refresh
             if let Some(sel) = self.list_state.selected()
                 && sel >= snap.devices.len()

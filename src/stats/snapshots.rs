@@ -53,8 +53,21 @@ impl MemSnapshot {
 #[derive(Debug, Clone)]
 pub struct InterfaceSnapshot {
     pub name: String,
-    pub rx_bytes: u64, // bytes/s since last tick
-    pub tx_bytes: u64,
+    pub rx_bytes: u64,       // bytes/s since last tick
+    pub tx_bytes: u64,       // bytes/s since last tick
+    pub rx_packets: u64,     // packets/s since last tick
+    pub tx_packets: u64,     // packets/s since last tick
+    pub rx_errors: u64,      // errors since last tick
+    pub tx_errors: u64,      // errors since last tick
+    pub total_rx_bytes: u64, // cumulative since boot
+    pub total_tx_bytes: u64, // cumulative since boot
+    pub mac_address: String,
+    pub ip_addresses: Vec<String>, // e.g. ["192.168.1.1/24", "fe80::1/64"]
+    pub mtu: u64,
+    #[cfg(target_os = "linux")]
+    pub rx_dropped: u64, // cumulative drops from /proc/net/dev
+    #[cfg(target_os = "linux")]
+    pub tx_dropped: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +82,19 @@ impl NetSnapshot {
                 name: "eth0".into(),
                 rx_bytes: 4_800_000,
                 tx_bytes: 1_200_000,
+                rx_packets: 3_200,
+                tx_packets: 850,
+                rx_errors: 0,
+                tx_errors: 0,
+                total_rx_bytes: 48_318_382_080,
+                total_tx_bytes: 12_884_901_888,
+                mac_address: "aa:bb:cc:dd:ee:ff".into(),
+                ip_addresses: vec!["192.168.1.100/24".into(), "fe80::1/64".into()],
+                mtu: 1500,
+                #[cfg(target_os = "linux")]
+                rx_dropped: 0,
+                #[cfg(target_os = "linux")]
+                tx_dropped: 0,
             }],
         }
     }
