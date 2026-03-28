@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use crate::stats::snapshots::ProcessEntry;
 
 #[derive(Debug, Clone, PartialEq)]

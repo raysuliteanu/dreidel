@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use insta::assert_snapshot;
 use ratatui::{Terminal, backend::TestBackend};
 use toppers::{

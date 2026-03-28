@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use crate::{action::Action, components::Component, theme::ColorPalette};
 use anyhow::Result;
 use ratatui::{

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use ratatui::layout::{Constraint, Layout, Rect};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

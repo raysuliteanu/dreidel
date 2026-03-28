@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
 use anyhow::{Context, Result};
 use crossterm::event::KeyEvent;
 use ratatui::{
