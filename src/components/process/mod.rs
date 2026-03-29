@@ -512,12 +512,7 @@ impl ProcessComponent {
 
         let table = Table::new(rows, widths)
             .header(header)
-            .row_highlight_style(
-                Style::new()
-                    .fg(self.palette.highlight)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .highlight_symbol("> ");
+            .row_highlight_style(Style::new().bg(self.palette.border).fg(self.palette.fg));
 
         frame.render_stateful_widget(table, area, &mut self.table_state);
         Ok(())
@@ -614,12 +609,7 @@ impl ProcessComponent {
 
         let table = Table::new(rows, widths)
             .header(header)
-            .row_highlight_style(
-                Style::new()
-                    .fg(self.palette.highlight)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .highlight_symbol("> ");
+            .row_highlight_style(Style::new().bg(self.palette.border).fg(self.palette.fg));
 
         frame.render_stateful_widget(table, area, &mut self.table_state);
         Ok(())

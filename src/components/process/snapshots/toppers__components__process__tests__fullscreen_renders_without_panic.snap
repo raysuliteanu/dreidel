@@ -3,8 +3,8 @@ source: src/components/process/mod.rs
 expression: terminal.backend()
 ---
 "┌ [P]rocesses ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐"
-"│  PID     User       PR   NI   VIRT       RES        SHR        S  %CPU▼  %MEM   TIME       Command                                       │"
-"│> 12345   ray        15   -5   2147.5 MB  536.9 MB   134.2 MB   R  18.4   3.2    02:03      firefox                                       │"
+"│PID     User       PR   NI   VIRT       RES        SHR        S  %CPU▼  %MEM   TIME       Command                                         │"
+"│12345   ray        15   -5   2147.5 MB  536.9 MB   134.2 MB   R  18.4   3.2    02:03      firefox                                         │"
 "│                                                                                                                                          │"
 "│                                                                                                                                          │"
 "│                                                                                                                                          │"
