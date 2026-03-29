@@ -127,13 +127,13 @@ pub struct Config {
 }
 
 impl Config {
-    /// Load config from XDG path (~/.config/toppers/config.toml).
+    /// Load config from XDG path (~/.config/dreidel/config.toml).
     /// Returns default config if the file does not exist.
     pub fn load(path: Option<&std::path::Path>) -> anyhow::Result<Self> {
         use anyhow::Context;
         let default_path = dirs::config_dir()
             .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join("toppers/config.toml");
+            .join("dreidel/config.toml");
         let path = path.unwrap_or(&default_path);
         if !path.exists() {
             return Ok(Self::default());

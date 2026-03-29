@@ -17,9 +17,9 @@ fn main() {
 
     if let Some(ref id) = change_id {
         println!("cargo:rustc-env=JJ_CHANGE_ID={id}");
-        println!("cargo:rustc-env=TOPPERS_VERSION={pkg_version} ({id})");
+        println!("cargo:rustc-env=DREIDEL_VERSION={pkg_version} ({id})");
     } else {
-        println!("cargo:rustc-env=TOPPERS_VERSION={pkg_version}");
+        println!("cargo:rustc-env=DREIDEL_VERSION={pkg_version}");
     }
 
     // Rebuild when jj state changes (best-effort — .jj/working_copy/checkout is updated on commit)

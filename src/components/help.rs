@@ -57,7 +57,7 @@ impl Component for HelpComponent {
         let repository = env!("CARGO_PKG_REPOSITORY");
         let change_id = option_env!("JJ_CHANGE_ID").unwrap_or("");
 
-        let title = format!(" toppers v{version} ");
+        let title = format!(" dreidel v{version} ");
         let block = Block::default()
             .title(Span::styled(
                 title,
