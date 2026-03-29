@@ -105,9 +105,18 @@ impl Component for NetComponent {
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
         match &self.view.clone() {
             NetView::Detail { .. } => {
-                if key.code == KeyCode::Esc {
-                    self.view = NetView::List;
-                    return Ok(Some(Action::Render));
+                match key.code {
+                    KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+                        self.view = NetView::List;
+                        // If we opened fullscreen on Enter, close it now.
+                        let action = if self.is_fullscreen {
+                            Action::ToggleFullScreen
+                        } else {
+                            Action::Render
+                        };
+                        return Ok(Some(action));
+                    }
+                    _ => {}
                 }
             }
             NetView::List => {
@@ -149,7 +158,13 @@ impl Component for NetComponent {
                             self.view = NetView::Detail {
                                 name: iface.name.clone(),
                             };
-                            return Ok(Some(Action::Render));
+                            // Open the fullscreen modal unless already fullscreen.
+                            let action = if !self.is_fullscreen {
+                                Action::ToggleFullScreen
+                            } else {
+                                Action::Render
+                            };
+                            return Ok(Some(action));
                         }
                     }
                     _ => {}
@@ -524,7 +539,7 @@ impl NetComponent {
                     fmt_packets(iface.rx_packets),
                     Style::new().fg(self.palette.highlight),
                 ),
-                Span::styled("   Esc: back", Style::new().fg(self.palette.dim)),
+                Span::styled("   Esc/q: back", Style::new().fg(self.palette.dim)),
             ]);
             frame.render_widget(summary, sections[2]);
         }
@@ -597,6 +612,49 @@ mod tests {
         assert!(matches!(comp.view, NetView::Detail { .. }));
         // Esc returns to list
         comp.handle_key_event(key(KeyCode::Esc)).unwrap();
+        assert!(matches!(comp.view, NetView::List));
+    }
+
+    #[test]
+    fn q_closes_detail_view() {
+        let mut comp = NetComponent::default();
+        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.list_state.select(Some(0));
+        comp.handle_key_event(key(KeyCode::Enter)).unwrap();
+        assert!(matches!(comp.view, NetView::Detail { .. }));
+        // q also returns to list
+        comp.handle_key_event(key(KeyCode::Char('q'))).unwrap();
+        assert!(matches!(comp.view, NetView::List));
+    }
+
+    #[test]
+    fn enter_emits_toggle_fullscreen_when_not_fullscreen() {
+        let mut comp = NetComponent::default();
+        comp.set_focused(true);
+        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.list_state.select(Some(0));
+        let action = comp.handle_key_event(key(KeyCode::Enter)).unwrap();
+        assert!(
+            matches!(action, Some(Action::ToggleFullScreen)),
+            "Enter must request fullscreen when not already fullscreen"
+        );
+    }
+
+    #[test]
+    fn esc_in_detail_emits_toggle_fullscreen_when_fullscreen() {
+        let mut comp = NetComponent::default();
+        comp.set_focused(true);
+        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        // Simulate fullscreen being active (as the app would set via ToggleFullScreen).
+        comp.is_fullscreen = true;
+        comp.view = NetView::Detail {
+            name: "lo".to_string(),
+        };
+        let action = comp.handle_key_event(key(KeyCode::Esc)).unwrap();
+        assert!(
+            matches!(action, Some(Action::ToggleFullScreen)),
+            "Esc from detail must close fullscreen"
+        );
         assert!(matches!(comp.view, NetView::List));
     }
 
