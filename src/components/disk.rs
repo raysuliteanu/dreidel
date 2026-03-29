@@ -97,11 +97,13 @@ impl Component for DiskComponent {
             let mut snap = snap;
             snap.devices
                 .sort_by(|left, right| left.name.cmp(&right.name));
-            // Keep selection in bounds after refresh
-            if let Some(sel) = self.list_state.selected()
-                && sel >= snap.devices.len()
-            {
-                self.list_state.select(snap.devices.len().checked_sub(1));
+            // Select first row on initial data; keep selection in bounds after refresh
+            let len = snap.devices.len();
+            if len == 0 {
+                self.list_state.select(None);
+            } else {
+                let sel = self.list_state.selected().unwrap_or(0).min(len - 1);
+                self.list_state.select(Some(sel));
             }
             self.latest = Some(snap);
         }
@@ -333,6 +335,112 @@ mod tests {
             comp.list_state.selected(),
             Some(0),
             "PageUp must clamp at first item"
+        );
+    }
+
+    #[test]
+    fn first_update_auto_selects_row_zero() {
+        let mut comp = DiskComponent::default();
+        assert_eq!(
+            comp.list_state.selected(),
+            None,
+            "no selection before first update"
+        );
+        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+            .unwrap();
+        assert_eq!(
+            comp.list_state.selected(),
+            Some(0),
+            "first update must select row 0"
+        );
+    }
+
+    #[test]
+    fn selection_preserved_across_updates() {
+        use crate::stats::snapshots::DiskDeviceSnapshot;
+        let two = DiskSnapshot {
+            devices: vec![
+                DiskDeviceSnapshot {
+                    name: "sda".into(),
+                    read_bytes: 0,
+                    write_bytes: 0,
+                    usage_pct: 0.0,
+                },
+                DiskDeviceSnapshot {
+                    name: "sdb".into(),
+                    read_bytes: 0,
+                    write_bytes: 0,
+                    usage_pct: 0.0,
+                },
+            ],
+        };
+        let mut comp = DiskComponent::default();
+        comp.update(Action::DiskUpdate(two.clone())).unwrap();
+        comp.list_state.select(Some(1));
+        comp.update(Action::DiskUpdate(two)).unwrap();
+        assert_eq!(
+            comp.list_state.selected(),
+            Some(1),
+            "selection must survive re-update"
+        );
+    }
+
+    #[test]
+    fn selection_clamped_when_list_shrinks() {
+        use crate::stats::snapshots::DiskDeviceSnapshot;
+        let three = DiskSnapshot {
+            devices: vec![
+                DiskDeviceSnapshot {
+                    name: "sda".into(),
+                    read_bytes: 0,
+                    write_bytes: 0,
+                    usage_pct: 0.0,
+                },
+                DiskDeviceSnapshot {
+                    name: "sdb".into(),
+                    read_bytes: 0,
+                    write_bytes: 0,
+                    usage_pct: 0.0,
+                },
+                DiskDeviceSnapshot {
+                    name: "sdc".into(),
+                    read_bytes: 0,
+                    write_bytes: 0,
+                    usage_pct: 0.0,
+                },
+            ],
+        };
+        let one = DiskSnapshot {
+            devices: vec![DiskDeviceSnapshot {
+                name: "sda".into(),
+                read_bytes: 0,
+                write_bytes: 0,
+                usage_pct: 0.0,
+            }],
+        };
+        let mut comp = DiskComponent::default();
+        comp.update(Action::DiskUpdate(three)).unwrap();
+        comp.list_state.select(Some(2));
+        comp.update(Action::DiskUpdate(one)).unwrap();
+        assert_eq!(
+            comp.list_state.selected(),
+            Some(0),
+            "selection must clamp to last row"
+        );
+    }
+
+    #[test]
+    fn selection_cleared_when_list_becomes_empty() {
+        let mut comp = DiskComponent::default();
+        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+            .unwrap();
+        assert_eq!(comp.list_state.selected(), Some(0));
+        comp.update(Action::DiskUpdate(DiskSnapshot { devices: vec![] }))
+            .unwrap();
+        assert_eq!(
+            comp.list_state.selected(),
+            None,
+            "empty list must clear selection"
         );
     }
 

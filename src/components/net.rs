@@ -165,11 +165,13 @@ impl Component for NetComponent {
                 let mut snap = snap;
                 snap.interfaces
                     .sort_by(|left, right| left.name.cmp(&right.name));
-                // Keep list selection in bounds after refresh
-                if let Some(sel) = self.list_state.selected()
-                    && sel >= snap.interfaces.len()
-                {
-                    self.list_state.select(snap.interfaces.len().checked_sub(1));
+                // Select first row on initial data; keep selection in bounds after refresh
+                let len = snap.interfaces.len();
+                if len == 0 {
+                    self.list_state.select(None);
+                } else {
+                    let sel = self.list_state.selected().unwrap_or(0).min(len - 1);
+                    self.list_state.select(Some(sel));
                 }
                 // Accumulate per-interface rate history
                 for iface in &snap.interfaces {
@@ -796,6 +798,71 @@ mod tests {
         comp.set_focused(false);
         comp.update(Action::ToggleFullScreen).unwrap();
         assert!(!comp.is_fullscreen);
+    }
+
+    #[test]
+    fn first_update_auto_selects_row_zero() {
+        let mut comp = NetComponent::default();
+        assert_eq!(
+            comp.list_state.selected(),
+            None,
+            "no selection before first update"
+        );
+        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        assert_eq!(
+            comp.list_state.selected(),
+            Some(0),
+            "first update must select row 0"
+        );
+    }
+
+    #[test]
+    fn selection_preserved_across_updates() {
+        let snap = NetSnapshot {
+            interfaces: vec![interface("eth0"), interface("eth1"), interface("eth2")],
+        };
+        let mut comp = NetComponent::default();
+        comp.update(Action::NetUpdate(snap.clone())).unwrap();
+        comp.list_state.select(Some(2));
+        comp.update(Action::NetUpdate(snap)).unwrap();
+        assert_eq!(
+            comp.list_state.selected(),
+            Some(2),
+            "selection must survive re-update"
+        );
+    }
+
+    #[test]
+    fn selection_clamped_when_list_shrinks() {
+        let three = NetSnapshot {
+            interfaces: vec![interface("eth0"), interface("eth1"), interface("eth2")],
+        };
+        let one = NetSnapshot {
+            interfaces: vec![interface("eth0")],
+        };
+        let mut comp = NetComponent::default();
+        comp.update(Action::NetUpdate(three)).unwrap();
+        comp.list_state.select(Some(2));
+        comp.update(Action::NetUpdate(one)).unwrap();
+        assert_eq!(
+            comp.list_state.selected(),
+            Some(0),
+            "selection must clamp to last row"
+        );
+    }
+
+    #[test]
+    fn selection_cleared_when_list_becomes_empty() {
+        let mut comp = NetComponent::default();
+        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        assert_eq!(comp.list_state.selected(), Some(0));
+        comp.update(Action::NetUpdate(NetSnapshot { interfaces: vec![] }))
+            .unwrap();
+        assert_eq!(
+            comp.list_state.selected(),
+            None,
+            "empty list must clear selection"
+        );
     }
 
     /// Detail view shows MAC, IP, and error/drop stats.
