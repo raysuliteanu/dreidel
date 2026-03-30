@@ -8,12 +8,13 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
 };
+use std::path::PathBuf;
 
 use crate::{components::Component, config::KeyBindings, theme::ColorPalette};
 
 // Popup dimensions
 const POPUP_WIDTH: u16 = 46;
-const POPUP_HEIGHT: u16 = 19;
+const POPUP_HEIGHT: u16 = 28;
 
 #[derive(Debug)]
 pub struct HelpComponent {
@@ -77,13 +78,23 @@ impl Component for HelpComponent {
             .add_modifier(Modifier::BOLD);
         let fg = Style::new().fg(self.palette.fg);
 
+        let section = Style::new()
+            .fg(self.palette.fg)
+            .add_modifier(Modifier::UNDERLINED);
+
+        let config_path = tilde_path(
+            dirs::config_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("dreidel/config.toml"),
+        );
+        let log_path = tilde_path(
+            dirs::data_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("dreidel/dreidel.log"),
+        );
+
         let mut lines: Vec<Line> = vec![
-            Line::from(Span::styled(
-                "Global keys",
-                Style::new()
-                    .fg(self.palette.fg)
-                    .add_modifier(Modifier::UNDERLINED),
-            )),
+            Line::from(Span::styled("Global keys", section)),
             key_line(kb.focus_proc, "focus process", &key, &dim),
             key_line(kb.focus_cpu, "focus cpu", &key, &dim),
             key_line(kb.focus_net, "focus net", &key, &dim),
@@ -96,15 +107,20 @@ impl Component for HelpComponent {
                 Span::styled(" cycle focus", dim),
             ]),
             Line::from(""),
-            Line::from(Span::styled(
-                "Process keys",
-                Style::new()
-                    .fg(self.palette.fg)
-                    .add_modifier(Modifier::UNDERLINED),
-            )),
+            Line::from(Span::styled("Process keys", section)),
+            Line::from(vec![
+                Span::styled(format!(" {:<4}", "Ent"), key),
+                Span::styled(" open detail", dim),
+            ]),
             key_line('/', "filter", &key, &dim),
             key_line('s', "cycle sort column", &key, &dim),
             key_line('k', "kill process", &key, &dim),
+            Line::from(""),
+            Line::from(Span::styled("Net keys", section)),
+            Line::from(vec![
+                Span::styled(format!(" {:<4}", "Ent"), key),
+                Span::styled(" open detail (fullscreen)", dim),
+            ]),
             Line::from(""),
         ];
 
@@ -117,7 +133,18 @@ impl Component for HelpComponent {
                 Span::styled(change_id, Style::new().fg(self.palette.dim)),
             ]));
         }
-        lines.push(Line::from(Span::styled("Press ?, h or Esc to close", dim)));
+        lines.push(Line::from(vec![
+            Span::styled("config  ", dim),
+            Span::styled(config_path, fg),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("log     ", dim),
+            Span::styled(log_path, fg),
+        ]));
+        lines.push(Line::from(Span::styled(
+            "Press ?, h, q or Esc to close",
+            dim,
+        )));
 
         frame.render_widget(Paragraph::new(lines), inner);
         Ok(())
@@ -129,6 +156,15 @@ fn key_line<'a>(c: char, desc: &'a str, key: &Style, dim: &Style) -> Line<'a> {
         Span::styled(format!(" {:<4}", c), *key),
         Span::styled(format!(" {desc}"), *dim),
     ])
+}
+
+fn tilde_path(path: PathBuf) -> String {
+    if let Some(home) = dirs::home_dir()
+        && let Ok(rel) = path.strip_prefix(&home)
+    {
+        return format!("~/{}", rel.display());
+    }
+    path.display().to_string()
 }
 
 #[cfg(test)]
@@ -143,9 +179,13 @@ mod tests {
         // JJ change IDs are baked in at compile time and change every commit;
         // redact them so the snapshot stays stable across commits.
         settings.add_filter(r"change: [a-z0-9]+", "change: [CHANGE_ID]");
+        // Config and log paths vary per system; redact them for snapshot stability.
+        settings.add_filter(r"config  \S+", "config  [CONFIG_PATH]");
+        settings.add_filter(r"log     \S+", "log     [LOG_PATH]");
         settings.bind(|| {
             let mut comp = HelpComponent::new(ColorPalette::dark(), KeyBindings::default());
-            let mut terminal = Terminal::new(TestBackend::new(60, 24)).unwrap();
+            // Tall enough to show the full popup (POPUP_HEIGHT=28) with margin.
+            let mut terminal = Terminal::new(TestBackend::new(60, 32)).unwrap();
             terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
             assert_snapshot!("help_overlay", terminal.backend());
         });

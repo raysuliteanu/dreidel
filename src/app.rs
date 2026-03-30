@@ -202,7 +202,9 @@ impl App {
                     let is_close = key.code == KeyCode::Esc
                         || key.code == KeyCode::Char(self.config.keybindings.help)
                         || key.code == KeyCode::Char('h')
-                        || key.code == KeyCode::Char('H');
+                        || key.code == KeyCode::Char('H')
+                        || key.code == KeyCode::Char('q')
+                        || key.code == KeyCode::Char('Q');
                     if is_close {
                         let _ = self.action_tx.try_send(Action::ToggleHelp);
                     }
