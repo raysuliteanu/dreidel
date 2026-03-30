@@ -5,7 +5,7 @@ expression: terminal.backend()
 "                                                            "
 "                                                            "
 "                                                            "
-"       ┌ toppers v0.1.0 ────────────────────────────┐       "
+"       ┌ dreidel v0.1.0 ────────────────────────────┐       "
 "       │Global keys                                 │       "
 "       │ p    focus process                         │       "
 "       │ c    focus cpu                             │       "

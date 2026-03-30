@@ -4,7 +4,7 @@ use clap::Parser;
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
-#[command(name = "toppers", about = "A modern TUI system monitor", version = env!("TOPPERS_VERSION"))]
+#[command(name = "dreidel", about = "A modern TUI system monitor", version = env!("DREIDEL_VERSION"))]
 pub struct Args {
     #[arg(long, help = "Color theme: auto | light | dark")]
     pub theme: Option<String>,
@@ -61,13 +61,13 @@ mod tests {
 
     #[test]
     fn parses_theme_flag() {
-        let args = Args::try_parse_from(["toppers", "--theme", "dark"]).unwrap();
+        let args = Args::try_parse_from(["dreidel", "--theme", "dark"]).unwrap();
         assert_eq!(args.theme, Some("dark".to_string()));
     }
 
     #[test]
     fn init_config_flag_parses() {
-        let args = Args::try_parse_from(["toppers", "--init-config"]).unwrap();
+        let args = Args::try_parse_from(["dreidel", "--init-config"]).unwrap();
         assert!(args.init_config);
     }
 }

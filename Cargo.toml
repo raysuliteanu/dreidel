@@ -1,16 +1,16 @@
 [package]
-name = "toppers"
+name = "dreidel"
 version = "0.1.0"
 edition = "2024"
 repository = "https://github.com/raysuliteanu/toppers"
 license = "GPL-3.0-only"
 
 [lib]
-name = "toppers"
+name = "dreidel"
 path = "src/lib.rs"
 
 [[bin]]
-name = "toppers"
+name = "dreidel"
 path = "src/main.rs"
 
 [dependencies]

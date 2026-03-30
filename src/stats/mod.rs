@@ -109,13 +109,37 @@ fn read_vmstat_field(field: &str) -> Option<u64> {
 }
 
 fn build_net(nets: &Networks) -> NetSnapshot {
+    #[cfg(target_os = "linux")]
+    let dev_stats = procfs::net::dev_status().unwrap_or_default();
+
     NetSnapshot {
         interfaces: nets
             .iter()
-            .map(|(name, data)| InterfaceSnapshot {
-                name: name.clone(),
-                rx_bytes: data.received(),
-                tx_bytes: data.transmitted(),
+            .map(|(name, data)| {
+                let ip_addresses = data
+                    .ip_networks()
+                    .iter()
+                    .map(|n| format!("{}/{}", n.addr, n.prefix))
+                    .collect();
+
+                InterfaceSnapshot {
+                    name: name.clone(),
+                    rx_bytes: data.received(),
+                    tx_bytes: data.transmitted(),
+                    rx_packets: data.packets_received(),
+                    tx_packets: data.packets_transmitted(),
+                    rx_errors: data.errors_on_received(),
+                    tx_errors: data.errors_on_transmitted(),
+                    total_rx_bytes: data.total_received(),
+                    total_tx_bytes: data.total_transmitted(),
+                    mac_address: data.mac_address().to_string(),
+                    ip_addresses,
+                    mtu: data.mtu(),
+                    #[cfg(target_os = "linux")]
+                    rx_dropped: dev_stats.get(name).map(|s| s.recv_drop).unwrap_or(0),
+                    #[cfg(target_os = "linux")]
+                    tx_dropped: dev_stats.get(name).map(|s| s.sent_drop).unwrap_or(0),
+                }
             })
             .collect(),
     }

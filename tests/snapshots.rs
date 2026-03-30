@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-use insta::assert_snapshot;
-use ratatui::{Terminal, backend::TestBackend};
-use toppers::{
+use dreidel::{
     action::Action,
     components::{Component, cpu::CpuComponent, status_bar::StatusBarComponent},
     stats::snapshots::{CpuSnapshot, MemSnapshot, SysSnapshot},
     theme::ColorPalette,
 };
+use insta::assert_snapshot;
+use ratatui::{Terminal, backend::TestBackend};
 
 #[test]
 fn cpu_component_snapshot() {

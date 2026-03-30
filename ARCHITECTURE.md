@@ -1,6 +1,6 @@
 # Architecture
 
-toppers is a terminal system monitor written in Rust. It uses an async event loop with
+dreidel is a terminal system monitor written in Rust. It uses an async event loop with
 a message-passing action bus to decouple data collection from rendering.
 
 ## Crate Structure
@@ -28,7 +28,7 @@ The crate is a dual lib+bin package:
 | `strum`                          | Derive `Display`, `EnumString`, `EnumIter` on enums (`ComponentId`, `LayoutPreset`) |
 | `chrono`                         | Timestamps in `SysSnapshot`                                                         |
 | `dirs`                           | XDG config directory path resolution                                                |
-| `tracing` / `tracing-subscriber` | Structured logging to `~/.local/share/toppers/toppers.log`                          |
+| `tracing` / `tracing-subscriber` | Structured logging to `~/.local/share/dreidel/dreidel.log`                          |
 | `futures`                        | `StreamExt`/`FutureExt` used in the `Tui` event loop                                |
 | `insta`                          | Snapshot testing for component `draw()` output                                      |
 
@@ -184,7 +184,7 @@ in tests to avoid depending on the live stats collector. The structs are:
 
 ### `src/config.rs` — `Config`
 
-Loaded from `~/.config/toppers/config.toml` (XDG). All fields have serde defaults
+Loaded from `~/.config/dreidel/config.toml` (XDG). All fields have serde defaults
 so a missing file is fine. Sub-structs:
 
 - `GeneralConfig` — `refresh_rate_ms` (humantime), `theme`, `channel_capacity`
@@ -245,5 +245,5 @@ INSTA_UPDATE=always cargo test
 
 ## Logging
 
-All log output goes to `~/.local/share/toppers/toppers.log` via `tracing`. Nothing
+All log output goes to `~/.local/share/dreidel/dreidel.log` via `tracing`. Nothing
 is written to stderr — stderr would corrupt the alternate-screen TUI.
