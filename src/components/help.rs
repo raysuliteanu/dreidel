@@ -14,7 +14,7 @@ use crate::{components::Component, config::KeyBindings, theme::ColorPalette};
 
 // Popup dimensions
 const POPUP_WIDTH: u16 = 46;
-const POPUP_HEIGHT: u16 = 28;
+const POPUP_HEIGHT: u16 = 31;
 
 #[derive(Debug)]
 pub struct HelpComponent {
@@ -117,6 +117,12 @@ impl Component for HelpComponent {
             key_line('k', "kill process", &key, &dim),
             Line::from(""),
             Line::from(Span::styled("Net keys", section)),
+            Line::from(vec![
+                Span::styled(format!(" {:<4}", "Ent"), key),
+                Span::styled(" open detail (fullscreen)", dim),
+            ]),
+            Line::from(""),
+            Line::from(Span::styled("Disk keys", section)),
             Line::from(vec![
                 Span::styled(format!(" {:<4}", "Ent"), key),
                 Span::styled(" open detail (fullscreen)", dim),

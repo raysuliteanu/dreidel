@@ -103,9 +103,38 @@ impl NetSnapshot {
 #[derive(Debug, Clone)]
 pub struct DiskDeviceSnapshot {
     pub name: String,
-    pub read_bytes: u64, // bytes/s
-    pub write_bytes: u64,
-    pub usage_pct: f32, // 0.0–100.0
+    pub read_bytes: u64,        // bytes/s since last tick
+    pub write_bytes: u64,       // bytes/s since last tick
+    pub usage_pct: f32,         // 0.0–100.0
+    pub total_read_bytes: u64,  // cumulative since boot
+    pub total_write_bytes: u64, // cumulative since boot
+    pub kind: String,           // "SSD", "HDD", "Unknown"
+    pub file_system: String,    // e.g. "ext4", "btrfs"
+    pub mount_point: String,    // e.g. "/", "/boot"
+    pub is_removable: bool,
+    pub is_read_only: bool,
+    pub total_space: u64,     // bytes
+    pub available_space: u64, // bytes
+}
+
+impl Default for DiskDeviceSnapshot {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            read_bytes: 0,
+            write_bytes: 0,
+            usage_pct: 0.0,
+            total_read_bytes: 0,
+            total_write_bytes: 0,
+            kind: String::new(),
+            file_system: String::new(),
+            mount_point: String::new(),
+            is_removable: false,
+            is_read_only: false,
+            total_space: 0,
+            available_space: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -121,6 +150,15 @@ impl DiskSnapshot {
                 read_bytes: 0,
                 write_bytes: 102_400,
                 usage_pct: 45.0,
+                total_read_bytes: 1_073_741_824,
+                total_write_bytes: 536_870_912,
+                kind: "SSD".into(),
+                file_system: "ext4".into(),
+                mount_point: "/".into(),
+                is_removable: false,
+                is_read_only: false,
+                total_space: 500_107_862_016,
+                available_space: 275_059_200_000,
             }],
         }
     }

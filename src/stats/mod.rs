@@ -4,7 +4,7 @@ pub mod snapshots;
 pub use snapshots::*;
 
 use crate::action::Action;
-use sysinfo::{Components, Disks, Networks, System};
+use sysinfo::{Components, DiskKind, Disks, Networks, System};
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
@@ -166,6 +166,19 @@ fn build_disk(disks: &Disks) -> DiskSnapshot {
                     } else {
                         0.0
                     },
+                    total_read_bytes: usage.total_read_bytes,
+                    total_write_bytes: usage.total_written_bytes,
+                    kind: match d.kind() {
+                        DiskKind::HDD => "HDD".into(),
+                        DiskKind::SSD => "SSD".into(),
+                        DiskKind::Unknown(_) => "Unknown".into(),
+                    },
+                    file_system: d.file_system().to_string_lossy().into_owned(),
+                    mount_point: d.mount_point().to_string_lossy().into_owned(),
+                    is_removable: d.is_removable(),
+                    is_read_only: d.is_read_only(),
+                    total_space: d.total_space(),
+                    available_space: d.available_space(),
                 }
             })
             .collect(),
