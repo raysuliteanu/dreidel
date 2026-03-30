@@ -146,9 +146,14 @@ fn build_net(nets: &Networks) -> NetSnapshot {
 }
 
 fn build_disk(disks: &Disks) -> DiskSnapshot {
+    // sysinfo iterates mount points, so the same physical device can appear
+    // multiple times (e.g. bind mounts). Keep only the first occurrence of
+    // each device name so the UI doesn't show duplicates.
+    let mut seen = std::collections::HashSet::new();
     DiskSnapshot {
         devices: disks
             .iter()
+            .filter(|d| seen.insert(d.name().to_string_lossy().into_owned()))
             .map(|d| {
                 let usage = d.usage();
                 DiskDeviceSnapshot {

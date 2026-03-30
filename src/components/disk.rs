@@ -97,6 +97,9 @@ impl Component for DiskComponent {
             let mut snap = snap;
             snap.devices
                 .sort_by(|left, right| left.name.cmp(&right.name));
+            // sysinfo can report the same device multiple times (one per mount
+            // point). Sort puts duplicates adjacent; dedup removes them.
+            snap.devices.dedup_by(|a, b| a.name == b.name);
             // Select first row on initial data; keep selection in bounds after refresh
             let len = snap.devices.len();
             if len == 0 {
@@ -441,6 +444,52 @@ mod tests {
             comp.list_state.selected(),
             None,
             "empty list must clear selection"
+        );
+    }
+
+    #[test]
+    fn duplicate_device_names_are_not_shown() {
+        // sysinfo iterates mount points, so the same physical device can appear
+        // multiple times. build_disk deduplicates before sending the snapshot;
+        // this test documents the expected contract at the component boundary.
+        use crate::stats::snapshots::DiskDeviceSnapshot;
+        let snap = DiskSnapshot {
+            devices: vec![
+                DiskDeviceSnapshot {
+                    name: "nvme0n1p3".into(),
+                    read_bytes: 0,
+                    write_bytes: 0,
+                    usage_pct: 42.0,
+                },
+                DiskDeviceSnapshot {
+                    name: "nvme0n1p3".into(), // duplicate — bind mount
+                    read_bytes: 0,
+                    write_bytes: 0,
+                    usage_pct: 42.0,
+                },
+                DiskDeviceSnapshot {
+                    name: "sda".into(),
+                    read_bytes: 0,
+                    write_bytes: 0,
+                    usage_pct: 10.0,
+                },
+            ],
+        };
+        let mut comp = DiskComponent::default();
+        comp.update(Action::DiskUpdate(snap)).unwrap();
+        let names: Vec<&str> = comp
+            .latest
+            .as_ref()
+            .unwrap()
+            .devices
+            .iter()
+            .map(|d| d.name.as_str())
+            .collect();
+        let unique: std::collections::HashSet<&str> = names.iter().copied().collect();
+        assert_eq!(
+            names.len(),
+            unique.len(),
+            "device list must not contain duplicate names; got {names:?}"
         );
     }
 
