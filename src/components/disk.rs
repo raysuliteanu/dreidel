@@ -330,10 +330,12 @@ impl DiskComponent {
         frame.render_widget(block, area);
 
         // Show stats header rows only when there is enough vertical room for a useful graph.
-        let stats_rows: u16 = if inner.height >= 12 { 5 } else { 0 };
+        let stats_rows: u16 = if inner.height >= 12 { 4 } else { 0 };
+        let sep_h: u16 = if stats_rows > 0 { 1 } else { 0 };
 
         let sections = Layout::vertical([
             Constraint::Length(stats_rows),
+            Constraint::Length(sep_h),
             Constraint::Fill(1),
             Constraint::Length(1),
         ])
@@ -347,8 +349,12 @@ impl DiskComponent {
             let dim = Style::new().fg(self.palette.dim);
             let val = Style::new().fg(self.palette.fg);
 
+            // Fixed column widths keep values aligned regardless of label length.
+            // LW=13 ensures at least 1 space after the longest label "Write total:" (12 chars).
+            const LW: usize = 13;
+            const VW: usize = 14; // value column: "12884.9 MB" fits in 14
+
             let stat_lines = Layout::vertical([
-                Constraint::Length(1),
                 Constraint::Length(1),
                 Constraint::Length(1),
                 Constraint::Length(1),
@@ -359,9 +365,9 @@ impl DiskComponent {
             // Row 0: mount point and disk kind
             frame.render_widget(
                 Line::from(vec![
-                    Span::styled("Mount: ", dim),
-                    Span::styled(dev.mount_point.clone(), val),
-                    Span::styled("   Type: ", dim),
+                    Span::styled(format!("{:<LW$}", "Mount:"), dim),
+                    Span::styled(format!("{:<VW$}", truncate(&dev.mount_point, VW)), val),
+                    Span::styled(format!("{:<LW$}", "Type:"), dim),
                     Span::styled(dev.kind.clone(), val),
                 ]),
                 stat_lines[0],
@@ -370,45 +376,51 @@ impl DiskComponent {
             // Row 1: filesystem, read-only, removable
             frame.render_widget(
                 Line::from(vec![
-                    Span::styled("FS: ", dim),
-                    Span::styled(dev.file_system.clone(), val),
-                    Span::styled("   RO: ", dim),
-                    Span::styled(if dev.is_read_only { "yes" } else { "no" }, val),
-                    Span::styled("   Removable: ", dim),
+                    Span::styled(format!("{:<LW$}", "FS:"), dim),
+                    Span::styled(format!("{:<VW$}", dev.file_system.clone()), val),
+                    Span::styled(format!("{:<LW$}", "RO:"), dim),
+                    Span::styled(
+                        format!("{:<VW$}", if dev.is_read_only { "yes" } else { "no" }),
+                        val,
+                    ),
+                    Span::styled(format!("{:<LW$}", "Removable:"), dim),
                     Span::styled(if dev.is_removable { "yes" } else { "no" }, val),
                 ]),
                 stat_lines[1],
             );
 
-            // Row 2: total and free space
+            // Row 2: total, free, and used
             frame.render_widget(
                 Line::from(vec![
-                    Span::styled("Total: ", dim),
-                    Span::styled(fmt_bytes(dev.total_space), val),
-                    Span::styled("   Free: ", dim),
-                    Span::styled(fmt_bytes(dev.available_space), val),
+                    Span::styled(format!("{:<LW$}", "Total:"), dim),
+                    Span::styled(format!("{:<VW$}", fmt_bytes(dev.total_space)), val),
+                    Span::styled(format!("{:<LW$}", "Free:"), dim),
+                    Span::styled(format!("{:<VW$}", fmt_bytes(dev.available_space)), val),
+                    Span::styled(format!("{:<LW$}", "Used:"), dim),
+                    Span::styled(format!("{:.1}%", dev.usage_pct), val),
                 ]),
                 stat_lines[2],
             );
 
-            // Row 3: usage percentage
+            // Row 3: cumulative I/O totals
             frame.render_widget(
                 Line::from(vec![
-                    Span::styled("Used: ", dim),
-                    Span::styled(format!("{:.1}%", dev.usage_pct), val),
+                    Span::styled(format!("{:<LW$}", "Read total:"), dim),
+                    Span::styled(format!("{:<VW$}", fmt_bytes(dev.total_read_bytes)), val),
+                    Span::styled(format!("{:<LW$}", "Write total:"), dim),
+                    Span::styled(fmt_bytes(dev.total_write_bytes), val),
                 ]),
                 stat_lines[3],
             );
+        }
 
-            // Row 4: cumulative I/O totals
+        // --- Separator ---
+        if sep_h > 0 {
             frame.render_widget(
-                Line::from(vec![
-                    Span::styled("Read total: ", dim),
-                    Span::styled(fmt_bytes(dev.total_read_bytes), val),
-                    Span::styled("   Write total: ", dim),
-                    Span::styled(fmt_bytes(dev.total_write_bytes), val),
-                ]),
-                stat_lines[4],
+                Block::default()
+                    .borders(Borders::TOP)
+                    .border_style(Style::new().fg(self.palette.border)),
+                sections[1],
             );
         }
 
@@ -472,7 +484,7 @@ impl DiskComponent {
                     ])
                     .style(Style::new().fg(self.palette.dim)),
             );
-        frame.render_widget(chart, sections[1]);
+        frame.render_widget(chart, sections[2]);
 
         // --- Bottom summary line ---
         if let Some(snap) = &self.latest
@@ -491,7 +503,7 @@ impl DiskComponent {
                 ),
                 Span::styled("   Esc/q: back", Style::new().fg(self.palette.dim)),
             ]);
-            frame.render_widget(summary, sections[2]);
+            frame.render_widget(summary, sections[3]);
         }
 
         Ok(())
@@ -848,7 +860,7 @@ mod tests {
         }
         comp.list_state.select(Some(0));
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
-        let mut terminal = Terminal::new(TestBackend::new(70, 20)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(90, 20)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
         assert_snapshot!("disk_graph_view", terminal.backend());
     }

@@ -377,10 +377,12 @@ impl NetComponent {
         frame.render_widget(block, area);
 
         // How many stats header rows to show (need at least 6 rows for a useful graph).
-        let stats_rows: u16 = if inner.height >= 10 { 3 } else { 0 };
+        let stats_rows: u16 = if inner.height >= 10 { 2 } else { 0 };
+        let sep_h: u16 = if stats_rows > 0 { 1 } else { 0 };
 
         let sections = Layout::vertical([
             Constraint::Length(stats_rows),
+            Constraint::Length(sep_h),
             Constraint::Fill(1),
             Constraint::Length(1),
         ])
@@ -396,60 +398,74 @@ impl NetComponent {
             let hi = Style::new().fg(self.palette.highlight);
             let ac = Style::new().fg(self.palette.accent);
 
+            // Fixed column widths keep values aligned regardless of label length.
+            const LW: usize = 10; // label column: "Total TX:" is longest at 9
+            const VW: usize = 14; // value column: byte counts fit comfortably in 14
+
+            // IP column is truncated to leave room for MAC and MTU on the same line.
+            const IP_VW: usize = 30;
+            const ERR_VW: usize = 8; // error/drop counts are small numbers
+
             let ips = if iface.ip_addresses.is_empty() {
                 "-".to_string()
             } else {
                 iface.ip_addresses.join("  ")
             };
 
-            let stat_lines = Layout::vertical([
-                Constraint::Length(1),
-                Constraint::Length(1),
-                Constraint::Length(1),
-            ])
-            .split(sections[0]);
+            let stat_lines =
+                Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).split(sections[0]);
 
-            // Row 0: IPs
+            // Row 0: IP · MAC · MTU
             frame.render_widget(
-                Line::from(vec![Span::styled("IP: ", dim), Span::styled(ips, val)]),
+                Line::from(vec![
+                    Span::styled(format!("{:<LW$}", "IP:"), dim),
+                    Span::styled(format!("{:<IP_VW$}", truncate(&ips, IP_VW)), val),
+                    Span::styled(format!("{:<LW$}", "MAC:"), dim),
+                    Span::styled(format!("{:<20}", iface.mac_address.clone()), val),
+                    Span::styled(format!("{:<LW$}", "MTU:"), dim),
+                    Span::styled(iface.mtu.to_string(), val),
+                ]),
                 stat_lines[0],
             );
 
-            // Row 1: MAC · MTU
-            frame.render_widget(
-                Line::from(vec![
-                    Span::styled("MAC: ", dim),
-                    Span::styled(iface.mac_address.clone(), val),
-                    Span::styled("   MTU: ", dim),
-                    Span::styled(iface.mtu.to_string(), val),
-                    Span::styled("   Total TX: ", dim),
-                    Span::styled(fmt_rate_col(iface.total_tx_bytes), ac),
-                    Span::styled("  RX: ", dim),
-                    Span::styled(fmt_rate_col(iface.total_rx_bytes), hi),
-                ]),
-                stat_lines[1],
-            );
-
-            // Row 2: errors (+ Linux drops)
+            // Row 1: Total TX · Total RX · Err TX · Err RX (+ Linux: Drop TX · Drop RX)
             #[cfg(not(target_os = "linux"))]
-            let err_line = Line::from(vec![
-                Span::styled("Err TX: ", dim),
-                Span::styled(iface.tx_errors.to_string(), val),
-                Span::styled("  RX: ", dim),
+            let traffic_line = Line::from(vec![
+                Span::styled(format!("{:<LW$}", "Total TX:"), dim),
+                Span::styled(format!("{:<VW$}", fmt_rate_col(iface.total_tx_bytes)), ac),
+                Span::styled(format!("{:<LW$}", "Total RX:"), dim),
+                Span::styled(format!("{:<VW$}", fmt_rate_col(iface.total_rx_bytes)), hi),
+                Span::styled(format!("{:<LW$}", "Err TX:"), dim),
+                Span::styled(format!("{:<ERR_VW$}", iface.tx_errors.to_string()), val),
+                Span::styled(format!("{:<LW$}", "Err RX:"), dim),
                 Span::styled(iface.rx_errors.to_string(), val),
             ]);
             #[cfg(target_os = "linux")]
-            let err_line = Line::from(vec![
-                Span::styled("Err TX: ", dim),
-                Span::styled(iface.tx_errors.to_string(), val),
-                Span::styled("  RX: ", dim),
-                Span::styled(iface.rx_errors.to_string(), val),
-                Span::styled("   Drop TX: ", dim),
-                Span::styled(iface.tx_dropped.to_string(), val),
-                Span::styled("  RX: ", dim),
+            let traffic_line = Line::from(vec![
+                Span::styled(format!("{:<LW$}", "Total TX:"), dim),
+                Span::styled(format!("{:<VW$}", fmt_rate_col(iface.total_tx_bytes)), ac),
+                Span::styled(format!("{:<LW$}", "Total RX:"), dim),
+                Span::styled(format!("{:<VW$}", fmt_rate_col(iface.total_rx_bytes)), hi),
+                Span::styled(format!("{:<LW$}", "Err TX:"), dim),
+                Span::styled(format!("{:<ERR_VW$}", iface.tx_errors.to_string()), val),
+                Span::styled(format!("{:<LW$}", "Err RX:"), dim),
+                Span::styled(format!("{:<ERR_VW$}", iface.rx_errors.to_string()), val),
+                Span::styled(format!("{:<LW$}", "Drop TX:"), dim),
+                Span::styled(format!("{:<ERR_VW$}", iface.tx_dropped.to_string()), val),
+                Span::styled(format!("{:<LW$}", "Drop RX:"), dim),
                 Span::styled(iface.rx_dropped.to_string(), val),
             ]);
-            frame.render_widget(err_line, stat_lines[2]);
+            frame.render_widget(traffic_line, stat_lines[1]);
+        }
+
+        // --- Separator ---
+        if sep_h > 0 {
+            frame.render_widget(
+                Block::default()
+                    .borders(Borders::TOP)
+                    .border_style(Style::new().fg(self.palette.border)),
+                sections[1],
+            );
         }
 
         // --- Graph ---
@@ -512,7 +528,7 @@ impl NetComponent {
                     ])
                     .style(Style::new().fg(self.palette.dim)),
             );
-        frame.render_widget(chart, sections[1]);
+        frame.render_widget(chart, sections[2]);
 
         // --- Bottom summary line ---
         if let Some(snap) = &self.latest
@@ -541,7 +557,7 @@ impl NetComponent {
                 ),
                 Span::styled("   Esc/q: back", Style::new().fg(self.palette.dim)),
             ]);
-            frame.render_widget(summary, sections[2]);
+            frame.render_widget(summary, sections[3]);
         }
 
         Ok(())
@@ -691,7 +707,7 @@ mod tests {
         }
         comp.list_state.select(Some(0));
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
-        let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(130, 20)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
         assert_snapshot!("net_graph_view", terminal.backend());
     }
