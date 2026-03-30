@@ -303,25 +303,29 @@ impl App {
             }
         }
         if key.code == KeyCode::Tab || key.code == KeyCode::BackTab {
-            // Only cycle through components that have a layout slot AND are visible;
-            // cycling through a component with no slot would appear to do nothing.
-            let visible_ids = &self.rendered_ids;
-            if !visible_ids.is_empty() {
-                let focused_id = match &self.focus {
-                    FocusState::Normal { focused } | FocusState::FullScreen(focused) => *focused,
-                };
-                let cur = visible_ids
-                    .iter()
-                    .position(|id| *id == focused_id)
-                    .unwrap_or(0);
-                let next = if key.code == KeyCode::Tab {
-                    (cur + 1) % visible_ids.len()
-                } else {
-                    (cur + visible_ids.len() - 1) % visible_ids.len()
-                };
-                let _ = self
-                    .action_tx
-                    .try_send(Action::FocusComponent(visible_ids[next]));
+            // Only cycle focus in normal mode; fullscreen/modal state owns all keys.
+            if matches!(self.focus, FocusState::Normal { .. }) {
+                // Only cycle through components that have a layout slot AND are visible;
+                // cycling through a component with no slot would appear to do nothing.
+                let visible_ids = &self.rendered_ids;
+                if !visible_ids.is_empty() {
+                    let focused_id = match &self.focus {
+                        FocusState::Normal { focused } => *focused,
+                        FocusState::FullScreen(_) => unreachable!("guarded above"),
+                    };
+                    let cur = visible_ids
+                        .iter()
+                        .position(|id| *id == focused_id)
+                        .unwrap_or(0);
+                    let next = if key.code == KeyCode::Tab {
+                        (cur + 1) % visible_ids.len()
+                    } else {
+                        (cur + visible_ids.len() - 1) % visible_ids.len()
+                    };
+                    let _ = self
+                        .action_tx
+                        .try_send(Action::FocusComponent(visible_ids[next]));
+                }
             }
         }
         if key.code == KeyCode::Esc {

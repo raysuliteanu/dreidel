@@ -121,7 +121,9 @@ impl Component for DiskComponent {
                         };
                         return Ok(Some(action));
                     }
-                    _ => {}
+                    // Swallow all other keys so they don't reach the global handler
+                    // (which would shift focus or trigger other app-level shortcuts).
+                    _ => return Ok(Some(Action::Render)),
                 }
             }
             DiskView::List => {
@@ -863,5 +865,37 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(90, 20)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
         assert_snapshot!("disk_graph_view", terminal.backend());
+    }
+
+    #[test]
+    fn detail_view_consumes_unhandled_keys() {
+        // Keys not explicitly handled in detail mode (e.g. Tab, focus-switch
+        // chars) must return Some so the global app handler never sees them and
+        // cannot shift focus or close the modal.
+        let mut comp = DiskComponent::default();
+        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+            .unwrap();
+        comp.list_state.select(Some(0));
+        comp.handle_key_event(key(KeyCode::Enter)).unwrap();
+        assert!(matches!(comp.view, DiskView::Detail { .. }));
+
+        for code in [
+            KeyCode::Tab,
+            KeyCode::BackTab,
+            KeyCode::Char('p'),
+            KeyCode::Char('n'),
+            KeyCode::Char('f'),
+            KeyCode::Char('d'),
+        ] {
+            let action = comp.handle_key_event(key(code)).unwrap();
+            assert!(
+                action.is_some(),
+                "{code:?} must be consumed in detail view, got None"
+            );
+            assert!(
+                matches!(comp.view, DiskView::Detail { .. }),
+                "{code:?} must not exit detail view"
+            );
+        }
     }
 }

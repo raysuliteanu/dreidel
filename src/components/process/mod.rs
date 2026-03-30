@@ -187,7 +187,8 @@ impl Component for ProcessComponent {
                     }
                     _ => {}
                 }
-                Ok(None)
+                // Swallow all other keys so they don't reach the global handler.
+                Ok(Some(Action::Render))
             }
             ProcessState::KillConfirm { pid, name } => {
                 let pid = *pid;
@@ -209,7 +210,8 @@ impl Component for ProcessComponent {
                     }
                     _ => {}
                 }
-                Ok(None)
+                // Swallow all other keys so they don't reach the global handler.
+                Ok(Some(Action::Render))
             }
             ProcessState::KillError { .. } => {
                 match key.code {
@@ -219,7 +221,8 @@ impl Component for ProcessComponent {
                     }
                     _ => {}
                 }
-                Ok(None)
+                // Swallow all other keys so they don't reach the global handler.
+                Ok(Some(Action::Render))
             }
             ProcessState::NormalList => {
                 const PAGE: usize = 10;
@@ -1006,5 +1009,41 @@ mod tests {
         assert_eq!(fmt_cpu_time(60.0), "01:00");
         assert_eq!(fmt_cpu_time(123.4), "02:03");
         assert_eq!(fmt_cpu_time(3661.0), "61:01");
+    }
+
+    #[test]
+    fn detail_view_consumes_unhandled_keys() {
+        // Keys not explicitly handled in detail mode must return Some so the
+        // global app handler never sees them and cannot shift focus or close
+        // the modal.
+        let mut comp = ProcessComponent::default();
+        comp.update(Action::ProcUpdate(ProcSnapshot::stub()))
+            .unwrap();
+        // Enter detail view for the first process.
+        comp.table_state.select(Some(0));
+        comp.handle_key_event(key_code(KeyCode::Enter)).unwrap();
+        assert!(
+            matches!(comp.state, ProcessState::DetailView { .. }),
+            "Enter must open detail view"
+        );
+
+        for code in [
+            KeyCode::Tab,
+            KeyCode::BackTab,
+            KeyCode::Char('n'),
+            KeyCode::Char('i'),
+            KeyCode::Char('f'),
+            KeyCode::Char('d'),
+        ] {
+            let action = comp.handle_key_event(key_code(code)).unwrap();
+            assert!(
+                action.is_some(),
+                "{code:?} must be consumed in detail view, got None"
+            );
+            assert!(
+                matches!(comp.state, ProcessState::DetailView { .. }),
+                "{code:?} must not exit detail view"
+            );
+        }
     }
 }
