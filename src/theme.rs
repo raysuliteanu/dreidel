@@ -39,7 +39,7 @@ impl ColorPalette {
             accent: Rgb(122, 162, 247),
             warn: Rgb(224, 175, 104),
             critical: Rgb(247, 118, 142),
-            dim: Rgb(86, 95, 137),
+            dim: Rgb(220, 225, 240),
             highlight: Rgb(187, 154, 247),
         }
     }
