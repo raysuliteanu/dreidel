@@ -6,7 +6,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     widgets::Clear,
 };
-use std::{collections::HashSet, str::FromStr};
+use std::str::FromStr;
 use tokio::sync::mpsc;
 use tracing::debug;
 
@@ -15,7 +15,10 @@ use crate::{
     components::help::HelpComponent,
     components::{Component, ComponentId},
     config::Config,
-    layout::{LayoutHints, LayoutPreset, SlotOverrides, StatusBarPosition, split_status_bar},
+    layout::{
+        LayoutHints, LayoutPreset, SlotOverrides, StatusBarPosition, compute_adaptive,
+        split_status_bar,
+    },
     stats::spawn_collector,
     tui::{Event, Tui},
 };
@@ -61,7 +64,7 @@ pub struct App {
     preset: LayoutPreset,
     slot_overrides: SlotOverrides,
     status_pos: StatusBarPosition,
-    visible: HashSet<ComponentId>,
+    visible: Vec<ComponentId>,
     /// Ordered list of component IDs that currently have a layout slot AND are
     /// in `visible`. Kept in sync each render; used to restrict Tab cycling to
     /// components the user can actually see.
@@ -106,12 +109,18 @@ impl App {
             ),
         ];
 
-        let visible = config
+        let visible: Vec<ComponentId> = config
             .layout
             .show
             .iter()
-            .filter_map(|s| ComponentId::from_str(s).ok())
-            .collect();
+            .map(|s| {
+                ComponentId::from_str(s).map_err(|_| {
+                    anyhow::anyhow!(
+                        "unknown component {s:?} in show list; valid values are: cpu, net, disk, process"
+                    )
+                })
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
         let preset = LayoutPreset::from_str(&config.layout.preset).unwrap_or_default();
         let status_pos = match config.layout.status_bar.as_str() {
@@ -436,16 +445,22 @@ impl App {
             left_top: cpu_height,
             right_top: cpu_height,
         };
-        // Compute which component IDs have a layout slot so Tab cycling only
-        // visits components the user can see. Use a zero-size rect — we only
-        // need the ID mapping, not actual coordinates.
-        let probe_map = preset.compute(Rect::new(0, 0, 0, 0), &slot_overrides, &hints);
-        self.rendered_ids = self
-            .components
-            .iter()
-            .map(|(id, _)| *id)
-            .filter(|id| visible.contains(id) && probe_map.values().any(|(cid, _)| cid == id))
-            .collect();
+        // Tab cycling visits only components the user can see.
+        // With adaptive layout (< 4 components) every visible component is
+        // shown, so rendered_ids is just the visible list in order.
+        if visible.len() < 4 {
+            self.rendered_ids = visible.clone();
+        } else {
+            // Probe the preset with a zero-size rect to get the slot→component
+            // mapping without computing real geometry.
+            let probe_map = preset.compute(Rect::new(0, 0, 0, 0), &slot_overrides, &hints);
+            self.rendered_ids = self
+                .components
+                .iter()
+                .map(|(id, _)| *id)
+                .filter(|id| visible.contains(id) && probe_map.values().any(|(cid, _)| cid == id))
+                .collect();
+        }
 
         terminal.draw(|frame| {
             let total_area = frame.area();
@@ -469,17 +484,31 @@ impl App {
 
             // Always draw the normal layout first so it remains visible behind
             // any overlay (fullscreen modal, help, loading).
-            let slot_map = preset.compute(main_area, &slot_overrides, &hints);
-            for (component_id, rect) in slot_map.values() {
-                if !visible.contains(component_id) {
-                    continue;
+            if visible.len() < 4 {
+                // Adaptive: fill all space based solely on how many components
+                // were requested, respecting the order from --show.
+                for (component_id, rect) in compute_adaptive(main_area, &visible) {
+                    if let Some((_, comp)) = self
+                        .components
+                        .iter_mut()
+                        .find(|(cid, _)| *cid == component_id)
+                    {
+                        let _ = comp.draw(frame, rect);
+                    }
                 }
-                if let Some((_, comp)) = self
-                    .components
-                    .iter_mut()
-                    .find(|(cid, _)| cid == component_id)
-                {
-                    let _ = comp.draw(frame, *rect);
+            } else {
+                let slot_map = preset.compute(main_area, &slot_overrides, &hints);
+                for (component_id, rect) in slot_map.values() {
+                    if !visible.contains(component_id) {
+                        continue;
+                    }
+                    if let Some((_, comp)) = self
+                        .components
+                        .iter_mut()
+                        .find(|(cid, _)| cid == component_id)
+                    {
+                        let _ = comp.draw(frame, *rect);
+                    }
                 }
             }
 
@@ -733,6 +762,39 @@ mod tests {
 
     /// Switching from fullscreen back to normal mode must restore full-layout
     /// rendering (no stale modal geometry in subsequent renders).
+    #[test]
+    fn app_new_rejects_invalid_component_in_show_list() {
+        let mut cfg = Config::default();
+        cfg.layout.show = vec!["cpu".into(), "foo".into()];
+        assert!(App::new(cfg, false).is_err());
+    }
+
+    /// With a single visible component the adaptive layout should fill the
+    /// entire content area — not just the narrow sidebar slot it would occupy
+    /// under the default Sidebar preset.
+    #[test]
+    fn adaptive_single_component_fills_content_area() {
+        let mut cfg = Config::default();
+        cfg.layout.show = vec!["net".into()];
+        let mut app = App::new(cfg, false).unwrap();
+        feed_stubs(&mut app);
+
+        let width = 160u16;
+        let height = 40u16;
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
+        app.render_to(&mut terminal).unwrap();
+
+        // The status bar occupies the top 4 rows; the remainder is the content
+        // area.  The net component should render content across the full width
+        // of the content area, not just a narrow column on the left.
+        let buf = terminal.backend().buffer().clone();
+        let right_strip = Rect::new(width / 2, 4, width / 2 - 1, height - 4);
+        assert!(
+            has_content(&buf, right_strip),
+            "right half of content area should be rendered in single-component adaptive mode"
+        );
+    }
+
     #[test]
     fn toggle_back_to_normal_renders_full_layout() {
         let mut app = make_app();

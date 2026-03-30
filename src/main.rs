@@ -41,7 +41,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     let mut cfg = config::Config::load(args.config.as_deref()).context("loading config")?;
-    apply_cli_overrides(&mut cfg, &args);
+    apply_cli_overrides(&mut cfg, &args)?;
 
     let rt = tokio::runtime::Runtime::new().context("creating tokio runtime")?;
     rt.block_on(async {
@@ -50,7 +50,7 @@ fn main() -> anyhow::Result<()> {
     })
 }
 
-fn apply_cli_overrides(cfg: &mut config::Config, args: &cli::Args) {
+fn apply_cli_overrides(cfg: &mut config::Config, args: &cli::Args) -> anyhow::Result<()> {
     if let Some(t) = &args.theme
         && let Ok(theme) = t.parse()
     {
@@ -69,10 +69,80 @@ fn apply_cli_overrides(cfg: &mut config::Config, args: &cli::Args) {
     }
     // --hide wins over --show
     if let Some(show) = &args.show {
+        for name in show {
+            validate_component_name(name)?;
+        }
         cfg.layout.show = show.clone();
     }
     if let Some(hide) = &args.hide {
+        for name in hide {
+            validate_component_name(name)?;
+        }
         cfg.layout.show.retain(|c| !hide.contains(c));
+    }
+    Ok(())
+}
+
+const VALID_COMPONENTS: &str = "cpu, net, disk, process";
+
+fn validate_component_name(name: &str) -> anyhow::Result<()> {
+    match name {
+        "cpu" | "net" | "disk" | "process" => Ok(()),
+        _ => anyhow::bail!("unknown component {name:?}; valid values are: {VALID_COMPONENTS}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn validate_component_name_accepts_all_valid_names() {
+        for name in &["cpu", "net", "disk", "process"] {
+            assert!(
+                validate_component_name(name).is_ok(),
+                "{name} should be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_component_name_rejects_unknown() {
+        assert!(validate_component_name("foo").is_err());
+        // These look plausible but are not valid component names.
+        assert!(validate_component_name("mem").is_err());
+        assert!(validate_component_name("CPU").is_err()); // case-sensitive
+    }
+
+    #[test]
+    fn apply_cli_overrides_rejects_unknown_show_component() {
+        let mut cfg = config::Config::default();
+        let args = cli::Args::try_parse_from(["dreidel", "--show", "net,foo"]).unwrap();
+        assert!(apply_cli_overrides(&mut cfg, &args).is_err());
+    }
+
+    #[test]
+    fn apply_cli_overrides_rejects_unknown_hide_component() {
+        let mut cfg = config::Config::default();
+        let args = cli::Args::try_parse_from(["dreidel", "--hide", "bar"]).unwrap();
+        assert!(apply_cli_overrides(&mut cfg, &args).is_err());
+    }
+
+    #[test]
+    fn apply_cli_overrides_valid_show_updates_config() {
+        let mut cfg = config::Config::default();
+        let args = cli::Args::try_parse_from(["dreidel", "--show", "net,cpu"]).unwrap();
+        apply_cli_overrides(&mut cfg, &args).unwrap();
+        assert_eq!(cfg.layout.show, vec!["net", "cpu"]);
+    }
+
+    #[test]
+    fn apply_cli_overrides_valid_hide_removes_component() {
+        let mut cfg = config::Config::default();
+        let args = cli::Args::try_parse_from(["dreidel", "--hide", "net"]).unwrap();
+        apply_cli_overrides(&mut cfg, &args).unwrap();
+        assert!(!cfg.layout.show.contains(&"net".to_string()));
     }
 }
 

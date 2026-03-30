@@ -80,6 +80,30 @@ pub fn split_status_bar(area: Rect, pos: StatusBarPosition) -> (Rect, Rect) {
     }
 }
 
+/// Compute an adaptive layout for 0–3 visible components, filling all available space
+/// in order. For 4+ components, callers should use [`LayoutPreset::compute`] instead.
+///
+/// - 0 components → empty
+/// - 1 component  → fills the entire area
+/// - 2 components → side by side (equal columns)
+/// - 3 components → two stacked on the left, one filling the right
+pub fn compute_adaptive(area: Rect, components: &[ComponentId]) -> Vec<(ComponentId, Rect)> {
+    match components {
+        [] => vec![],
+        [c0] => vec![(*c0, area)],
+        [c0, c1] => {
+            let cols = Layout::horizontal([Constraint::Fill(1), Constraint::Fill(1)]).split(area);
+            vec![(*c0, cols[0]), (*c1, cols[1])]
+        }
+        [c0, c1, c2] => {
+            let cols = Layout::horizontal([Constraint::Fill(1), Constraint::Fill(1)]).split(area);
+            let left = Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)]).split(cols[0]);
+            vec![(*c0, left[0]), (*c1, left[1]), (*c2, cols[1])]
+        }
+        _ => unreachable!("compute_adaptive called with 4+ components; use LayoutPreset::compute"),
+    }
+}
+
 impl LayoutPreset {
     pub fn compute(&self, area: Rect, overrides: &SlotOverrides, hints: &LayoutHints) -> SlotMap {
         let defaults = self.default_slots();
@@ -208,6 +232,50 @@ impl LayoutPreset {
 mod tests {
     use super::*;
     use ratatui::layout::Rect;
+
+    #[test]
+    fn adaptive_single_component_fills_area() {
+        let area = Rect::new(0, 0, 200, 50);
+        let pairs = compute_adaptive(area, &[ComponentId::Net]);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].0, ComponentId::Net);
+        assert_eq!(pairs[0].1, area);
+    }
+
+    #[test]
+    fn adaptive_two_components_split_horizontally() {
+        let area = Rect::new(0, 0, 200, 50);
+        let pairs = compute_adaptive(area, &[ComponentId::Cpu, ComponentId::Net]);
+        assert_eq!(pairs.len(), 2);
+        // Both occupy full height
+        assert_eq!(pairs[0].1.height, area.height);
+        assert_eq!(pairs[1].1.height, area.height);
+        // Together they span the full width
+        assert_eq!(pairs[0].1.width + pairs[1].1.width, area.width);
+        // First is on the left, second is to its right
+        assert_eq!(pairs[0].1.x, area.x);
+        assert_eq!(pairs[1].1.x, pairs[0].1.x + pairs[0].1.width);
+    }
+
+    #[test]
+    fn adaptive_three_components_two_left_one_right() {
+        let area = Rect::new(0, 0, 200, 50);
+        let pairs = compute_adaptive(
+            area,
+            &[ComponentId::Cpu, ComponentId::Net, ComponentId::Disk],
+        );
+        assert_eq!(pairs.len(), 3);
+        let (cpu_rect, net_rect, disk_rect) = (pairs[0].1, pairs[1].1, pairs[2].1);
+        // cpu and net share the left column (same x, same width)
+        assert_eq!(cpu_rect.x, area.x);
+        assert_eq!(net_rect.x, area.x);
+        assert_eq!(cpu_rect.width, net_rect.width);
+        // disk fills the right column (full height)
+        assert_eq!(disk_rect.height, area.height);
+        assert!(disk_rect.x > cpu_rect.x);
+        // Together the two columns span the full width
+        assert_eq!(cpu_rect.width + disk_rect.width, area.width);
+    }
 
     #[test]
     fn sidebar_preset_has_slot_for_every_main_component() {
