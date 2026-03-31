@@ -2,8 +2,20 @@
 name = "dreidel"
 version = "0.1.0"
 edition = "2024"
-repository = "https://github.com/raysuliteanu/toppers"
+rust-version = "1.85"
+description = "A keyboard-driven terminal system monitor for Linux"
+keywords = ["tui", "monitor", "system", "ratatui", "linux"]
+categories = ["command-line-utilities", "visualization"]
+repository = "https://github.com/raysuliteanu/dreidel"
+readme = "README.md"
 license = "GPL-3.0-only"
+exclude = [
+    "ARCHITECTURE.md",
+    "CLAUDE.md",
+    "TODO.md",
+    "docs/",
+    "scripts/",
+]
 
 [lib]
 name = "dreidel"
