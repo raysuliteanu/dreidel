@@ -22,16 +22,17 @@ _Screenshots coming soon._
 dreidel is a terminal UI system monitor that gives you a live view of your machine at a glance:
 
 - **CPU** — aggregate usage sparkline and per-core bars
-- **Memory** — RAM and swap usage with history
 - **Network** — per-interface RX/TX rates with optional graph view
 - **Disk** — per-device read/write rates and usage percentage
 - **Process** — sortable, filterable process table with kill support
+- **Status bar** — clock, hostname, and RAM/swap gauges
 
 Everything is navigable by keyboard, customisable via a config file or CLI flags, and designed
 to stay out of your way.
 
 Developers and contributors interested in how dreidel is built can refer to
-[ARCHITECTURE.md](ARCHITECTURE.md) for a technical deep-dive.
+[ARCHITECTURE.md](ARCHITECTURE.md) for a technical deep-dive, and
+[BUILDING.md](BUILDING.md) for build, test, and release instructions.
 
 ---
 
@@ -120,7 +121,7 @@ Focus key: `n`
 Lists all storage devices with per-device read/write byte rates and disk usage percentage.
 Usage colour coding follows the same green → orange → red scale as CPU.
 
-Focus key: `i`
+Focus key: `d`
 
 ### Process
 
@@ -145,7 +146,7 @@ Focus key: `p`
 
 ### Status Bar
 
-Displays a clock, hostname, and global system stats. Can be positioned at the top (default),
+Displays a clock, hostname, and RAM/swap gauges. Can be positioned at the top (default),
 bottom, or hidden entirely via `--status-bar` or `layout.status_bar` in the config file.
 
 ---
@@ -157,14 +158,12 @@ bottom, or hidden entirely via `--status-bar` or `layout.status_bar` in the conf
 | Key                 | Action                                                |
 | ------------------- | ----------------------------------------------------- |
 | `c`                 | Focus CPU panel                                       |
-| `m`                 | Focus Memory panel                                    |
 | `n`                 | Focus Network panel                                   |
-| `i`                 | Focus Disk panel                                      |
+| `d`                 | Focus Disk panel                                      |
 | `p`                 | Focus Process panel                                   |
 | `Tab` / `Shift+Tab` | Cycle focus forward / backward through visible panels |
 | `f`                 | Toggle fullscreen for the focused panel               |
 | `?`                 | Show help overlay                                     |
-| `d`                 | Toggle debug sidebar                                  |
 | `q` / `Esc`         | Quit (or exit fullscreen / close overlay)             |
 
 ### Process panel
@@ -202,12 +201,11 @@ dreidel [OPTIONS]
 | `--theme <THEME>`       | `auto`                          | Color theme: `auto` \| `light` \| `dark`                               |
 | `--refresh-rate <RATE>` | `1s`                            | Stats refresh interval, e.g. `500ms`, `2s`                             |
 | `--preset <LAYOUT>`     | `sidebar`                       | Layout preset: `sidebar` \| `classic` \| `dashboard` \| `grid`         |
-| `--show <COMPONENTS>`   | _(all)_                         | Comma-separated list of components to show: `cpu,mem,net,disk,process` |
+| `--show <COMPONENTS>`   | _(all)_                         | Comma-separated list of components to show: `cpu,net,disk,process`     |
 | `--hide <COMPONENTS>`   | _(none)_                        | Components to hide — takes precedence over `--show`                    |
 | `--status-bar <POS>`    | `top`                           | Status bar position: `top` \| `bottom` \| `hidden`                     |
 | `--config <PATH>`       | `~/.config/dreidel/config.toml` | Path to an alternate config file                                       |
 | `--init-config`         | —                               | Print a default config template to stdout and exit                     |
-| `--debug`               | off                             | Show the debug sidebar on launch                                       |
 | `-v` / `-vv`            | —                               | Increase log verbosity                                                 |
 
 ---
@@ -236,16 +234,16 @@ Run `dreidel --init-config` to generate a commented template you can save and ed
 
 [layout]
 # Base layout preset.
-# preset = "sidebar"   # "sidebar" | "classic" | "dashboard"
+# preset = "sidebar"   # "sidebar" | "classic" | "dashboard" | "grid"
 
 # Status bar position.
 # status_bar = "top"   # "top" | "bottom" | "hidden"
 
 # Which components to show (omit to hide).
-# show = ["cpu", "mem", "net", "disk", "process"]
+# show = ["cpu", "net", "disk", "process"]
 
 # Slot overrides — replace default component in a named slot.
-# Sidebar slots: left_top, left_mid, left_bot, right
+# Sidebar slots: left_top, left_bot, left_extra, right
 # Classic slots: top_left, top_right_top, top_right_bot, bottom
 # Dashboard slots: top, mid_left, mid_right, bottom
 # left_top = "cpu"
@@ -259,12 +257,10 @@ Run `dreidel --init-config` to generate a commented template you can save and ed
 [keybindings]
 # focus_proc = "p"
 # focus_cpu  = "c"
-# focus_mem  = "m"
 # focus_net  = "n"
-# focus_disk = "i"
+# focus_disk = "d"
 # fullscreen = "f"
 # help       = "?"
-# debug      = "d"
 ```
 
 ### Notes

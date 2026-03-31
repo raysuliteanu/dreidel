@@ -177,13 +177,13 @@ const DEFAULT_CONFIG_TEMPLATE: &str = r#"# dreidel default configuration
 
 [layout]
 # Base layout preset.
-# preset = "sidebar"   # "sidebar" | "classic" | "dashboard"
+# preset = "sidebar"   # "sidebar" | "classic" | "dashboard" | "grid"
 
 # Status bar position.
 # status_bar = "top"   # "top" | "bottom" | "hidden"
 
 # Which components to show (omit to hide).
-# show = ["cpu", "mem", "net", "disk", "process"]
+# show = ["cpu", "net", "disk", "process"]
 
 # Slot overrides — replace default component in a named slot.
 # Sidebar slots: left_top, left_mid, left_bot, right
@@ -200,7 +200,6 @@ const DEFAULT_CONFIG_TEMPLATE: &str = r#"# dreidel default configuration
 [keybindings]
 # focus_proc = "p"
 # focus_cpu  = "c"
-# focus_mem  = "m"
 # focus_net  = "n"
 # focus_disk = "d"
 # fullscreen = "f"

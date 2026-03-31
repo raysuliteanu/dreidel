@@ -21,7 +21,6 @@ cargo test components::cpu          # filter by module/name
 INSTA_UPDATE=always cargo test      # accept updated insta snapshots
 cargo run -- --help                 # CLI flags
 cargo run -- --init-config          # print default config template
-cargo run -- --debug                # start with debug sidebar visible
 ```
 
 ## Hooks (auto-run, no action needed)
@@ -68,15 +67,15 @@ fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()>
 
 ### Layout system
 
-`layout.rs` maps `SlotId → (ComponentId, Rect)` via `LayoutPreset::compute(area, overrides, hints)`. The sidebar preset has 5 slots: `LeftTop`=CPU, `LeftMid`=Mem, `LeftBot`=Net, `LeftExtra`=Disk, `Right`=Process. `LayoutHints` carries preferred heights from CPU/Mem so those panels are tight to their content; Net/Disk split remaining height equally.
+`layout.rs` maps `SlotId → (ComponentId, Rect)` via `LayoutPreset::compute(area, overrides, hints)`. The sidebar preset has 4 slots: `LeftTop`=CPU, `LeftBot`=Net, `LeftExtra`=Disk, `Right`=Process. `LayoutHints` carries a preferred height from CPU so that panel is tight to its content; Net/Disk split remaining height equally.
 
 ### Key dispatch
 
-In `App::handle_events`, `Event::Key` goes to the *focused component* first via `handle_key_event`. If the component returns `Ok(None)`, the global handler runs (focus-switch keys `p/c/m/n/i`, `Tab`/`Shift-Tab`, `f` fullscreen, `d` debug, `q` quit). Tab cycling uses `App::rendered_ids` — only components that have a layout slot AND are in `visible` — updated each render.
+In `App::handle_events`, `Event::Key` goes to the *focused component* first via `handle_key_event`. If the component returns `Ok(None)`, the global handler runs (focus-switch keys `p/c/n/d`, `Tab`/`Shift-Tab`, `f` fullscreen, `?` help, `q` quit). Tab cycling uses `App::rendered_ids` — only components that have a layout slot AND are in `visible` — updated each render.
 
 ### ComponentId ↔ config string mapping
 
-`ComponentId` uses `#[strum(serialize_all = "lowercase")]`. The strings used in `config.layout.show` and `--show`/`--hide` CLI flags must match exactly: `"cpu"`, `"mem"`, `"net"`, `"disk"`, `"process"`. (`"proc"` will silently fail to match.)
+`ComponentId` uses `#[strum(serialize_all = "lowercase")]`. The strings used in `config.layout.show` and `--show`/`--hide` CLI flags must match exactly: `"cpu"`, `"net"`, `"disk"`, `"process"`. (`"mem"` and `"proc"` will silently fail to match.)
 
 ### Snapshot testing
 

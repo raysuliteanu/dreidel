@@ -15,7 +15,7 @@ pub struct Args {
     #[arg(
         long,
         value_name = "LAYOUT",
-        help = "Layout preset: sidebar | classic | dashboard"
+        help = "Layout preset: sidebar | classic | dashboard | grid"
     )]
     pub preset: Option<String>,
 
@@ -23,7 +23,7 @@ pub struct Args {
         long,
         value_delimiter = ',',
         value_name = "COMPONENTS",
-        help = "Components to show: cpu,mem,net,disk,proc"
+        help = "Components to show: cpu,net,disk,process"
     )]
     pub show: Option<Vec<String>>,
 
