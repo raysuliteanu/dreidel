@@ -25,7 +25,7 @@ expression: terminal.backend()
 "       │Disk keys                                   │       "
 "       │ Ent  open detail (fullscreen)              │       "
 "       │                                            │       "
-"       │https://github.com/raysuliteanu/toppers     │       "
+"       │https://github.com/raysuliteanu/dreidel     │       "
 "       │change: [CHANGE_ID]                            │       "
 "       │config  [CONFIG_PATH]       │       "
 "       │log     [LOG_PATH]  │       "
