@@ -26,6 +26,7 @@ ratatui = "0.30.0"
 serde = { version = "1.0.228", features = ["derive"] }
 strum = { version = "0.28.0", features = ["derive"] }
 sysinfo = "0.38.4"
+termbg = "0.6.2"
 thiserror = "2.0.18"
 tokio = { version = "1.50.0", features = ["full"] }
 tokio-util = "0.7.18"

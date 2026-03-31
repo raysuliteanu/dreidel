@@ -43,11 +43,26 @@ fn main() -> anyhow::Result<()> {
     let mut cfg = config::Config::load(args.config.as_deref()).context("loading config")?;
     apply_cli_overrides(&mut cfg, &args)?;
 
+    // Resolve Auto before entering raw mode — termbg queries the terminal via
+    // OSC 11 which requires normal (non-raw) terminal state.
+    if cfg.general.theme == theme::Theme::Auto {
+        cfg.general.theme = detect_theme();
+    }
+
     let rt = tokio::runtime::Runtime::new().context("creating tokio runtime")?;
     rt.block_on(async {
         let mut app = app::App::new(cfg, args.debug).context("creating App")?;
         app.run().await.context("running App")
     })
+}
+
+/// Query the terminal background color via OSC 11 and return Light or Dark.
+/// Falls back to Dark if the terminal doesn't respond or the query times out.
+fn detect_theme() -> theme::Theme {
+    match termbg::theme(std::time::Duration::from_millis(100)) {
+        Ok(termbg::Theme::Light) => theme::Theme::Light,
+        _ => theme::Theme::Dark,
+    }
 }
 
 fn apply_cli_overrides(cfg: &mut config::Config, args: &cli::Args) -> anyhow::Result<()> {

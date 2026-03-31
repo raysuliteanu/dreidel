@@ -48,12 +48,12 @@ impl ColorPalette {
         use ratatui::style::Color::*;
         Self {
             bg: White,
-            fg: Black,
+            fg: Rgb(20, 20, 20),
             border: Rgb(180, 180, 180),
             accent: Rgb(0, 100, 200),
             warn: Rgb(180, 100, 0),
             critical: Rgb(180, 0, 0),
-            dim: Rgb(120, 120, 120),
+            dim: Rgb(30, 30, 30),
             highlight: Rgb(80, 0, 180),
         }
     }
