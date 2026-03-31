@@ -76,7 +76,13 @@ After `cargo release` completes, push the new commit and tag via jj:
 jj git fetch
 jj bookmark set main -r @-   # ensure main points at the release commit
 jj git push --bookmark main
-jj git push --branch vX.Y.Z  # push the tag
+git push origin vX.Y.Z        # push the tag (jj doesn't manage git tags directly)
+```
+
+Or simply run the release script which does all of the above:
+
+```bash
+scripts/release [patch|minor|major]   # default: patch
 ```
 
 ### Version scheme

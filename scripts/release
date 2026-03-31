@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Release script for dreidel.
+#
+# Usage: scripts/release [patch|minor|major]
+#
+# Runs cargo-release to bump the version, regenerate CHANGELOG.md, commit, and
+# tag, then syncs jj and pushes the bookmark and tag to origin.
+
+set -euo pipefail
+
+LEVEL="${1:-patch}"
+
+case "$LEVEL" in
+    patch | minor | major) ;;
+    *)
+        printf 'error: unknown release level "%s"; expected patch, minor, or major\n' "$LEVEL" >&2
+        exit 1
+        ;;
+esac
+
+if ! command -v cargo-release >/dev/null 2>&1; then
+    printf 'error: cargo-release not found; run: cargo install cargo-release --locked\n' >&2
+    exit 1
+fi
+
+if ! command -v git-cliff >/dev/null 2>&1; then
+    printf 'error: git-cliff not found; run: brew install git-cliff\n' >&2
+    exit 1
+fi
+
+if ! command -v jj >/dev/null 2>&1; then
+    printf 'error: jj not installed or not on PATH\n' >&2
+    exit 1
+fi
+
+if ! jj root >/dev/null 2>&1; then
+    printf 'error: must be run inside a jj repository\n' >&2
+    exit 1
+fi
+
+# Bump version, regenerate CHANGELOG, commit, and create the git tag.
+cargo release "$LEVEL" --execute
+
+# Read the version that cargo-release just wrote into Cargo.toml.
+VERSION=$(grep '^version = ' Cargo.toml | head -1 | cut -d'"' -f2)
+TAG="v${VERSION}"
+
+printf '\nPushing %s to origin...\n' "$TAG"
+
+# Sync jj's view of the git state, advance the main bookmark, and push.
+jj git fetch
+jj bookmark set main -r @-
+jj git push --bookmark main
+
+# Push the git tag that cargo-release created (jj doesn't manage git tags
+# directly; use git in the co-located repo).
+git push origin "$TAG"
+
+printf '\nReleased %s successfully.\n' "$TAG"
