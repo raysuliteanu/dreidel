@@ -1,0 +1,29 @@
+# cargo-release configuration
+# Usage: cargo release [patch|minor|major] --execute
+# Dry-run (default, no --execute): previews all steps without making changes.
+
+# Update CHANGELOG.md via git-cliff before tagging.
+pre-release-hook = [
+    "git-cliff",
+    "--tag", "v{{version}}",
+    "--output", "CHANGELOG.md",
+]
+
+# Commit message for the version bump commit.
+pre-release-commit-message = "chore: release v{{version}}"
+
+# Tag format.
+tag-name = "v{{version}}"
+tag-message = "Release v{{version}}"
+
+# Don't push — the repo uses jj; run `jj git push` manually after release.
+push = false
+
+# Do sign tags if you have a GPG key configured; set to true to enable.
+sign-tag = false
+sign-commit = false
+
+# jj co-located mode always has a detached HEAD; the git branch concept
+# doesn't apply. Ensure the jj `main` bookmark points to the right commit
+# before running `cargo release --execute`.
+allow-branch = ["main", "HEAD"]
