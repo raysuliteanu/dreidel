@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use crate::{components::Component, config::KeyBindings, theme::ColorPalette};
 
 // Popup dimensions
-const POPUP_WIDTH: u16 = 46;
+const POPUP_WIDTH: u16 = 55;
 const POPUP_HEIGHT: u16 = 30;
 
 #[derive(Debug)]
@@ -134,18 +134,19 @@ impl Component for HelpComponent {
         }
         if !change_id.is_empty() {
             lines.push(Line::from(vec![
-                Span::styled("change: ", dim),
+                Span::styled("change id: ", dim),
                 Span::styled(change_id, Style::new().fg(self.palette.dim)),
             ]));
         }
         lines.push(Line::from(vec![
-            Span::styled("config  ", dim),
+            Span::styled("   config: ", dim),
             Span::styled(config_path, fg),
         ]));
         lines.push(Line::from(vec![
-            Span::styled("log     ", dim),
+            Span::styled("      log: ", dim),
             Span::styled(log_path, fg),
         ]));
+        lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             "Press ?, h, q or Esc to close",
             dim,
