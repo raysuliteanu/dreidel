@@ -51,7 +51,7 @@ fn main() -> anyhow::Result<()> {
 
     let rt = tokio::runtime::Runtime::new().context("creating tokio runtime")?;
     rt.block_on(async {
-        let mut app = app::App::new(cfg, args.debug).context("creating App")?;
+        let mut app = app::App::new(cfg).context("creating App")?;
         app.run().await.context("running App")
     })
 }
@@ -202,8 +202,7 @@ const DEFAULT_CONFIG_TEMPLATE: &str = r#"# dreidel default configuration
 # focus_cpu  = "c"
 # focus_mem  = "m"
 # focus_net  = "n"
-# focus_disk = "i"
+# focus_disk = "d"
 # fullscreen = "f"
 # help       = "?"
-# debug      = "d"
 "#;

@@ -23,7 +23,6 @@ pub enum Action {
     #[serde(skip)]
     FocusComponent(crate::components::ComponentId),
     ToggleFullScreen,
-    ToggleDebug,
     ToggleHelp,
     // Metric updates — payloads are not serializable so skipped in serde
     #[serde(skip)]
@@ -38,8 +37,6 @@ pub enum Action {
     DiskUpdate(DiskSnapshot),
     #[serde(skip)]
     ProcUpdate(ProcSnapshot),
-    // Debug
-    DebugSnapshot(String),
 }
 
 impl Action {

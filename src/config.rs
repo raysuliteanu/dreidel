@@ -100,7 +100,6 @@ pub struct KeyBindings {
     pub focus_disk: char,
     pub fullscreen: char,
     pub help: char,
-    pub debug: char,
 }
 
 impl Default for KeyBindings {
@@ -109,10 +108,9 @@ impl Default for KeyBindings {
             focus_proc: 'p',
             focus_cpu: 'c',
             focus_net: 'n',
-            focus_disk: 'i',
+            focus_disk: 'd',
             fullscreen: 'f',
             help: '?',
-            debug: 'd',
         }
     }
 }

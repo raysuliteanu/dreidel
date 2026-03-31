@@ -13,7 +13,6 @@ use strum::{Display, EnumIter};
 use crate::theme::ColorPalette;
 
 pub mod cpu;
-pub mod debug;
 pub mod disk;
 pub mod help;
 pub mod net;
@@ -28,7 +27,6 @@ pub enum ComponentId {
     Net,
     Disk,
     Process,
-    Debug,
 }
 
 /// Build a block title with the focus key highlighted: ` [K]rest `.

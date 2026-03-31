@@ -53,10 +53,8 @@ pub struct App {
     action_rx: mpsc::Receiver<Action>,
     components: Vec<(ComponentId, Box<dyn Component>)>,
     status_bar: Box<dyn Component>,
-    debug_comp: Box<dyn Component>,
     help_comp: Box<dyn Component>,
     focus: FocusState,
-    show_debug: bool,
     show_help: bool,
     loading: bool,
     should_quit: bool,
@@ -72,7 +70,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(config: Config, show_debug: bool) -> Result<Self> {
+    pub fn new(config: Config) -> Result<Self> {
         let (action_tx, action_rx) = mpsc::channel(config.general.channel_capacity);
         let palette = config.general.theme.palette();
 
@@ -135,9 +133,6 @@ impl App {
             status_bar: Box::new(crate::components::status_bar::StatusBarComponent::new(
                 palette.clone(),
             )),
-            debug_comp: Box::new(crate::components::debug::DebugComponent::new(
-                palette.clone(),
-            )),
             help_comp: Box::new(HelpComponent::new(
                 palette.clone(),
                 config.keybindings.clone(),
@@ -145,7 +140,6 @@ impl App {
             focus: FocusState::Normal {
                 focused: ComponentId::Process,
             },
-            show_debug,
             show_help: false,
             loading: true,
             should_quit: false,
@@ -294,8 +288,6 @@ impl App {
                     .try_send(Action::FocusComponent(ComponentId::Disk));
             } else if c == kb.fullscreen {
                 let _ = self.action_tx.try_send(Action::ToggleFullScreen);
-            } else if c == kb.debug {
-                let _ = self.action_tx.try_send(Action::ToggleDebug);
             } else if c == 'q' {
                 match &self.focus {
                     FocusState::FullScreen(_) => {
@@ -363,7 +355,6 @@ impl App {
                 Action::ClearScreen => {
                     tui.terminal.clear().context("clearing screen")?;
                 }
-                Action::ToggleDebug => self.show_debug = !self.show_debug,
                 Action::ToggleHelp => {
                     self.show_help = !self.show_help;
                     self.render(tui).context("rendering after help toggle")?;
@@ -392,18 +383,6 @@ impl App {
                 }
             }
             self.status_bar.update(action.clone())?;
-
-            // Feed debug snapshot directly to debug component when sidebar is visible.
-            // Avoids double-sending through the channel by calling update() directly.
-            if self.show_debug {
-                let snapshot = self
-                    .components
-                    .iter()
-                    .map(|(id, comp)| format!("[{id}]\n{comp:#?}"))
-                    .collect::<Vec<_>>()
-                    .join("\n\n");
-                self.debug_comp.update(Action::DebugSnapshot(snapshot))?;
-            }
         }
         Ok(())
     }
@@ -430,7 +409,6 @@ impl App {
         let focus = self.focus.clone();
         let preset = self.preset;
         let visible = self.visible.clone();
-        let show_debug = self.show_debug;
         let show_help = self.show_help;
         let loading = self.loading;
         let palette = self.config.general.theme.palette();
@@ -470,17 +448,7 @@ impl App {
                 let _ = self.status_bar.draw(frame, status_rect);
             }
 
-            let (main_area, debug_area) = if show_debug {
-                let cols = Layout::horizontal([Constraint::Fill(1), Constraint::Length(40)])
-                    .split(content_area);
-                (cols[0], Some(cols[1]))
-            } else {
-                (content_area, None)
-            };
-
-            if let Some(da) = debug_area {
-                let _ = self.debug_comp.draw(frame, da);
-            }
+            let main_area = content_area;
 
             // Always draw the normal layout first so it remains visible behind
             // any overlay (fullscreen modal, help, loading).
@@ -580,7 +548,7 @@ mod tests {
     };
 
     fn make_app() -> App {
-        App::new(Config::default(), false).expect("app construction should not fail")
+        App::new(Config::default()).expect("app construction should not fail")
     }
 
     fn key(c: char) -> KeyEvent {
@@ -766,7 +734,7 @@ mod tests {
     fn app_new_rejects_invalid_component_in_show_list() {
         let mut cfg = Config::default();
         cfg.layout.show = vec!["cpu".into(), "foo".into()];
-        assert!(App::new(cfg, false).is_err());
+        assert!(App::new(cfg).is_err());
     }
 
     /// With a single visible component the adaptive layout should fill the
@@ -776,7 +744,7 @@ mod tests {
     fn adaptive_single_component_fills_content_area() {
         let mut cfg = Config::default();
         cfg.layout.show = vec!["net".into()];
-        let mut app = App::new(cfg, false).unwrap();
+        let mut app = App::new(cfg).unwrap();
         feed_stubs(&mut app);
 
         let width = 160u16;
