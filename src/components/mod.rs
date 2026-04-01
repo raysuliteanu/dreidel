@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 use anyhow::Result;
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -69,6 +69,58 @@ pub const SERIES_COLORS: [Color; 32] = [
     Color::Rgb(255, 190, 145), // light peach
     Color::Rgb(185, 130, 255), // light purple
 ];
+
+/// Shared view-state for list panels (Net, Disk) that support filtering and detail drill-down.
+#[allow(dead_code)] // used in net.rs / disk.rs (added next)
+#[derive(Debug, Clone, Default)]
+pub(crate) enum ListView {
+    #[default]
+    List,
+    Filter {
+        input: String,
+    },
+    Detail {
+        name: String,
+    },
+}
+
+/// Result of processing a key event while in filter mode.
+#[allow(dead_code)] // used in net.rs / disk.rs (added next)
+pub(crate) enum FilterEvent {
+    /// Esc: discard filter, return to list.
+    Clear,
+    /// Enter: accept current input, return to list.
+    Commit(String),
+    /// Backspace/Char: input was updated.
+    Update(String),
+    /// Key not consumed; original input returned unchanged.
+    Ignored(String),
+}
+
+/// Stateless helper for filter-mode key handling shared by Net and Disk panels.
+#[allow(dead_code)] // used in net.rs / disk.rs (added next)
+pub(crate) struct FilterInput;
+
+#[allow(dead_code)] // used in net.rs / disk.rs (added next)
+impl FilterInput {
+    pub(crate) fn handle_key(input: String, key: KeyEvent) -> FilterEvent {
+        match key.code {
+            KeyCode::Esc => FilterEvent::Clear,
+            KeyCode::Enter => FilterEvent::Commit(input),
+            KeyCode::Backspace => {
+                let mut s = input;
+                s.pop();
+                FilterEvent::Update(s)
+            }
+            KeyCode::Char(c) => {
+                let mut s = input;
+                s.push(c);
+                FilterEvent::Update(s)
+            }
+            _ => FilterEvent::Ignored(input),
+        }
+    }
+}
 
 /// Build a block title with the focus key highlighted: ` [K]rest `.
 /// The bracket and uppercase key are accent+bold; the rest is fg.
