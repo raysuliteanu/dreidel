@@ -10,3 +10,6 @@ updates:
       actions:
         patterns:
           - "*"
+    ignore:
+      # MSRV version is set intentionally in ci.yml; @stable refs are not pinned.
+      - dependency-name: dtolnay/rust-toolchain
