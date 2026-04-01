@@ -5,7 +5,7 @@ expression: terminal.backend()
 "                                                                    "
 "                                                                    "
 "                                                                    "
-"   ┌ dreidel v0.1.0 ────────────────────────────────────────────┐   "
+"   ┌ dreidel v[VERSION] ────────────────────────────────────────────┐   "
 "   │Global                                                      │   "
 "   │ ?     help / close                                         │   "
 "   │ p     focus process                                        │   "

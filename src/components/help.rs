@@ -248,6 +248,8 @@ mod tests {
     #[test]
     fn renders_help_overlay() {
         let mut settings = insta::Settings::clone_current();
+        // Redact the version (bumped on each release).
+        settings.add_filter(r"dreidel v[\d.]+", "dreidel v[VERSION]");
         // Redact the commit id (set at build time, varies per commit).
         settings.add_filter(r"Commit id: \w+", "Commit id: [COMMIT_ID]");
         // Config and log paths vary per system; redact them for snapshot stability.
