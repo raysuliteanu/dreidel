@@ -1,4 +1,4 @@
-# [MED] `visible`, `slot_overrides`, and `palette` cloned/reconstructed on every render
+# [MED] `visible`, `slot_overrides`, and `palette` cloned/reconstructed on every render — DONE
 
 ## Location
 `src/app.rs:409–416`

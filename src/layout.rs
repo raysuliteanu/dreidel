@@ -58,9 +58,11 @@ pub enum LayoutPreset {
     Grid,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, strum::EnumString, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
 pub enum StatusBarPosition {
+    #[default]
     Top,
     Bottom,
     Hidden,

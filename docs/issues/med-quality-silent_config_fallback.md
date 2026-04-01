@@ -1,4 +1,4 @@
-# [MED] Invalid config values silently fall back to defaults
+# [MED] Invalid config values silently fall back to defaults — DONE
 
 ## Location
 - `src/app.rs:123` — `LayoutPreset::from_str(&config.layout.preset).unwrap_or_default()`

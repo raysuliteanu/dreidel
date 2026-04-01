@@ -1,4 +1,4 @@
-# [HIGH] Draw errors silently dropped inside `terminal.draw` closure
+# [HIGH] Draw errors silently dropped inside `terminal.draw` closure — DONE
 
 ## Location
 `src/app.rs:448, 464, 478, 489, 494`

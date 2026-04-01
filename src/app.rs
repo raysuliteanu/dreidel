@@ -8,7 +8,7 @@ use ratatui::{
 };
 use std::str::FromStr;
 use tokio::sync::mpsc;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::{
     action::Action,
@@ -20,6 +20,7 @@ use crate::{
         split_status_bar,
     },
     stats::spawn_collector,
+    theme::ColorPalette,
     tui::{Event, Tui},
 };
 
@@ -67,6 +68,7 @@ pub struct App {
     /// in `visible`. Kept in sync each render; used to restrict Tab cycling to
     /// components the user can actually see.
     rendered_ids: Vec<ComponentId>,
+    palette: ColorPalette,
 }
 
 impl App {
@@ -120,12 +122,18 @@ impl App {
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
 
-        let preset = LayoutPreset::from_str(&config.layout.preset).unwrap_or_default();
-        let status_pos = match config.layout.status_bar.as_str() {
-            "bottom" => StatusBarPosition::Bottom,
-            "hidden" => StatusBarPosition::Hidden,
-            _ => StatusBarPosition::Top,
-        };
+        let preset = LayoutPreset::from_str(&config.layout.preset).unwrap_or_else(|_| {
+            warn!(value = %config.layout.preset, "unknown layout preset; using default (sidebar)");
+            LayoutPreset::default()
+        });
+        let status_pos =
+            StatusBarPosition::from_str(&config.layout.status_bar).unwrap_or_else(|_| {
+                warn!(
+                    value = %config.layout.status_bar,
+                    "unknown status_bar position; using top"
+                );
+                StatusBarPosition::default()
+            });
 
         Ok(Self {
             action_tx,
@@ -149,6 +157,7 @@ impl App {
             status_pos,
             visible,
             rendered_ids: Vec::new(),
+            palette,
             config,
             components,
         })
@@ -248,7 +257,13 @@ impl App {
                     .components
                     .iter_mut()
                     .find(|(id, _)| *id == focused_id)
-                    .and_then(|(_, comp)| comp.handle_key_event(*key).ok().flatten());
+                    .and_then(|(_, comp)| match comp.handle_key_event(*key) {
+                        Ok(action) => action,
+                        Err(e) => {
+                            warn!(component = ?focused_id, error = %e, "key handler error");
+                            None
+                        }
+                    });
 
                 if let Some(action) = consumed {
                     let _ = self.action_tx.try_send(action);
@@ -411,7 +426,7 @@ impl App {
         let visible = self.visible.clone();
         let show_help = self.show_help;
         let loading = self.loading;
-        let palette = self.config.general.theme.palette();
+        let palette = self.palette.clone();
         let status_pos = self.status_pos;
         let slot_overrides = self.slot_overrides.clone();
         let cpu_height = self
@@ -444,8 +459,10 @@ impl App {
             let total_area = frame.area();
 
             let (status_rect, content_area) = split_status_bar(total_area, status_pos);
-            if status_pos != StatusBarPosition::Hidden {
-                let _ = self.status_bar.draw(frame, status_rect);
+            if status_pos != StatusBarPosition::Hidden
+                && let Err(e) = self.status_bar.draw(frame, status_rect)
+            {
+                warn!(error = %e, "status bar draw failed");
             }
 
             let main_area = content_area;
@@ -460,8 +477,9 @@ impl App {
                         .components
                         .iter_mut()
                         .find(|(cid, _)| *cid == component_id)
+                        && let Err(e) = comp.draw(frame, rect)
                     {
-                        let _ = comp.draw(frame, rect);
+                        warn!(component = ?component_id, error = %e, "component draw failed");
                     }
                 }
             } else {
@@ -474,24 +492,28 @@ impl App {
                         .components
                         .iter_mut()
                         .find(|(cid, _)| cid == component_id)
+                        && let Err(e) = comp.draw(frame, *rect)
                     {
-                        let _ = comp.draw(frame, *rect);
+                        warn!(component = ?component_id, error = %e, "component draw failed");
                     }
                 }
             }
 
             // Fullscreen overlay: drawn on top of the normal layout like a modal.
             if let FocusState::FullScreen(id) = &focus
-                && let Some((_, comp)) = self.components.iter_mut().find(|(cid, _)| cid == id)
+                && let Some((component_id, comp)) =
+                    self.components.iter_mut().find(|(cid, _)| cid == id)
             {
                 let modal = centered_pct(main_area, 90, 90);
                 frame.render_widget(Clear, modal);
-                let _ = comp.draw(frame, modal);
+                if let Err(e) = comp.draw(frame, modal) {
+                    warn!(component = ?component_id, error = %e, "component draw failed");
+                }
             }
 
             // Help overlay is drawn last so it appears on top of everything else.
-            if show_help {
-                let _ = self.help_comp.draw(frame, total_area);
+            if show_help && let Err(e) = self.help_comp.draw(frame, total_area) {
+                warn!(error = %e, "help overlay draw failed");
             }
 
             // Loading overlay: shown until the first SysUpdate arrives.

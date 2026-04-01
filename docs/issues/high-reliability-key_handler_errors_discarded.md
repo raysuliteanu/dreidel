@@ -1,4 +1,4 @@
-# [HIGH] Key-handler errors silently discarded on focused component
+# [HIGH] Key-handler errors silently discarded on focused component — DONE
 
 ## Location
 `src/app.rs:247–251`
