@@ -1,4 +1,4 @@
-# [MED] Wildcard `_ => ProcessStatus::Unknown` silently absorbs new `sysinfo` variants
+# [MED] Wildcard `_ => ProcessStatus::Unknown` silently absorbs new `sysinfo` variants — DONE
 
 ## Location
 `src/stats/mod.rs:300–310` — `map_process_status` function

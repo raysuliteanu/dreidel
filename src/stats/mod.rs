@@ -305,6 +305,9 @@ fn map_process_status(status: sysinfo::ProcessStatus) -> ProcessStatus {
         sysinfo::ProcessStatus::Stop => ProcessStatus::Stopped,
         sysinfo::ProcessStatus::Zombie => ProcessStatus::Zombie,
         sysinfo::ProcessStatus::Dead => ProcessStatus::Dead,
+        // Variants not yet mapped — update if sysinfo adds states we care about.
+        // As of sysinfo 0.38: Tracing, Wakekill, Waking, Parked, LockBlocked,
+        // UninterruptibleDiskSleep, Suspended, Unknown fall through here.
         _ => ProcessStatus::Unknown,
     }
 }
