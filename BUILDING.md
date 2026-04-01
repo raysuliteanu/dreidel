@@ -105,11 +105,13 @@ GitHub Actions runs on every push and pull request to `main`:
 | Job | What it checks |
 |-----|---------------|
 | `fmt` | `cargo fmt --check` |
-| `clippy` | `cargo clippy -- -D warnings` |
-| `test` | `cargo test` on stable |
-| `msrv` | `cargo test` on Rust 1.88 (declared MSRV) |
-| `audit` | `cargo audit` — known CVEs |
-| `deny` | `cargo deny check` — licenses + advisories |
-| `semver` | `cargo semver-checks` — no accidental API breakage |
+| `clippy` | `cargo clippy --locked -- -D warnings` |
+| `test` | `cargo test --locked` on stable |
+| `msrv` | `cargo test --locked` on Rust 1.88 (declared MSRV) |
+| `coverage` | `cargo llvm-cov --locked --fail-under-lines 80` |
+| `cross-check` | `cargo check --locked --target aarch64-unknown-linux-gnu` |
+| `audit` | `cargo audit` via `rustsec/audit-check` — known CVEs |
+| `deny` | `cargo deny check` via `EmbarkStudios/cargo-deny-action` — licenses + advisories |
+| `semver` | `cargo semver-checks` — disabled until first crates.io publish |
 
 Config: `.github/workflows/ci.yml`.

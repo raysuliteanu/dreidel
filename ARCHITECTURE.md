@@ -95,8 +95,10 @@ The single enum that all app logic communicates through:
   to every component
 - Debug: `DebugSnapshot(String)`
 
-`Action` is `Clone` so it can be broadcast to all components. Payload variants are
-`#[serde(skip)]` because the snapshot structs are not serializable.
+`Action` derives `Clone` for cases where the app needs to re-queue an action (e.g.
+`Render`). It is **not** cloned to fan-out to components — `App::handle_actions` passes
+`&action` to each component's `update` method. Payload variants are `#[serde(skip)]`
+because the snapshot structs are not serializable.
 
 ### `src/tui.rs` — `Tui`
 
@@ -127,21 +129,39 @@ Every panel implements:
 fn set_focused(&mut self, focused: bool) {}          // called before every render
 fn preferred_height(&self) -> Option<u16> { None }   // layout hint
 fn handle_key_event(&mut self, key) -> Result<Option<Action>>
-fn update(&mut self, action: Action) -> Result<Option<Action>>
+fn update(&mut self, action: &Action) -> Result<Option<Action>>
 fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()>
 ```
+
+Note that `update` receives `&Action` — the action is not cloned per component.
 
 `ComponentId` is a `strum`-derived enum with `#[strum(serialize_all = "lowercase")]`;
 the lowercase string representations (`"cpu"`, `"mem"`, `"net"`, `"disk"`,
 `"process"`) are what appear in config and CLI flags.
+
+#### Shared view utilities
+
+`src/components/mod.rs` also exports shared types used by the Net and Disk panels:
+
+- **`ListView`** — the three-state view enum (`List`, `Filter { input }`, `Detail { name }`)
+  shared by `NetComponent` and `DiskComponent` instead of per-component duplicates
+- **`FilterEvent`** — result of a filter-mode keypress (`Clear`, `Commit`, `Update(String)`,
+  `Ignored(String)`)
+- **`FilterInput`** — stateless struct; `FilterInput::handle_key(input, key) → FilterEvent`
+  is the shared filter key handler used by Net, Disk, and CPU panels
+- **`handle_detail_key(key, is_fullscreen, view)`** — shared helper for the Detail arm:
+  Esc/q/Q returns to `ListView::List` (toggling fullscreen if active), all other keys
+  are swallowed
+- **`list_border_block(focus_key, rest, palette, focused)`** — shared border/title builder
+  for the Net and Disk list panels
 
 ### `src/components/` — Panels
 
 | File             | Component            | Key behaviour                                                    |
 | ---------------- | -------------------- | ---------------------------------------------------------------- |
 | `cpu.rs`         | `CpuComponent`       | Per-core bar chart + aggregate gauge; reports `preferred_height` |
-| `net.rs`         | `NetComponent`       | Per-interface RX/TX table; page-up/down scrolling                |
-| `disk.rs`        | `DiskComponent`      | Per-device read/write/usage table; page-up/down scrolling        |
+| `net.rs`         | `NetComponent`       | Per-interface RX/TX table; uses shared `ListView` + `FilterInput` |
+| `disk.rs`        | `DiskComponent`      | Per-device read/write/usage table; uses shared `ListView` + `FilterInput` |
 | `process/mod.rs` | `ProcessComponent`   | Sortable process table with state machine (see below)            |
 | `status_bar.rs`  | `StatusBarComponent` | Top/bottom strip: hostname, uptime, load avg, time               |
 | `debug.rs`       | `DebugComponent`     | Right-side debug sidebar; receives `DebugSnapshot` action        |
