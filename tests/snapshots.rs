@@ -12,7 +12,8 @@ use ratatui::{Terminal, backend::TestBackend};
 #[test]
 fn cpu_component_snapshot() {
     let mut comp = CpuComponent::new(ColorPalette::dark(), 'c');
-    comp.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap();
+    comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
+        .unwrap();
     let mut t = Terminal::new(TestBackend::new(80, 20)).unwrap();
     t.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
     assert_snapshot!(t.backend());
@@ -30,8 +31,9 @@ fn status_bar_snapshot() {
             .unwrap(),
     };
     let mut comp = StatusBarComponent::new(ColorPalette::dark());
-    comp.update(Action::SysUpdate(sys)).unwrap();
-    comp.update(Action::MemUpdate(MemSnapshot::stub())).unwrap();
+    comp.update(&Action::SysUpdate(sys)).unwrap();
+    comp.update(&Action::MemUpdate(MemSnapshot::stub()))
+        .unwrap();
     let mut t = Terminal::new(TestBackend::new(120, 4)).unwrap();
     t.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
     assert_snapshot!(t.backend());

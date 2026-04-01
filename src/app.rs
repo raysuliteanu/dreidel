@@ -393,11 +393,11 @@ impl App {
             }
             // Fan out to all components
             for (_, comp) in &mut self.components {
-                if let Some(new_action) = comp.update(action.clone())? {
+                if let Some(new_action) = comp.update(&action)? {
                     let _ = self.action_tx.try_send(new_action);
                 }
             }
-            self.status_bar.update(action.clone())?;
+            self.status_bar.update(&action)?;
         }
         Ok(())
     }
@@ -590,12 +590,12 @@ mod tests {
     /// render tests see real component output rather than the loading spinner.
     fn feed_stubs(app: &mut App) {
         for (_, comp) in &mut app.components {
-            let _ = comp.update(Action::CpuUpdate(CpuSnapshot::stub()));
-            let _ = comp.update(Action::MemUpdate(MemSnapshot::stub()));
-            let _ = comp.update(Action::NetUpdate(NetSnapshot::stub()));
-            let _ = comp.update(Action::DiskUpdate(DiskSnapshot::stub()));
-            let _ = comp.update(Action::ProcUpdate(ProcSnapshot::stub()));
-            let _ = comp.update(Action::SysUpdate(SysSnapshot::stub()));
+            let _ = comp.update(&Action::CpuUpdate(CpuSnapshot::stub()));
+            let _ = comp.update(&Action::MemUpdate(MemSnapshot::stub()));
+            let _ = comp.update(&Action::NetUpdate(NetSnapshot::stub()));
+            let _ = comp.update(&Action::DiskUpdate(DiskSnapshot::stub()));
+            let _ = comp.update(&Action::ProcUpdate(ProcSnapshot::stub()));
+            let _ = comp.update(&Action::SysUpdate(SysSnapshot::stub()));
         }
         app.loading = false;
     }

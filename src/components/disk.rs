@@ -250,10 +250,10 @@ impl Component for DiskComponent {
         Ok(None)
     }
 
-    fn update(&mut self, action: Action) -> Result<Option<Action>> {
+    fn update(&mut self, action: &Action) -> Result<Option<Action>> {
         match action {
             Action::DiskUpdate(snap) => {
-                let mut snap = snap;
+                let mut snap = snap.clone();
                 snap.devices
                     .sort_by(|left, right| left.name.cmp(&right.name));
                 // sysinfo can report the same device multiple times (one per mount
@@ -619,7 +619,7 @@ mod tests {
     #[test]
     fn renders_with_disk_data() {
         let mut comp = DiskComponent::default();
-        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+        comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
             .unwrap();
         let mut terminal = Terminal::new(TestBackend::new(70, 8)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
@@ -630,7 +630,7 @@ mod tests {
     fn enter_switches_to_detail_and_requests_fullscreen() {
         let mut comp = DiskComponent::default();
         comp.set_focused(true);
-        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+        comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
             .unwrap();
         comp.list_state.select(Some(0));
         let action = comp.handle_key_event(key(KeyCode::Enter)).unwrap();
@@ -647,7 +647,7 @@ mod tests {
     #[test]
     fn esc_closes_detail_view() {
         let mut comp = DiskComponent::default();
-        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+        comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
             .unwrap();
         comp.list_state.select(Some(0));
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
@@ -659,7 +659,7 @@ mod tests {
     #[test]
     fn q_closes_detail_view() {
         let mut comp = DiskComponent::default();
-        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+        comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
             .unwrap();
         comp.list_state.select(Some(0));
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
@@ -672,7 +672,7 @@ mod tests {
     fn esc_in_detail_closes_fullscreen_when_fullscreen() {
         let mut comp = DiskComponent::default();
         comp.set_focused(true);
-        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+        comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
             .unwrap();
         // Simulate fullscreen being active (as the app would set via ToggleFullScreen).
         comp.is_fullscreen = true;
@@ -717,7 +717,7 @@ mod tests {
         let two_devices = DiskSnapshot {
             devices: vec![device("sda"), device("sdb")],
         };
-        comp.update(Action::DiskUpdate(two_devices)).unwrap();
+        comp.update(&Action::DiskUpdate(two_devices)).unwrap();
         comp.list_state.select(Some(0));
         let down = comp
             .handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE))
@@ -742,7 +742,7 @@ mod tests {
             devices: (0..5).map(|i| device(&format!("sd{i}"))).collect(),
         };
         let mut comp = DiskComponent::default();
-        comp.update(Action::DiskUpdate(snap)).unwrap();
+        comp.update(&Action::DiskUpdate(snap)).unwrap();
         comp.list_state.select(Some(2));
 
         // PageDown from middle must jump to last (index 4, not 12).
@@ -776,7 +776,7 @@ mod tests {
             None,
             "no selection before first update"
         );
-        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+        comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
             .unwrap();
         assert_eq!(
             comp.list_state.selected(),
@@ -791,9 +791,9 @@ mod tests {
             devices: vec![device("sda"), device("sdb")],
         };
         let mut comp = DiskComponent::default();
-        comp.update(Action::DiskUpdate(two.clone())).unwrap();
+        comp.update(&Action::DiskUpdate(two.clone())).unwrap();
         comp.list_state.select(Some(1));
-        comp.update(Action::DiskUpdate(two)).unwrap();
+        comp.update(&Action::DiskUpdate(two)).unwrap();
         assert_eq!(
             comp.list_state.selected(),
             Some(1),
@@ -810,9 +810,9 @@ mod tests {
             devices: vec![device("sda")],
         };
         let mut comp = DiskComponent::default();
-        comp.update(Action::DiskUpdate(three)).unwrap();
+        comp.update(&Action::DiskUpdate(three)).unwrap();
         comp.list_state.select(Some(2));
-        comp.update(Action::DiskUpdate(one)).unwrap();
+        comp.update(&Action::DiskUpdate(one)).unwrap();
         assert_eq!(
             comp.list_state.selected(),
             Some(0),
@@ -823,10 +823,10 @@ mod tests {
     #[test]
     fn selection_cleared_when_list_becomes_empty() {
         let mut comp = DiskComponent::default();
-        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+        comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
             .unwrap();
         assert_eq!(comp.list_state.selected(), Some(0));
-        comp.update(Action::DiskUpdate(DiskSnapshot { devices: vec![] }))
+        comp.update(&Action::DiskUpdate(DiskSnapshot { devices: vec![] }))
             .unwrap();
         assert_eq!(
             comp.list_state.selected(),
@@ -860,7 +860,7 @@ mod tests {
             ],
         };
         let mut comp = DiskComponent::default();
-        comp.update(Action::DiskUpdate(snap)).unwrap();
+        comp.update(&Action::DiskUpdate(snap)).unwrap();
         let names: Vec<&str> = comp
             .latest
             .as_ref()
@@ -880,7 +880,7 @@ mod tests {
     #[test]
     fn sorts_devices_by_name_before_rendering() {
         let mut comp = DiskComponent::default();
-        comp.update(Action::DiskUpdate(DiskSnapshot {
+        comp.update(&Action::DiskUpdate(DiskSnapshot {
             devices: vec![device("zfs0"), device("nvme0n1"), device("sda")],
         }))
         .unwrap();
@@ -901,7 +901,7 @@ mod tests {
     fn history_accumulates_per_device() {
         let mut comp = DiskComponent::default();
         for _ in 0..50 {
-            comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+            comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
                 .unwrap();
         }
         for (read, write) in comp.history.values() {
@@ -914,7 +914,7 @@ mod tests {
     fn history_ring_buffer_bounded() {
         let mut comp = DiskComponent::default();
         for _ in 0..200 {
-            comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+            comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
                 .unwrap();
         }
         for (read, write) in comp.history.values() {
@@ -927,7 +927,7 @@ mod tests {
     fn renders_graph_view() {
         let mut comp = DiskComponent::default();
         for _ in 0..50 {
-            comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+            comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
                 .unwrap();
         }
         comp.list_state.select(Some(0));
@@ -943,7 +943,7 @@ mod tests {
         // chars) must return Some so the global app handler never sees them and
         // cannot shift focus or close the modal.
         let mut comp = DiskComponent::default();
-        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+        comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
             .unwrap();
         comp.list_state.select(Some(0));
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
@@ -972,7 +972,7 @@ mod tests {
     #[test]
     fn slash_enters_filter_mode() {
         let mut comp = DiskComponent::default();
-        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+        comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
             .unwrap();
         comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
         assert!(
@@ -984,7 +984,7 @@ mod tests {
     #[test]
     fn filter_mode_char_updates_filter_and_view() {
         let mut comp = DiskComponent::default();
-        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+        comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
             .unwrap();
         comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
         comp.handle_key_event(key(KeyCode::Char('s'))).unwrap();
@@ -996,7 +996,7 @@ mod tests {
     #[test]
     fn filter_mode_backspace_removes_char() {
         let mut comp = DiskComponent::default();
-        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+        comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
             .unwrap();
         comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
         comp.handle_key_event(key(KeyCode::Char('s'))).unwrap();
@@ -1008,7 +1008,7 @@ mod tests {
     #[test]
     fn filter_mode_esc_clears_filter_and_returns_to_list() {
         let mut comp = DiskComponent::default();
-        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+        comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
             .unwrap();
         comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
         comp.handle_key_event(key(KeyCode::Char('s'))).unwrap();
@@ -1023,7 +1023,7 @@ mod tests {
     #[test]
     fn filter_mode_enter_keeps_filter_and_returns_to_list() {
         let mut comp = DiskComponent::default();
-        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+        comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
             .unwrap();
         comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
         comp.handle_key_event(key(KeyCode::Char('s'))).unwrap();
@@ -1042,7 +1042,7 @@ mod tests {
             devices: vec![device("nvme0n1"), device("sda"), device("sdb")],
         };
         let mut comp = DiskComponent::default();
-        comp.update(Action::DiskUpdate(snap)).unwrap();
+        comp.update(&Action::DiskUpdate(snap)).unwrap();
         // Filter to "sda" only — Down must not advance past index 0.
         comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
         comp.handle_key_event(key(KeyCode::Char('s'))).unwrap();
@@ -1067,7 +1067,7 @@ mod tests {
             devices: vec![device("nvme0n1"), device("sda")],
         };
         let mut comp = DiskComponent::default();
-        comp.update(Action::DiskUpdate(snap)).unwrap();
+        comp.update(&Action::DiskUpdate(snap)).unwrap();
         comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
         for c in "nvme".chars() {
             comp.handle_key_event(key(KeyCode::Char(c))).unwrap();
@@ -1086,7 +1086,7 @@ mod tests {
     #[test]
     fn filter_mode_swallows_keys() {
         let mut comp = DiskComponent::default();
-        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+        comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
             .unwrap();
         comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
         // Even unrecognised keys must return Some(Render) so the global handler

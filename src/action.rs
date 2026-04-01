@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-#![allow(unused)]
-
 use crate::stats::snapshots::{
     CpuSnapshot, DiskSnapshot, MemSnapshot, NetSnapshot, ProcSnapshot, SysSnapshot,
 };
@@ -14,10 +12,14 @@ pub enum Action {
     Tick,
     Render,
     Quit,
+    #[allow(dead_code)] // reserved for platforms that support suspend (SIGTSTP)
     Suspend,
+    #[allow(dead_code)] // reserved for platforms that support suspend (SIGTSTP)
     Resume,
+    #[allow(dead_code)] // reserved for terminal clear-screen event handling
     ClearScreen,
     Resize(u16, u16),
+    #[allow(dead_code)] // reserved for future error reporting to the UI layer
     Error(String),
     // Focus
     #[serde(skip)]
@@ -42,6 +44,7 @@ pub enum Action {
 impl Action {
     /// Returns true if two Actions are the same variant, ignoring payload.
     /// Use this for filtering Tick/Render from debug logs, not for equality checks.
+    #[allow(dead_code)] // utility for debug log filtering; not yet wired into a caller
     pub fn same_variant(&self, other: &Self) -> bool {
         std::mem::discriminant(self) == std::mem::discriminant(other)
     }

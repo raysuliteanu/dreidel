@@ -137,7 +137,7 @@ pub trait Component: std::fmt::Debug {
         Ok(None)
     }
 
-    fn update(&mut self, _action: crate::action::Action) -> Result<Option<crate::action::Action>> {
+    fn update(&mut self, _action: &crate::action::Action) -> Result<Option<crate::action::Action>> {
         Ok(None)
     }
 

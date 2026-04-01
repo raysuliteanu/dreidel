@@ -37,10 +37,10 @@ impl StatusBarComponent {
 }
 
 impl Component for StatusBarComponent {
-    fn update(&mut self, action: Action) -> Result<Option<Action>> {
+    fn update(&mut self, action: &Action) -> Result<Option<Action>> {
         match action {
-            Action::SysUpdate(snap) => self.sys = Some(snap),
-            Action::MemUpdate(snap) => self.mem = Some(snap),
+            Action::SysUpdate(snap) => self.sys = Some(snap.clone()),
+            Action::MemUpdate(snap) => self.mem = Some(snap.clone()),
             _ => {}
         }
         Ok(None)
@@ -226,8 +226,9 @@ mod tests {
     #[test]
     fn renders_hostname_and_uptime() {
         let mut comp = StatusBarComponent::new(ColorPalette::dark());
-        comp.update(Action::SysUpdate(fixed_sys())).unwrap();
-        comp.update(Action::MemUpdate(MemSnapshot::stub())).unwrap();
+        comp.update(&Action::SysUpdate(fixed_sys())).unwrap();
+        comp.update(&Action::MemUpdate(MemSnapshot::stub()))
+            .unwrap();
 
         let mut terminal = Terminal::new(TestBackend::new(80, 4)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();

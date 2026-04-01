@@ -315,7 +315,7 @@ impl Component for CpuComponent {
         Ok(None)
     }
 
-    fn update(&mut self, action: Action) -> Result<Option<Action>> {
+    fn update(&mut self, action: &Action) -> Result<Option<Action>> {
         match action {
             Action::CpuUpdate(snap) => {
                 let n = snap.per_core.len();
@@ -329,7 +329,7 @@ impl Component for CpuComponent {
                     }
                     hist.push_back(pct as f64);
                 }
-                self.latest = Some(snap);
+                self.latest = Some(snap.clone());
             }
             Action::ToggleFullScreen => {
                 self.is_fullscreen = !self.is_fullscreen;
@@ -411,7 +411,8 @@ mod tests {
     #[test]
     fn renders_with_cpu_data() {
         let mut comp = CpuComponent::default();
-        comp.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap();
+        comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
+            .unwrap();
         let mut terminal = Terminal::new(TestBackend::new(60, 10)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
         assert_snapshot!("cpu_with_data", terminal.backend());
@@ -420,8 +421,9 @@ mod tests {
     #[test]
     fn renders_fullscreen_header() {
         let mut comp = CpuComponent::default();
-        comp.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap();
-        comp.update(Action::ToggleFullScreen).unwrap();
+        comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
+            .unwrap();
+        comp.update(&Action::ToggleFullScreen).unwrap();
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
         assert_snapshot!("cpu_fullscreen", terminal.backend());
@@ -431,7 +433,8 @@ mod tests {
     fn history_ring_buffer_bounded() {
         let mut comp = CpuComponent::default();
         for _ in 0..200 {
-            comp.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap();
+            comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
+                .unwrap();
         }
         for hist in &comp.per_core_history {
             assert!(hist.len() <= HISTORY_LEN);
@@ -441,9 +444,10 @@ mod tests {
     #[test]
     fn scroll_clamps_to_valid_range() {
         let mut comp = CpuComponent::default();
-        comp.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap(); // 4 cores
+        comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
+            .unwrap(); // 4 cores
         // Scroll far past the end
-        comp.update(Action::ToggleFullScreen).unwrap();
+        comp.update(&Action::ToggleFullScreen).unwrap();
         for _ in 0..100 {
             comp.handle_key_event(crossterm::event::KeyEvent::new(
                 KeyCode::Down,
@@ -464,7 +468,8 @@ mod tests {
     #[test]
     fn slash_enters_filter_mode() {
         let mut comp = CpuComponent::default();
-        comp.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap();
+        comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
+            .unwrap();
         comp.handle_key_event(crossterm::event::KeyEvent::new(
             KeyCode::Char('/'),
             crossterm::event::KeyModifiers::NONE,
@@ -479,7 +484,8 @@ mod tests {
     #[test]
     fn filter_mode_char_updates_filter_and_state() {
         let mut comp = CpuComponent::default();
-        comp.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap();
+        comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
+            .unwrap();
         let key = |c| {
             crossterm::event::KeyEvent::new(KeyCode::Char(c), crossterm::event::KeyModifiers::NONE)
         };
@@ -492,7 +498,8 @@ mod tests {
     #[test]
     fn filter_mode_esc_clears_filter_and_returns_to_normal() {
         let mut comp = CpuComponent::default();
-        comp.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap();
+        comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
+            .unwrap();
         let key = |c| {
             crossterm::event::KeyEvent::new(KeyCode::Char(c), crossterm::event::KeyModifiers::NONE)
         };
@@ -510,7 +517,8 @@ mod tests {
     #[test]
     fn filter_mode_enter_keeps_filter_and_returns_to_normal() {
         let mut comp = CpuComponent::default();
-        comp.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap();
+        comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
+            .unwrap();
         let key = |c| {
             crossterm::event::KeyEvent::new(KeyCode::Char(c), crossterm::event::KeyModifiers::NONE)
         };
@@ -529,7 +537,8 @@ mod tests {
     fn filtered_cores_matches_only_matching_cores() {
         // CpuSnapshot::stub() has 4 cores (cpu0..cpu3).
         let mut comp = CpuComponent::default();
-        comp.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap();
+        comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
+            .unwrap();
         comp.filter = "1".to_string(); // matches cpu1
         let cores = comp.filtered_cores();
         assert!(
@@ -545,7 +554,8 @@ mod tests {
     #[test]
     fn empty_filter_shows_all_cores() {
         let mut comp = CpuComponent::default();
-        comp.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap();
+        comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
+            .unwrap();
         assert_eq!(
             comp.filtered_cores(),
             (0..comp.num_cores()).collect::<Vec<_>>()

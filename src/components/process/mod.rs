@@ -340,10 +340,10 @@ impl Component for ProcessComponent {
         }
     }
 
-    fn update(&mut self, action: Action) -> Result<Option<Action>> {
+    fn update(&mut self, action: &Action) -> Result<Option<Action>> {
         match action {
             Action::ProcUpdate(snap) => {
-                self.raw = snap.processes;
+                self.raw = snap.processes.clone();
                 self.refresh_display();
             }
             Action::ToggleFullScreen if self.focused => {
@@ -668,7 +668,7 @@ mod tests {
     #[test]
     fn renders_process_list() {
         let mut comp = ProcessComponent::default();
-        comp.update(Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
             .unwrap();
         let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
@@ -709,7 +709,7 @@ mod tests {
     #[test]
     fn first_row_selected_on_proc_update() {
         let mut comp = ProcessComponent::default();
-        comp.update(Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
             .unwrap();
         assert_eq!(comp.table_state.selected(), Some(0));
     }
@@ -729,7 +729,7 @@ mod tests {
 
         let mut comp = ProcessComponent::default();
         comp.set_focused(true);
-        comp.update(Action::ProcUpdate(snap)).unwrap();
+        comp.update(&Action::ProcUpdate(snap)).unwrap();
         comp.table_state.select(Some(2));
 
         // PageDown must clamp to last row (index 4, not 12).
@@ -754,7 +754,7 @@ mod tests {
     #[test]
     fn enter_opens_detail_view() {
         let mut comp = ProcessComponent::default();
-        comp.update(Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
             .unwrap();
         comp.table_state.select(Some(0));
         comp.handle_key_event(key_code(KeyCode::Enter)).unwrap();
@@ -803,10 +803,10 @@ mod tests {
         comp.set_focused(true);
         assert!(!comp.is_fullscreen);
 
-        comp.update(Action::ToggleFullScreen).unwrap();
+        comp.update(&Action::ToggleFullScreen).unwrap();
         assert!(comp.is_fullscreen);
 
-        comp.update(Action::ToggleFullScreen).unwrap();
+        comp.update(&Action::ToggleFullScreen).unwrap();
         assert!(!comp.is_fullscreen);
     }
 
@@ -814,7 +814,7 @@ mod tests {
     fn toggle_fullscreen_ignored_when_not_focused() {
         let mut comp = ProcessComponent::default();
         // focused defaults to false
-        comp.update(Action::ToggleFullScreen).unwrap();
+        comp.update(&Action::ToggleFullScreen).unwrap();
         assert!(
             !comp.is_fullscreen,
             "unfocused component must not enter fullscreen"
@@ -833,10 +833,10 @@ mod tests {
     #[test]
     fn fullscreen_renders_without_panic() {
         let mut comp = ProcessComponent::default();
-        comp.update(Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
             .unwrap();
         comp.set_focused(true);
-        comp.update(Action::ToggleFullScreen).unwrap();
+        comp.update(&Action::ToggleFullScreen).unwrap();
         let mut terminal = Terminal::new(TestBackend::new(140, 30)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
         assert_snapshot!(terminal.backend());
@@ -847,7 +847,7 @@ mod tests {
     #[test]
     fn wide_area_uses_extended_columns_without_fullscreen() {
         let mut comp = ProcessComponent::default();
-        comp.update(Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
             .unwrap();
         // 120-col area meets the threshold; is_fullscreen stays false.
         let mut terminal = Terminal::new(TestBackend::new(120, 30)).unwrap();
@@ -868,7 +868,7 @@ mod tests {
     #[test]
     fn narrow_area_uses_normal_columns() {
         let mut comp = ProcessComponent::default();
-        comp.update(Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
             .unwrap();
         // 80-col area is well below the threshold.
         let mut terminal = Terminal::new(TestBackend::new(80, 30)).unwrap();
@@ -890,7 +890,7 @@ mod tests {
     #[test]
     fn extended_view_sort_cycle_follows_column_order() {
         let mut comp = ProcessComponent::default();
-        comp.update(Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
             .unwrap();
         comp.set_focused(true);
 
@@ -947,7 +947,7 @@ mod tests {
     #[test]
     fn normal_view_sort_cycle_follows_column_order() {
         let mut comp = ProcessComponent::default();
-        comp.update(Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
             .unwrap();
         comp.set_focused(true);
 
@@ -1021,7 +1021,7 @@ mod tests {
         // global app handler never sees them and cannot shift focus or close
         // the modal.
         let mut comp = ProcessComponent::default();
-        comp.update(Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
             .unwrap();
         // Enter detail view for the first process.
         comp.table_state.select(Some(0));

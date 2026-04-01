@@ -248,10 +248,10 @@ impl Component for NetComponent {
         Ok(None)
     }
 
-    fn update(&mut self, action: Action) -> Result<Option<Action>> {
+    fn update(&mut self, action: &Action) -> Result<Option<Action>> {
         match action {
             Action::NetUpdate(snap) => {
-                let mut snap = snap;
+                let mut snap = snap.clone();
                 snap.interfaces
                     .sort_by(|left, right| left.name.cmp(&right.name));
                 // Accumulate per-interface rate history
@@ -774,7 +774,8 @@ mod tests {
     #[test]
     fn renders_with_net_data() {
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
         let mut terminal = Terminal::new(TestBackend::new(60, 8)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
         assert_snapshot!("net_with_data", terminal.backend());
@@ -783,7 +784,8 @@ mod tests {
     #[test]
     fn enter_switches_to_graph_esc_returns_to_list() {
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
         // Select first interface and press Enter
         comp.list_state.select(Some(0));
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
@@ -796,7 +798,8 @@ mod tests {
     #[test]
     fn q_closes_detail_view() {
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
         comp.list_state.select(Some(0));
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
         assert!(matches!(comp.view, NetView::Detail { .. }));
@@ -809,7 +812,8 @@ mod tests {
     fn enter_emits_toggle_fullscreen_when_not_fullscreen() {
         let mut comp = NetComponent::default();
         comp.set_focused(true);
-        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
         comp.list_state.select(Some(0));
         let action = comp.handle_key_event(key(KeyCode::Enter)).unwrap();
         assert!(
@@ -822,7 +826,8 @@ mod tests {
     fn esc_in_detail_emits_toggle_fullscreen_when_fullscreen() {
         let mut comp = NetComponent::default();
         comp.set_focused(true);
-        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
         // Simulate fullscreen being active (as the app would set via ToggleFullScreen).
         comp.is_fullscreen = true;
         comp.view = NetView::Detail {
@@ -840,7 +845,8 @@ mod tests {
     fn history_accumulates_per_interface() {
         let mut comp = NetComponent::default();
         for _ in 0..50 {
-            comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+            comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+                .unwrap();
         }
         // All interfaces in the stub should have history
         for (tx, rx) in comp.history.values() {
@@ -853,7 +859,8 @@ mod tests {
     fn history_ring_buffer_bounded() {
         let mut comp = NetComponent::default();
         for _ in 0..200 {
-            comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+            comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+                .unwrap();
         }
         for (tx, rx) in comp.history.values() {
             assert!(tx.len() <= HISTORY_LEN);
@@ -865,7 +872,8 @@ mod tests {
     fn agg_history_ring_buffer_bounded() {
         let mut comp = NetComponent::default();
         for _ in 0..200 {
-            comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+            comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+                .unwrap();
         }
         assert!(comp.agg_history.0.len() <= HISTORY_LEN);
         assert!(comp.agg_history.1.len() <= HISTORY_LEN);
@@ -875,7 +883,8 @@ mod tests {
     fn renders_list_with_chart() {
         let mut comp = NetComponent::default();
         for _ in 0..50 {
-            comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+            comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+                .unwrap();
         }
         // 14 rows gives inner height 12, which triggers the compact chart (threshold 9).
         let mut terminal = Terminal::new(TestBackend::new(60, 14)).unwrap();
@@ -887,7 +896,8 @@ mod tests {
     fn renders_graph_view() {
         let mut comp = NetComponent::default();
         for _ in 0..50 {
-            comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+            comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+                .unwrap();
         }
         comp.list_state.select(Some(0));
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
@@ -902,7 +912,8 @@ mod tests {
         // global app handler never sees them and cannot shift focus or close
         // the modal.
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
         comp.list_state.select(Some(0));
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
         assert!(matches!(comp.view, NetView::Detail { .. }));
@@ -966,7 +977,7 @@ mod tests {
         snap.interfaces = (0..5).map(|i| interface(&format!("eth{i}"))).collect();
 
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(snap)).unwrap();
+        comp.update(&Action::NetUpdate(snap)).unwrap();
         comp.list_state.select(Some(2));
 
         // PageDown from middle must clamp to last (index 4, not 12).
@@ -995,7 +1006,7 @@ mod tests {
     #[test]
     fn sorts_interfaces_by_name_before_rendering() {
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(NetSnapshot {
+        comp.update(&Action::NetUpdate(NetSnapshot {
             interfaces: vec![interface("wlan0"), interface("eth0"), interface("lo")],
         }))
         .unwrap();
@@ -1016,7 +1027,8 @@ mod tests {
     #[test]
     fn wide_area_shows_extra_columns() {
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
         // 120-col terminal: well above MIN_WIDE_AREA (100), so extra columns must appear.
         let mut terminal = Terminal::new(TestBackend::new(120, 10)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
@@ -1039,7 +1051,8 @@ mod tests {
     #[test]
     fn narrow_area_hides_extra_columns() {
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
         // 60-col terminal: below MIN_WIDE_AREA — only TX/RX byte columns shown.
         let mut terminal = Terminal::new(TestBackend::new(60, 10)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
@@ -1054,7 +1067,8 @@ mod tests {
     #[test]
     fn wide_list_name_column_is_capped() {
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
         let width = 160_u16;
         let mut terminal = Terminal::new(TestBackend::new(width, 10)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
@@ -1071,7 +1085,7 @@ mod tests {
     fn set_focused_false_clears_fullscreen() {
         let mut comp = NetComponent::default();
         comp.set_focused(true);
-        comp.update(Action::ToggleFullScreen).unwrap();
+        comp.update(&Action::ToggleFullScreen).unwrap();
         assert!(comp.is_fullscreen);
         comp.set_focused(false);
         assert!(
@@ -1085,7 +1099,7 @@ mod tests {
     fn toggle_fullscreen_ignored_when_not_focused() {
         let mut comp = NetComponent::default();
         comp.set_focused(false);
-        comp.update(Action::ToggleFullScreen).unwrap();
+        comp.update(&Action::ToggleFullScreen).unwrap();
         assert!(!comp.is_fullscreen);
     }
 
@@ -1097,7 +1111,8 @@ mod tests {
             None,
             "no selection before first update"
         );
-        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
         assert_eq!(
             comp.list_state.selected(),
             Some(0),
@@ -1111,9 +1126,9 @@ mod tests {
             interfaces: vec![interface("eth0"), interface("eth1"), interface("eth2")],
         };
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(snap.clone())).unwrap();
+        comp.update(&Action::NetUpdate(snap.clone())).unwrap();
         comp.list_state.select(Some(2));
-        comp.update(Action::NetUpdate(snap)).unwrap();
+        comp.update(&Action::NetUpdate(snap)).unwrap();
         assert_eq!(
             comp.list_state.selected(),
             Some(2),
@@ -1130,9 +1145,9 @@ mod tests {
             interfaces: vec![interface("eth0")],
         };
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(three)).unwrap();
+        comp.update(&Action::NetUpdate(three)).unwrap();
         comp.list_state.select(Some(2));
-        comp.update(Action::NetUpdate(one)).unwrap();
+        comp.update(&Action::NetUpdate(one)).unwrap();
         assert_eq!(
             comp.list_state.selected(),
             Some(0),
@@ -1143,9 +1158,10 @@ mod tests {
     #[test]
     fn selection_cleared_when_list_becomes_empty() {
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
         assert_eq!(comp.list_state.selected(), Some(0));
-        comp.update(Action::NetUpdate(NetSnapshot { interfaces: vec![] }))
+        comp.update(&Action::NetUpdate(NetSnapshot { interfaces: vec![] }))
             .unwrap();
         assert_eq!(
             comp.list_state.selected(),
@@ -1159,7 +1175,8 @@ mod tests {
     fn detail_view_shows_interface_stats() {
         let mut comp = NetComponent::default();
         for _ in 0..10 {
-            comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+            comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+                .unwrap();
         }
         comp.list_state.select(Some(0));
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
@@ -1183,7 +1200,8 @@ mod tests {
     #[test]
     fn slash_enters_filter_mode() {
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
         comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
         assert!(
             matches!(comp.view, NetView::Filter { .. }),
@@ -1194,7 +1212,8 @@ mod tests {
     #[test]
     fn filter_mode_char_updates_filter_and_view() {
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
         comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
         comp.handle_key_event(key(KeyCode::Char('e'))).unwrap();
         comp.handle_key_event(key(KeyCode::Char('t'))).unwrap();
@@ -1205,7 +1224,8 @@ mod tests {
     #[test]
     fn filter_mode_backspace_removes_char() {
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
         comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
         comp.handle_key_event(key(KeyCode::Char('e'))).unwrap();
         comp.handle_key_event(key(KeyCode::Char('t'))).unwrap();
@@ -1216,7 +1236,8 @@ mod tests {
     #[test]
     fn filter_mode_esc_clears_filter_and_returns_to_list() {
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
         comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
         comp.handle_key_event(key(KeyCode::Char('l'))).unwrap();
         comp.handle_key_event(key(KeyCode::Esc)).unwrap();
@@ -1230,7 +1251,8 @@ mod tests {
     #[test]
     fn filter_mode_enter_keeps_filter_and_returns_to_list() {
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
         comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
         comp.handle_key_event(key(KeyCode::Char('l'))).unwrap();
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
@@ -1248,7 +1270,7 @@ mod tests {
             interfaces: vec![interface("eth0"), interface("lo"), interface("wlan0")],
         };
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(snap)).unwrap();
+        comp.update(&Action::NetUpdate(snap)).unwrap();
         comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
         comp.handle_key_event(key(KeyCode::Char('l'))).unwrap();
         comp.handle_key_event(key(KeyCode::Char('o'))).unwrap();
@@ -1270,7 +1292,7 @@ mod tests {
             interfaces: vec![interface("eth0"), interface("lo"), interface("wlan0")],
         };
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(snap)).unwrap();
+        comp.update(&Action::NetUpdate(snap)).unwrap();
         // Filter to "wlan" then Enter to keep filter and navigate.
         comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
         for c in "wlan".chars() {
@@ -1290,7 +1312,8 @@ mod tests {
     #[test]
     fn filter_mode_swallows_keys() {
         let mut comp = NetComponent::default();
-        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
         comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
         for code in [KeyCode::Tab, KeyCode::BackTab, KeyCode::F(1)] {
             let action = comp.handle_key_event(key(code)).unwrap();
