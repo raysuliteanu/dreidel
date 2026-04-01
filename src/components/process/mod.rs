@@ -3,7 +3,7 @@
 pub mod filter;
 pub mod sort;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
@@ -150,81 +150,102 @@ impl Component for ProcessComponent {
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
-        match &self.state.clone() {
-            ProcessState::FilterMode { input } => {
-                match key.code {
-                    KeyCode::Esc => {
-                        self.filter = ProcessFilter::None;
-                        self.state = ProcessState::NormalList;
-                        self.refresh_display();
-                    }
-                    KeyCode::Enter => {
-                        self.state = ProcessState::NormalList;
-                    }
-                    KeyCode::Backspace => {
-                        let mut s = input.clone();
-                        s.pop();
-                        self.filter = ProcessFilter::parse(&s);
-                        self.state = ProcessState::FilterMode { input: s };
-                        self.refresh_display();
-                    }
-                    KeyCode::Char(c) => {
-                        let mut s = input.clone();
-                        s.push(c);
-                        self.filter = ProcessFilter::parse(&s);
-                        self.state = ProcessState::FilterMode { input: s };
-                        self.refresh_display();
-                    }
-                    _ => {}
+        // Handle FilterMode first via mem::replace to take owned `input` without
+        // cloning the entire enum — avoids the borrow-then-mutate conflict.
+        if matches!(&self.state, ProcessState::FilterMode { .. }) {
+            let input = match std::mem::replace(&mut self.state, ProcessState::NormalList) {
+                ProcessState::FilterMode { input } => input,
+                _ => unreachable!("checked above"),
+            };
+            match key.code {
+                KeyCode::Esc => {
+                    self.filter = ProcessFilter::None;
+                    // self.state is already NormalList from the replace
+                    self.refresh_display();
                 }
-                Ok(Some(Action::Render))
-            }
-            ProcessState::DetailView { .. } => {
-                match key.code {
-                    KeyCode::Esc | KeyCode::Char('q') => {
-                        self.state = ProcessState::NormalList;
-                        return Ok(Some(Action::Render));
-                    }
-                    _ => {}
+                KeyCode::Enter => {
+                    // self.state is already NormalList from the replace
                 }
-                // Swallow all other keys so they don't reach the global handler.
-                Ok(Some(Action::Render))
-            }
-            ProcessState::KillConfirm { pid, name } => {
-                let pid = *pid;
-                let _name = name.clone();
-                match key.code {
-                    KeyCode::Char('y') | KeyCode::Enter => {
-                        if let Err(e) = kill_process(pid) {
-                            self.state = ProcessState::KillError {
-                                message: e.to_string(),
-                            };
-                        } else {
-                            self.state = ProcessState::NormalList;
-                        }
-                        return Ok(Some(Action::Render));
-                    }
-                    KeyCode::Char('n') | KeyCode::Esc => {
-                        self.state = ProcessState::NormalList;
-                        return Ok(Some(Action::Render));
-                    }
-                    _ => {}
+                KeyCode::Backspace => {
+                    let mut s = input;
+                    s.pop();
+                    self.filter = ProcessFilter::parse(&s);
+                    self.state = ProcessState::FilterMode { input: s };
+                    self.refresh_display();
                 }
-                // Swallow all other keys so they don't reach the global handler.
-                Ok(Some(Action::Render))
-            }
-            ProcessState::KillError { .. } => {
-                match key.code {
-                    KeyCode::Enter | KeyCode::Esc | KeyCode::Char(' ') => {
-                        self.state = ProcessState::NormalList;
-                        return Ok(Some(Action::Render));
-                    }
-                    _ => {}
+                KeyCode::Char(c) => {
+                    let mut s = input;
+                    s.push(c);
+                    self.filter = ProcessFilter::parse(&s);
+                    self.state = ProcessState::FilterMode { input: s };
+                    self.refresh_display();
                 }
-                // Swallow all other keys so they don't reach the global handler.
-                Ok(Some(Action::Render))
+                _ => {
+                    // Key not handled; restore state
+                    self.state = ProcessState::FilterMode { input };
+                }
             }
-            ProcessState::NormalList => {
+            return Ok(Some(Action::Render));
+        }
+
+        // For the remaining states extract only scalar/Copy data so the borrow
+        // on self.state is released before we mutate it below.
+        let (is_detail, is_kill_confirm, kill_pid, is_kill_error) = match &self.state {
+            ProcessState::DetailView { .. } => (true, false, 0u32, false),
+            ProcessState::KillConfirm { pid, .. } => (false, true, *pid, false),
+            ProcessState::KillError { .. } => (false, false, 0u32, true),
+            _ => (false, false, 0u32, false),
+        };
+
+        if is_detail {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    self.state = ProcessState::NormalList;
+                    return Ok(Some(Action::Render));
+                }
+                _ => {}
+            }
+            // Swallow all other keys so they don't reach the global handler.
+            return Ok(Some(Action::Render));
+        }
+
+        if is_kill_confirm {
+            let pid = kill_pid;
+            match key.code {
+                KeyCode::Char('y') | KeyCode::Enter => {
+                    if let Err(e) = kill_process(pid) {
+                        self.state = ProcessState::KillError {
+                            message: e.to_string(),
+                        };
+                    } else {
+                        self.state = ProcessState::NormalList;
+                    }
+                    return Ok(Some(Action::Render));
+                }
+                KeyCode::Char('n') | KeyCode::Esc => {
+                    self.state = ProcessState::NormalList;
+                    return Ok(Some(Action::Render));
+                }
+                _ => {}
+            }
+            // Swallow all other keys so they don't reach the global handler.
+            return Ok(Some(Action::Render));
+        }
+
+        if is_kill_error {
+            match key.code {
+                KeyCode::Enter | KeyCode::Esc | KeyCode::Char(' ') => {
+                    self.state = ProcessState::NormalList;
+                    return Ok(Some(Action::Render));
+                }
+                _ => {}
+            }
+            // Swallow all other keys so they don't reach the global handler.
+            return Ok(Some(Action::Render));
+        }
+
+        // NormalList
+        {
                 const PAGE: usize = 10;
                 match key.code {
                     KeyCode::Down => {
@@ -336,7 +357,6 @@ impl Component for ProcessComponent {
                     _ => {}
                 }
                 Ok(None)
-            }
         }
     }
 
@@ -372,7 +392,7 @@ impl Component for ProcessComponent {
         frame.render_widget(block, area);
 
         // Kill error dialog — shown when kill -TERM fails
-        if let ProcessState::KillError { message } = &self.state.clone() {
+        if let ProcessState::KillError { message } = &self.state {
             let dialog_w = (inner.width * 3 / 4).max(30).min(inner.width);
             let dialog_h = 6_u16.min(inner.height);
             let dialog = Rect::new(
@@ -409,7 +429,7 @@ impl Component for ProcessComponent {
         }
 
         // Kill confirm overlay — shown in place of the table
-        if let ProcessState::KillConfirm { pid, name } = &self.state.clone() {
+        if let ProcessState::KillConfirm { pid, name } = &self.state {
             let msg = format!(" Kill {} (pid {})? [y/n] ", name, pid);
             let line = Line::from(Span::styled(
                 msg,
@@ -628,24 +648,11 @@ fn fmt_cpu_time(secs: f64) -> String {
 }
 
 fn kill_process(pid: u32) -> Result<()> {
-    use anyhow::{Context, bail};
-    let status = std::process::Command::new("kill")
-        .arg("-TERM")
-        .arg(pid.to_string())
-        .status()
-        .context("sending SIGTERM")?;
-    if !status.success() {
-        let code = status
-            .code()
-            .map(|c| c.to_string())
-            .unwrap_or_else(|| "unknown".to_string());
-        tracing::warn!(pid, exit_code = %code, "kill -TERM returned non-zero exit status");
-        bail!(
-            "kill -TERM pid {pid} failed (exit code {code}) — \
-             the process may not exist or you may lack permission to signal it"
-        );
-    }
-    Ok(())
+    nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(pid as i32),
+        nix::sys::signal::Signal::SIGTERM,
+    )
+    .with_context(|| format!("sending SIGTERM to pid {pid}"))
 }
 
 #[cfg(test)]
