@@ -15,12 +15,10 @@ use ratatui::{
 
 use crate::{
     action::Action,
-    components::{Component, fmt_rate_col, keyed_title, truncate},
+    components::{Component, HISTORY_LEN, fmt_rate, fmt_rate_col, keyed_title, truncate},
     stats::snapshots::NetSnapshot,
     theme::ColorPalette,
 };
-
-pub const HISTORY_LEN: usize = 100;
 
 /// Which view the net panel is currently showing.
 #[derive(Debug, Clone)]
@@ -115,18 +113,6 @@ fn fmt_packets(pkts: u64) -> String {
 }
 
 /// Format a byte rate with "/s" suffix — used for graph axis labels.
-fn fmt_rate(bytes_per_sec: u64) -> String {
-    const MB: u64 = 1_000_000;
-    const KB: u64 = 1_000;
-    if bytes_per_sec >= MB {
-        format!("{:.1} MB/s", bytes_per_sec as f64 / MB as f64)
-    } else if bytes_per_sec >= KB {
-        format!("{:.1} KB/s", bytes_per_sec as f64 / KB as f64)
-    } else {
-        format!("{} B/s", bytes_per_sec)
-    }
-}
-
 impl Component for NetComponent {
     fn set_focused(&mut self, focused: bool) {
         self.focused = focused;

@@ -246,117 +246,117 @@ impl Component for ProcessComponent {
 
         // NormalList
         {
-                const PAGE: usize = 10;
-                match key.code {
-                    KeyCode::Down => {
-                        let next = self
-                            .table_state
-                            .selected()
-                            .map(|i| i + 1)
-                            .unwrap_or(0)
-                            .min(self.displayed.len().saturating_sub(1));
-                        self.table_state.select(Some(next));
-                        return Ok(Some(Action::Render));
-                    }
-                    KeyCode::Up => {
-                        let prev = self
-                            .table_state
-                            .selected()
-                            .and_then(|i| i.checked_sub(1))
-                            .unwrap_or(0);
-                        self.table_state.select(Some(prev));
-                        return Ok(Some(Action::Render));
-                    }
-                    KeyCode::PageDown => {
-                        let next = self
-                            .table_state
-                            .selected()
-                            .map(|i| i + PAGE)
-                            .unwrap_or(0)
-                            .min(self.displayed.len().saturating_sub(1));
-                        self.table_state.select(Some(next));
-                        return Ok(Some(Action::Render));
-                    }
-                    KeyCode::PageUp => {
-                        let prev = self
-                            .table_state
-                            .selected()
-                            .map(|i| i.saturating_sub(PAGE))
-                            .unwrap_or(0);
-                        self.table_state.select(Some(prev));
-                        return Ok(Some(Action::Render));
-                    }
-                    KeyCode::Enter => {
-                        if let Some(sel) = self.table_state.selected()
-                            && let Some(p) = self.displayed.get(sel)
-                        {
-                            self.state = ProcessState::DetailView { pid: p.pid };
-                            return Ok(Some(Action::Render));
-                        }
-                    }
-                    KeyCode::Char('/') => {
-                        self.state = ProcessState::FilterMode {
-                            input: String::new(),
-                        };
-                        return Ok(Some(Action::Render));
-                    }
-                    KeyCode::Char('k') => {
-                        if let Some(sel) = self.table_state.selected()
-                            && let Some(p) = self.displayed.get(sel)
-                        {
-                            self.state = ProcessState::KillConfirm {
-                                pid: p.pid,
-                                name: p.name.clone(),
-                            };
-                            return Ok(Some(Action::Render));
-                        }
-                    }
-                    KeyCode::Char('s') => {
-                        // Cycle through sortable columns in the order they appear
-                        // on screen so the indicator always moves left-to-right.
-                        // Normal view:   PID | Name | CPU% | MEM | Status
-                        // Extended view: PID | S    | %CPU | %MEM | Command(Name)
-                        let cols: &[SortColumn] = if self.is_wide_layout {
-                            &[
-                                SortColumn::Pid,
-                                SortColumn::User,
-                                SortColumn::Priority,
-                                SortColumn::Nice,
-                                SortColumn::Virt,
-                                SortColumn::Res,
-                                SortColumn::Shr,
-                                SortColumn::Status,
-                                SortColumn::Cpu,
-                                SortColumn::Mem,
-                                SortColumn::Time,
-                                SortColumn::Name,
-                            ]
-                        } else {
-                            &[
-                                SortColumn::Pid,
-                                SortColumn::Name,
-                                SortColumn::Cpu,
-                                SortColumn::Mem,
-                                SortColumn::Status,
-                            ]
-                        };
-                        let idx = cols.iter().position(|c| c == &self.sort_col).unwrap_or(0);
-                        self.sort_col = cols[(idx + 1) % cols.len()];
-                        self.refresh_display();
-                        return Ok(Some(Action::Render));
-                    }
-                    KeyCode::Char('S') => {
-                        self.sort_dir = if self.sort_dir == SortDir::Asc {
-                            SortDir::Desc
-                        } else {
-                            SortDir::Asc
-                        };
-                        self.refresh_display();
-                        return Ok(Some(Action::Render));
-                    }
-                    _ => {}
+            const PAGE: usize = 10;
+            match key.code {
+                KeyCode::Down => {
+                    let next = self
+                        .table_state
+                        .selected()
+                        .map(|i| i + 1)
+                        .unwrap_or(0)
+                        .min(self.displayed.len().saturating_sub(1));
+                    self.table_state.select(Some(next));
+                    return Ok(Some(Action::Render));
                 }
-                Ok(None)
+                KeyCode::Up => {
+                    let prev = self
+                        .table_state
+                        .selected()
+                        .and_then(|i| i.checked_sub(1))
+                        .unwrap_or(0);
+                    self.table_state.select(Some(prev));
+                    return Ok(Some(Action::Render));
+                }
+                KeyCode::PageDown => {
+                    let next = self
+                        .table_state
+                        .selected()
+                        .map(|i| i + PAGE)
+                        .unwrap_or(0)
+                        .min(self.displayed.len().saturating_sub(1));
+                    self.table_state.select(Some(next));
+                    return Ok(Some(Action::Render));
+                }
+                KeyCode::PageUp => {
+                    let prev = self
+                        .table_state
+                        .selected()
+                        .map(|i| i.saturating_sub(PAGE))
+                        .unwrap_or(0);
+                    self.table_state.select(Some(prev));
+                    return Ok(Some(Action::Render));
+                }
+                KeyCode::Enter => {
+                    if let Some(sel) = self.table_state.selected()
+                        && let Some(p) = self.displayed.get(sel)
+                    {
+                        self.state = ProcessState::DetailView { pid: p.pid };
+                        return Ok(Some(Action::Render));
+                    }
+                }
+                KeyCode::Char('/') => {
+                    self.state = ProcessState::FilterMode {
+                        input: String::new(),
+                    };
+                    return Ok(Some(Action::Render));
+                }
+                KeyCode::Char('k') => {
+                    if let Some(sel) = self.table_state.selected()
+                        && let Some(p) = self.displayed.get(sel)
+                    {
+                        self.state = ProcessState::KillConfirm {
+                            pid: p.pid,
+                            name: p.name.clone(),
+                        };
+                        return Ok(Some(Action::Render));
+                    }
+                }
+                KeyCode::Char('s') => {
+                    // Cycle through sortable columns in the order they appear
+                    // on screen so the indicator always moves left-to-right.
+                    // Normal view:   PID | Name | CPU% | MEM | Status
+                    // Extended view: PID | S    | %CPU | %MEM | Command(Name)
+                    let cols: &[SortColumn] = if self.is_wide_layout {
+                        &[
+                            SortColumn::Pid,
+                            SortColumn::User,
+                            SortColumn::Priority,
+                            SortColumn::Nice,
+                            SortColumn::Virt,
+                            SortColumn::Res,
+                            SortColumn::Shr,
+                            SortColumn::Status,
+                            SortColumn::Cpu,
+                            SortColumn::Mem,
+                            SortColumn::Time,
+                            SortColumn::Name,
+                        ]
+                    } else {
+                        &[
+                            SortColumn::Pid,
+                            SortColumn::Name,
+                            SortColumn::Cpu,
+                            SortColumn::Mem,
+                            SortColumn::Status,
+                        ]
+                    };
+                    let idx = cols.iter().position(|c| c == &self.sort_col).unwrap_or(0);
+                    self.sort_col = cols[(idx + 1) % cols.len()];
+                    self.refresh_display();
+                    return Ok(Some(Action::Render));
+                }
+                KeyCode::Char('S') => {
+                    self.sort_dir = if self.sort_dir == SortDir::Asc {
+                        SortDir::Desc
+                    } else {
+                        SortDir::Asc
+                    };
+                    self.refresh_display();
+                    return Ok(Some(Action::Render));
+                }
+                _ => {}
+            }
+            Ok(None)
         }
     }
 

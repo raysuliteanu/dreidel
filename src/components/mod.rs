@@ -102,6 +102,22 @@ pub(crate) fn truncate(s: &str, max: usize) -> String {
     format!("{}...", &s[..byte_end])
 }
 
+/// History ring-buffer length shared by all sparkline/chart components.
+pub(crate) const HISTORY_LEN: usize = 100;
+
+/// Format a byte rate with the "/s" suffix, for axis labels and sparkline annotations.
+pub(crate) fn fmt_rate(bytes_per_sec: u64) -> String {
+    const MB: u64 = 1_000_000;
+    const KB: u64 = 1_000;
+    if bytes_per_sec >= MB {
+        format!("{:.1} MB/s", bytes_per_sec as f64 / MB as f64)
+    } else if bytes_per_sec >= KB {
+        format!("{:.1} KB/s", bytes_per_sec as f64 / KB as f64)
+    } else {
+        format!("{} B/s", bytes_per_sec)
+    }
+}
+
 /// Format a byte rate without the "/s" suffix.
 /// The column header carries the "(B/s)" unit context, so individual cells
 /// can omit it to save horizontal space.

@@ -15,12 +15,10 @@ use ratatui::{
 
 use crate::{
     action::Action,
-    components::{Component, SERIES_COLORS, keyed_title},
+    components::{Component, HISTORY_LEN, SERIES_COLORS, keyed_title},
     stats::snapshots::CpuSnapshot,
     theme::ColorPalette,
 };
-
-pub const HISTORY_LEN: usize = 100;
 
 fn core_color(idx: usize) -> Color {
     SERIES_COLORS[idx % SERIES_COLORS.len()]
