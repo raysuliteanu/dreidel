@@ -763,10 +763,12 @@ mod tests {
 
     #[test]
     fn kill_error_state_dismisses_on_enter_or_esc() {
-        let mut comp = ProcessComponent::default();
         // Directly place the component in KillError state (simulates a failed kill)
-        comp.state = ProcessState::KillError {
-            message: "kill -TERM pid 99 failed (exit code 1)".to_string(),
+        let mut comp = ProcessComponent {
+            state: ProcessState::KillError {
+                message: "kill -TERM pid 99 failed (exit code 1)".to_string(),
+            },
+            ..Default::default()
         };
         // Enter dismisses and returns to NormalList
         comp.handle_key_event(key_code(KeyCode::Enter)).unwrap();
@@ -782,9 +784,11 @@ mod tests {
 
     #[test]
     fn kill_error_renders_without_panic() {
-        let mut comp = ProcessComponent::default();
-        comp.state = ProcessState::KillError {
-            message: "kill -TERM pid 1 failed (exit code 1) — permission denied".to_string(),
+        let mut comp = ProcessComponent {
+            state: ProcessState::KillError {
+                message: "kill -TERM pid 1 failed (exit code 1) — permission denied".to_string(),
+            },
+            ..Default::default()
         };
         let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
