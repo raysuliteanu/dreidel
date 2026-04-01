@@ -39,6 +39,8 @@ pub struct NetComponent {
     list_state: ListState,
     /// Per-interface ring buffers: (tx_bytes_per_sec, rx_bytes_per_sec).
     history: HashMap<String, (VecDeque<u64>, VecDeque<u64>)>,
+    /// Aggregate TX/RX history: sum of all interface rates per tick.
+    agg_history: (VecDeque<u64>, VecDeque<u64>),
     view: NetView,
     focused: bool,
     is_fullscreen: bool,
@@ -52,6 +54,7 @@ impl NetComponent {
             latest: None,
             list_state: ListState::default(),
             history: HashMap::new(),
+            agg_history: (VecDeque::new(), VecDeque::new()),
             view: NetView::List,
             focused: false,
             is_fullscreen: false,
@@ -200,6 +203,15 @@ impl Component for NetComponent {
                     entry.0.push_back(iface.tx_bytes);
                     entry.1.push_back(iface.rx_bytes);
                 }
+                // Accumulate aggregate TX/RX across all interfaces
+                let total_tx: u64 = snap.interfaces.iter().map(|i| i.tx_bytes).sum();
+                let total_rx: u64 = snap.interfaces.iter().map(|i| i.rx_bytes).sum();
+                if self.agg_history.0.len() >= HISTORY_LEN {
+                    self.agg_history.0.pop_front();
+                    self.agg_history.1.pop_front();
+                }
+                self.agg_history.0.push_back(total_tx);
+                self.agg_history.1.push_back(total_rx);
                 self.latest = Some(snap);
             }
             Action::ToggleFullScreen if self.focused => {
@@ -267,8 +279,26 @@ impl NetComponent {
             (name_w, 0, false)
         };
 
-        // Header row + list area
-        let chunks = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).split(inner);
+        // Chart (when tall enough) + separator + header row + list
+        let chart_h: u16 = if inner.height >= 9 { 4 } else { 0 };
+        let sep_h: u16 = if chart_h > 0 { 1 } else { 0 };
+        let layout = Layout::vertical([
+            Constraint::Length(chart_h),
+            Constraint::Length(sep_h),
+            Constraint::Length(1),
+            Constraint::Fill(1),
+        ])
+        .split(inner);
+
+        if chart_h > 0 {
+            self.draw_compact_chart(frame, layout[0]);
+            frame.render_widget(
+                Block::default()
+                    .borders(Borders::TOP)
+                    .border_style(Style::new().fg(self.palette.border)),
+                layout[1],
+            );
+        }
 
         let accent_bold = Style::new()
             .fg(self.palette.accent)
@@ -300,7 +330,7 @@ impl NetComponent {
                 accent_bold,
             ));
         }
-        frame.render_widget(Line::from(header_spans), chunks[0]);
+        frame.render_widget(Line::from(header_spans), layout[2]);
 
         let palette = &self.palette;
         let items: Vec<ListItem> = snap
@@ -368,8 +398,67 @@ impl NetComponent {
         let list = List::new(items)
             .highlight_style(Style::new().bg(self.palette.border).fg(self.palette.fg));
 
-        frame.render_stateful_widget(list, chunks[1], &mut self.list_state);
+        frame.render_stateful_widget(list, layout[3], &mut self.list_state);
         Ok(())
+    }
+
+    /// Draws the compact aggregate TX/RX chart used in the list view header.
+    fn draw_compact_chart(&self, frame: &mut Frame, area: Rect) {
+        let (tx_hist, rx_hist) = &self.agg_history;
+        if tx_hist.is_empty() {
+            return;
+        }
+
+        let hist_len = HISTORY_LEN as f64;
+        let n = tx_hist.len();
+        let tx_data: Vec<(f64, f64)> = tx_hist
+            .iter()
+            .enumerate()
+            .map(|(j, &v)| (hist_len - n as f64 + j as f64, v as f64))
+            .collect();
+        let rx_data: Vec<(f64, f64)> = rx_hist
+            .iter()
+            .enumerate()
+            .map(|(j, &v)| (hist_len - n as f64 + j as f64, v as f64))
+            .collect();
+
+        let y_max = tx_hist
+            .iter()
+            .chain(rx_hist.iter())
+            .copied()
+            .max()
+            .unwrap_or(0)
+            .max(1024) as f64;
+
+        let datasets = vec![
+            Dataset::default()
+                .marker(symbols::Marker::Braille)
+                .graph_type(GraphType::Line)
+                .style(Style::new().fg(self.palette.accent))
+                .data(&tx_data),
+            Dataset::default()
+                .marker(symbols::Marker::Braille)
+                .graph_type(GraphType::Line)
+                .style(Style::new().fg(self.palette.highlight))
+                .data(&rx_data),
+        ];
+
+        let chart = Chart::new(datasets)
+            .x_axis(
+                Axis::default()
+                    .bounds([0.0, hist_len])
+                    .style(Style::new().fg(self.palette.dim)),
+            )
+            .y_axis(
+                Axis::default()
+                    .bounds([0.0, y_max])
+                    .labels([
+                        Span::styled("0", Style::new().fg(self.palette.dim)),
+                        Span::styled(fmt_rate(y_max as u64), Style::new().fg(self.palette.dim)),
+                    ])
+                    .style(Style::new().fg(self.palette.dim)),
+            );
+        frame.render_widget(chart, area);
     }
 
     fn draw_detail(&mut self, frame: &mut Frame, area: Rect, name: &str) -> Result<()> {
@@ -476,15 +565,17 @@ impl NetComponent {
             None => return Ok(()),
         };
 
+        let hist_len = HISTORY_LEN as f64;
+        let n = tx_hist.len();
         let tx_data: Vec<(f64, f64)> = tx_hist
             .iter()
             .enumerate()
-            .map(|(i, &v)| (i as f64, v as f64))
+            .map(|(j, &v)| (hist_len - n as f64 + j as f64, v as f64))
             .collect();
         let rx_data: Vec<(f64, f64)> = rx_hist
             .iter()
             .enumerate()
-            .map(|(i, &v)| (i as f64, v as f64))
+            .map(|(j, &v)| (hist_len - n as f64 + j as f64, v as f64))
             .collect();
 
         let y_max = tx_hist
@@ -510,11 +601,10 @@ impl NetComponent {
                 .data(&rx_data),
         ];
 
-        let x_max = HISTORY_LEN as f64;
         let chart = Chart::new(datasets)
             .x_axis(
                 Axis::default()
-                    .bounds([0.0, x_max])
+                    .bounds([0.0, hist_len])
                     .style(Style::new().fg(self.palette.dim)),
             )
             .y_axis(
@@ -699,6 +789,28 @@ mod tests {
             assert!(tx.len() <= HISTORY_LEN);
             assert!(rx.len() <= HISTORY_LEN);
         }
+    }
+
+    #[test]
+    fn agg_history_ring_buffer_bounded() {
+        let mut comp = NetComponent::default();
+        for _ in 0..200 {
+            comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        }
+        assert!(comp.agg_history.0.len() <= HISTORY_LEN);
+        assert!(comp.agg_history.1.len() <= HISTORY_LEN);
+    }
+
+    #[test]
+    fn renders_list_with_chart() {
+        let mut comp = NetComponent::default();
+        for _ in 0..50 {
+            comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        }
+        // 14 rows gives inner height 12, which triggers the compact chart (threshold 9).
+        let mut terminal = Terminal::new(TestBackend::new(60, 14)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        assert_snapshot!("net_list_with_chart", terminal.backend());
     }
 
     #[test]
