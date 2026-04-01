@@ -56,7 +56,7 @@ impl Component for HelpComponent {
 
         let version = env!("CARGO_PKG_VERSION");
         let repository = env!("CARGO_PKG_REPOSITORY");
-        let change_id = option_env!("JJ_CHANGE_ID").unwrap_or("");
+        let commit_id = option_env!("GIT_COMMIT_ID").unwrap_or("");
 
         let title = format!(" dreidel v{version} ");
         let block = Block::default()
@@ -132,10 +132,10 @@ impl Component for HelpComponent {
         if !repository.is_empty() {
             lines.push(Line::from(Span::styled(repository, fg)));
         }
-        if !change_id.is_empty() {
+        if !commit_id.is_empty() {
             lines.push(Line::from(vec![
-                Span::styled("change id: ", dim),
-                Span::styled(change_id, Style::new().fg(self.palette.dim)),
+                Span::styled("   commit: ", dim),
+                Span::styled(commit_id, Style::new().fg(self.palette.dim)),
             ]));
         }
         lines.push(Line::from(vec![
