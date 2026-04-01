@@ -73,12 +73,66 @@ fn build_cpu(sys: &System, components: &Components) -> CpuSnapshot {
         per_core: cpus.iter().map(|c| c.cpu_usage()).collect(),
         aggregate: sys.global_cpu_usage(),
         frequency: cpus.iter().map(|c| c.frequency()).collect(),
+        cpu_brand: cpus
+            .first()
+            .map(|c| c.brand().to_owned())
+            .unwrap_or_default(),
         #[cfg(target_os = "linux")]
         temperature: components
             .iter()
             .find(|c| c.label().to_lowercase().contains("cpu"))
             .and_then(|c| c.temperature()),
+        #[cfg(target_os = "linux")]
+        physical_core_count: read_physical_core_count(),
+        #[cfg(target_os = "linux")]
+        governor: read_cpu_governor(),
     }
+}
+
+/// Read the number of physical cores from /proc/cpuinfo by counting unique
+/// (physical id, core id) pairs.
+#[cfg(target_os = "linux")]
+fn read_physical_core_count() -> Option<u32> {
+    let content = std::fs::read_to_string("/proc/cpuinfo").ok()?;
+    let mut pairs: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    let mut physical_id: Option<String> = None;
+    let mut core_id: Option<String> = None;
+    for line in content.lines() {
+        if let Some(val) = line
+            .strip_prefix("physical id")
+            .and_then(|s| s.strip_prefix('\t').or(s.strip_prefix(' ')))
+            .and_then(|s| s.strip_prefix(':'))
+        {
+            physical_id = Some(val.trim().to_owned());
+        } else if let Some(val) = line
+            .strip_prefix("core id")
+            .and_then(|s| s.strip_prefix('\t').or(s.strip_prefix(' ')))
+            .and_then(|s| s.strip_prefix(':'))
+        {
+            core_id = Some(val.trim().to_owned());
+        } else if line.is_empty()
+            && let (Some(p), Some(c)) = (physical_id.take(), core_id.take())
+        {
+            pairs.insert((p, c));
+        }
+    }
+    // Flush the last block (file may not end with a blank line)
+    if let (Some(p), Some(c)) = (physical_id, core_id) {
+        pairs.insert((p, c));
+    }
+    if pairs.is_empty() {
+        None
+    } else {
+        Some(pairs.len() as u32)
+    }
+}
+
+/// Read the scaling governor for cpu0 from sysfs.
+#[cfg(target_os = "linux")]
+fn read_cpu_governor() -> Option<String> {
+    std::fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
+        .ok()
+        .map(|s| s.trim().to_owned())
 }
 
 fn build_mem(sys: &System) -> MemSnapshot {

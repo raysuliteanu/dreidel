@@ -7,8 +7,16 @@ pub struct CpuSnapshot {
     pub per_core: Vec<f32>, // 0.0–100.0 per logical core
     pub aggregate: f32,
     pub frequency: Vec<u64>, // MHz per core
+    /// CPU brand string, e.g. "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz"
+    pub cpu_brand: String,
     #[cfg(target_os = "linux")]
     pub temperature: Option<f32>, // degrees C
+    /// Number of physical (non-hyperthreaded) cores from /proc/cpuinfo
+    #[cfg(target_os = "linux")]
+    pub physical_core_count: Option<u32>,
+    /// Scaling governor from /sys/.../cpufreq/scaling_governor, e.g. "powersave"
+    #[cfg(target_os = "linux")]
+    pub governor: Option<String>,
 }
 
 impl CpuSnapshot {
@@ -17,8 +25,13 @@ impl CpuSnapshot {
             per_core: vec![42.0, 18.0, 75.0, 5.0],
             aggregate: 35.0,
             frequency: vec![3400, 3400, 3400, 3400],
+            cpu_brand: "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz".into(),
             #[cfg(target_os = "linux")]
             temperature: Some(62.0),
+            #[cfg(target_os = "linux")]
+            physical_core_count: Some(4),
+            #[cfg(target_os = "linux")]
+            governor: Some("powersave".into()),
         }
     }
 }
