@@ -184,10 +184,10 @@ mod tests {
         let mut settings = insta::Settings::clone_current();
         // JJ change IDs are baked in at compile time and change every commit;
         // redact them so the snapshot stays stable across commits.
-        settings.add_filter(r"change: [a-z0-9]+", "change: [CHANGE_ID]");
+        settings.add_filter(r"change id: [a-z0-9]+", "change id: [CHANGE_ID]");
         // Config and log paths vary per system; redact them for snapshot stability.
-        settings.add_filter(r"config  \S+", "config  [CONFIG_PATH]");
-        settings.add_filter(r"log     \S+", "log     [LOG_PATH]");
+        settings.add_filter(r"config: \S+", "config: [CONFIG_PATH]");
+        settings.add_filter(r"log: \S+", "log: [LOG_PATH]");
         settings.bind(|| {
             let mut comp = HelpComponent::new(ColorPalette::dark(), KeyBindings::default());
             // Tall enough to show the full popup (POPUP_HEIGHT=28) with margin.
