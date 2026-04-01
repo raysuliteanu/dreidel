@@ -1,4 +1,4 @@
-# [MED] Process kill uses `std::process::Command` (subprocess) instead of syscall
+# [MED] Process kill uses `std::process::Command` (subprocess) instead of syscall — DONE
 
 ## Location
 `src/components/process/mod.rs:630–648`

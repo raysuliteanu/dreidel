@@ -1,4 +1,4 @@
-# [MED] Unused `_name` variable with unnecessary clone in `KillConfirm` branch
+# [MED] Unused `_name` variable with unnecessary clone in `KillConfirm` branch — DONE
 
 ## Location
 `src/components/process/mod.rs:195`
