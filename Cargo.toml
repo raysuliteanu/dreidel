@@ -60,7 +60,7 @@ insta = { version = "1.46.3", features = ["filters"] }
 
 [build-dependencies]
 anyhow = "1.0.102"
-vergen-gix = "1.0.0"
+vergen-gix = "9.1.0"
 
 [package.metadata.docs.rs]
 # This crate uses Linux-specific APIs; only build docs for Linux targets.
