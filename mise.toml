@@ -1,0 +1,2 @@
+[env]
+CARGO_TARGET_DIR = "{{config_root}}/target"
