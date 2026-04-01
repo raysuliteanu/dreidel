@@ -9,7 +9,6 @@ mod app;
 mod cli;
 mod components;
 mod config;
-mod errors;
 mod layout;
 mod stats;
 mod theme;

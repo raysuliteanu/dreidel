@@ -40,12 +40,3 @@ pub enum Action {
     #[serde(skip)]
     ProcUpdate(ProcSnapshot),
 }
-
-impl Action {
-    /// Returns true if two Actions are the same variant, ignoring payload.
-    /// Use this for filtering Tick/Render from debug logs, not for equality checks.
-    #[allow(dead_code)] // utility for debug log filtering; not yet wired into a caller
-    pub fn same_variant(&self, other: &Self) -> bool {
-        std::mem::discriminant(self) == std::mem::discriminant(other)
-    }
-}
