@@ -1,4 +1,4 @@
-# [MED] `filtered_cores()` allocates `Vec<usize>` 3–4× per render frame
+# [MED] `filtered_cores()` allocates `Vec<usize>` 3–4× per render frame — DONE
 
 ## Location
 `src/components/cpu.rs:85–92` (definition), called at:

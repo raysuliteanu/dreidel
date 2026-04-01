@@ -1,4 +1,4 @@
-# [LOW] `CpuComponent::per_core_history` is unnecessarily `pub`
+# [LOW] `CpuComponent::per_core_history` is unnecessarily `pub` — DONE
 
 ## Location
 `src/components/cpu.rs:45`

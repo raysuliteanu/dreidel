@@ -15,7 +15,7 @@ use ratatui::{
 
 use crate::{
     action::Action,
-    components::{Component, HISTORY_LEN, SERIES_COLORS, keyed_title},
+    components::{Component, FilterEvent, FilterInput, HISTORY_LEN, SERIES_COLORS, keyed_title},
     stats::snapshots::CpuSnapshot,
     theme::ColorPalette,
 };
@@ -40,7 +40,7 @@ pub struct CpuComponent {
     focus_key: char,
     latest: Option<CpuSnapshot>,
     /// Per-core usage history (0.0–100.0). Oldest at front, newest at back.
-    pub per_core_history: Vec<VecDeque<f64>>,
+    pub(crate) per_core_history: Vec<VecDeque<f64>>,
     scroll_offset: usize,
     state: CpuState,
     /// Active core-label filter. Empty = show all cores.
@@ -85,14 +85,30 @@ impl CpuComponent {
         if self.filter.is_empty() {
             return (0..n).collect();
         }
-        let f = self.filter.to_lowercase();
-        (0..n).filter(|&i| format!("cpu{i}").contains(&f)).collect()
+        // self.filter is stored lowercase; only format!() needs to be checked.
+        (0..n)
+            .filter(|&i| format!("cpu{i}").contains(self.filter.as_str()))
+            .collect()
+    }
+
+    /// Returns the *count* of matching cores without allocating a Vec.
+    /// Used by `preferred_height` to avoid a heap allocation on every layout pass.
+    fn filtered_cores_len(&self) -> usize {
+        let n = self.num_cores();
+        if self.filter.is_empty() {
+            return n;
+        }
+        (0..n)
+            .filter(|&i| format!("cpu{i}").contains(self.filter.as_str()))
+            .count()
     }
 
     /// Clamp scroll_offset so the last visible row never exceeds the last
     /// matching core in the filtered list.
-    fn clamp_scroll(&mut self, visible: usize) {
-        let n = self.filtered_cores().len();
+    ///
+    /// `n` is the pre-computed filtered core count; callers that already have
+    /// it should pass it here to avoid recomputing.
+    fn clamp_scroll(&mut self, visible: usize, n: usize) {
         if n == 0 || visible >= n {
             self.scroll_offset = 0;
         } else {
@@ -149,7 +165,15 @@ impl CpuComponent {
         frame.render_widget(Line::from(row1_spans), row1);
     }
 
-    fn draw_chart(&mut self, frame: &mut Frame, area: Rect, snap: &CpuSnapshot) {
+    fn draw_chart(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        snap: &CpuSnapshot,
+        filtered: &[usize],
+        first: usize,
+        last: usize,
+    ) {
         // Label column: "cpu00  100%" = 11 chars inner + 1 for Borders::LEFT = 12 total.
         const LABEL_INNER_W: u16 = 11;
         const LABEL_TOTAL_W: u16 = LABEL_INNER_W + 1;
@@ -162,14 +186,8 @@ impl CpuComponent {
             Layout::horizontal([Constraint::Fill(1), Constraint::Length(LABEL_TOTAL_W)])
                 .areas(area);
 
-        // Apply the active filter to get the indices of visible cores.
-        let filtered = self.filtered_cores();
-        let n_filtered = filtered.len();
-        // Borders::LEFT only reduces width, not height.
-        let visible = label_area.height as usize;
-        self.clamp_scroll(visible);
-        let first = self.scroll_offset;
-        let last = n_filtered.min(first + visible);
+        // `filtered`, `first`, and `last` are pre-computed by the caller (`draw`)
+        // which performs the mutable clamp_scroll before borrowing the snapshot.
 
         // Build data vecs before constructing datasets; datasets borrow them.
         let hist_len = HISTORY_LEN as f64;
@@ -248,43 +266,40 @@ impl Component for CpuComponent {
 
     fn preferred_height(&self) -> Option<u16> {
         // 2 borders + one row per visible (filtered) core, capped at 8.
-        let cores = self.filtered_cores().len().min(8);
+        // Use filtered_cores_len() to avoid allocating a Vec on every layout pass.
+        let cores = self.filtered_cores_len().min(8);
         Some(2 + cores as u16)
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
-        match self.state.clone() {
-            CpuState::FilterMode { input } => {
-                match key.code {
-                    KeyCode::Esc => {
-                        self.filter = String::new();
-                        self.state = CpuState::Normal;
-                        self.scroll_offset = 0;
-                    }
-                    KeyCode::Enter => {
-                        self.state = CpuState::Normal;
-                    }
-                    KeyCode::Backspace => {
-                        let mut s = input;
-                        s.pop();
-                        self.filter = s.clone();
-                        self.state = CpuState::FilterMode { input: s };
-                        self.scroll_offset = 0;
-                    }
-                    KeyCode::Char(c) => {
-                        let mut s = input;
-                        s.push(c);
-                        self.filter = s.clone();
-                        self.state = CpuState::FilterMode { input: s };
-                        self.scroll_offset = 0;
-                    }
-                    _ => {}
+        if matches!(self.state, CpuState::FilterMode { .. }) {
+            // Take ownership of input without cloning the whole enum.
+            let input = match std::mem::replace(&mut self.state, CpuState::Normal) {
+                CpuState::FilterMode { input } => input,
+                _ => unreachable!("variant confirmed above"),
+            };
+            match FilterInput::handle_key(input, key) {
+                FilterEvent::Clear => {
+                    self.filter = String::new();
+                    self.scroll_offset = 0;
+                    // state is already CpuState::Normal from replace above
                 }
-                return Ok(Some(Action::Render));
+                FilterEvent::Commit => {
+                    // filter stays as-is; state stays Normal
+                }
+                FilterEvent::Update(s) => {
+                    self.filter = s.to_lowercase(); // keep stored filter lowercased
+                    self.state = CpuState::FilterMode { input: s };
+                    self.scroll_offset = 0;
+                }
+                FilterEvent::Ignored(input) => {
+                    // key not consumed — restore state
+                    self.state = CpuState::FilterMode { input };
+                }
             }
-            CpuState::Normal => {}
+            return Ok(Some(Action::Render));
         }
-        let n = self.filtered_cores().len();
+        let n = self.filtered_cores_len();
         match key.code {
             KeyCode::Up => {
                 self.scroll_offset = self.scroll_offset.saturating_sub(1);
@@ -356,9 +371,9 @@ impl Component for CpuComponent {
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
-        let Some(snap) = self.latest.clone() else {
+        if self.latest.is_none() {
             return Ok(());
-        };
+        }
 
         // Show stats header only in fullscreen when there's enough room.
         let show_header = self.is_fullscreen && inner.height >= 6;
@@ -372,8 +387,19 @@ impl Component for CpuComponent {
         ])
         .areas(inner);
 
+        // Precompute mutable state before borrowing `self.latest`.
+        let filtered = self.filtered_cores();
+        let n = filtered.len();
+        let visible = chart_area.height as usize;
+        self.clamp_scroll(visible, n);
+        let first = self.scroll_offset;
+        let last = (first + visible).min(n);
+
+        // Borrow the snapshot only after all mutation is complete.
+        let snap = self.latest.as_ref().expect("checked is_none above");
+
         if show_header {
-            self.draw_header(frame, header_area, &snap);
+            self.draw_header(frame, header_area, snap);
             frame.render_widget(
                 Block::default()
                     .borders(Borders::TOP)
@@ -386,7 +412,7 @@ impl Component for CpuComponent {
             return Ok(());
         }
 
-        self.draw_chart(frame, chart_area, &snap);
+        self.draw_chart(frame, chart_area, snap, &filtered, first, last);
         Ok(())
     }
 }
