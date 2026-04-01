@@ -1,4 +1,4 @@
-# [MED] Filter state machine duplicated across `net.rs`, `disk.rs`, and `cpu.rs`
+# [MED] Filter state machine duplicated across `net.rs`, `disk.rs`, and `cpu.rs` — DONE
 
 ## Location
 - `src/components/net.rs:157–183`

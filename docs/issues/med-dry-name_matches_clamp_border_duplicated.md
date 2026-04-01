@@ -1,4 +1,4 @@
-# [MED] `name_matches`, `clamp_selection`, and `border_block` duplicated in `net.rs` and `disk.rs`
+# [MED] `name_matches`, `clamp_selection`, and `border_block` duplicated in `net.rs` and `disk.rs` — DONE
 
 ## Location
 - `name_matches`: `net.rs:69–71`, `disk.rs:66–68`

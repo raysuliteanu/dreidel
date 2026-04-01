@@ -1,4 +1,4 @@
-# [MED] `fmt_rate()` duplicated verbatim in `net.rs` and `disk.rs`
+# [MED] `fmt_rate()` duplicated verbatim in `net.rs` and `disk.rs` — DONE
 
 ## Location
 - `src/components/net.rs:118–128`

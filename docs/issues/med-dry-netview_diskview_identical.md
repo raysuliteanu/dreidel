@@ -1,4 +1,4 @@
-# [MED] `NetView` and `DiskView` are structurally identical enums
+# [MED] `NetView` and `DiskView` are structurally identical enums — DONE
 
 ## Location
 - `src/components/net.rs:27–34`

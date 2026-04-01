@@ -1,4 +1,4 @@
-# [MED] Double `to_lowercase()` allocation on every filter comparison in `name_matches`
+# [MED] Double `to_lowercase()` allocation on every filter comparison in `name_matches` — DONE
 
 ## Location
 - `src/components/net.rs:70`

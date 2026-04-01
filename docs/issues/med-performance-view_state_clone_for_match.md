@@ -1,4 +1,4 @@
-# [MED] View/state enum cloned just to pattern-match, in key handler and draw paths — DONE (process portions; cpu/net/disk deferred to Steps 4/5)
+# [MED] View/state enum cloned just to pattern-match, in key handler and draw paths — DONE
 
 ## Location
 - `src/components/cpu.rs:258` — `match self.state.clone()`

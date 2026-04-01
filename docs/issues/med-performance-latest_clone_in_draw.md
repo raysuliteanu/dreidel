@@ -1,4 +1,4 @@
-# [MED] `self.latest.clone()` in `draw()` clones full snapshot on every render frame
+# [MED] `self.latest.clone()` in `draw()` clones full snapshot on every render frame — DONE
 
 ## Location
 - `src/components/cpu.rs:361` — `let Some(snap) = self.latest.clone()`

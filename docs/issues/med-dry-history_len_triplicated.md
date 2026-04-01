@@ -1,4 +1,4 @@
-# [MED] `HISTORY_LEN` constant triplicated across three components
+# [MED] `HISTORY_LEN` constant triplicated across three components — DONE
 
 ## Location
 - `src/components/cpu.rs:23`

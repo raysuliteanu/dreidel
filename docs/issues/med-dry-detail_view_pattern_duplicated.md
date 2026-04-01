@@ -1,4 +1,4 @@
-# [MED] Detail view Esc/q + fullscreen-toggle pattern duplicated in `net.rs` and `disk.rs`
+# [MED] Detail view Esc/q + fullscreen-toggle pattern duplicated in `net.rs` and `disk.rs` — DONE
 
 ## Location
 - `src/components/net.rs:140–155`
