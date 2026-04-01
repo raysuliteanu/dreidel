@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # Keep GitHub Actions pinned to commit SHAs and updated automatically.
+  # Dependabot will open PRs to update action SHAs when new versions are tagged.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"

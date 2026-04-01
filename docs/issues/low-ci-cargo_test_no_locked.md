@@ -1,4 +1,4 @@
-# [LOW] CI `cargo test` runs without `--locked`
+# [LOW] CI `cargo test` runs without `--locked` — DONE
 
 ## Location
 `.github/workflows/ci.yml` — `test` job (line 42), `msrv` job (line 53)

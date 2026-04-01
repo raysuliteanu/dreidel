@@ -1,4 +1,4 @@
-# [LOW] `fmt` CI job has no dependency cache
+# [LOW] `fmt` CI job has no dependency cache — DONE
 
 ## Location
 `.github/workflows/ci.yml` — `fmt` job (lines 14–22)

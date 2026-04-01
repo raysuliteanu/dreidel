@@ -1,4 +1,4 @@
-# [LOW] No test coverage reporting in CI
+# [LOW] No test coverage reporting in CI — DONE
 
 ## Location
 `.github/workflows/ci.yml`

@@ -1,4 +1,4 @@
-# [LOW] GitHub Actions not pinned to commit SHAs
+# [LOW] GitHub Actions not pinned to commit SHAs — DONE (Dependabot configured for automated SHA pinning) to commit SHAs
 
 ## Location
 `.github/workflows/ci.yml` — all `uses:` references

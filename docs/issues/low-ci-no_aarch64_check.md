@@ -1,4 +1,4 @@
-# [LOW] CI does not verify `aarch64-unknown-linux-gnu` target despite `deny.toml` listing it
+# [LOW] CI does not verify `aarch64-unknown-linux-gnu` target despite `deny.toml` listing it — DONE target despite `deny.toml` listing it
 
 ## Location
 `.github/workflows/ci.yml`
