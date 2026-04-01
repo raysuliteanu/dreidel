@@ -18,7 +18,6 @@ use std::{
 };
 use tokio::{sync::mpsc, task::JoinHandle, time::interval};
 use tokio_util::sync::CancellationToken;
-use tracing::error;
 
 // These variants are part of the event vocabulary even if not all are
 // dispatched to app logic yet; suppress dead-code lint for the whole enum.
@@ -40,15 +39,15 @@ pub enum Event {
 }
 
 pub struct Tui {
-    pub terminal: ratatui::Terminal<Backend<Stdout>>,
-    pub task: JoinHandle<()>,
-    pub cancellation_token: CancellationToken,
-    pub event_rx: mpsc::Receiver<Event>,
-    pub event_tx: mpsc::Sender<Event>,
-    pub frame_rate: f64,
-    pub tick_rate: f64,
-    pub mouse: bool,
-    pub paste: bool,
+    terminal: ratatui::Terminal<Backend<Stdout>>,
+    task: JoinHandle<()>,
+    cancellation_token: CancellationToken,
+    event_rx: mpsc::Receiver<Event>,
+    event_tx: mpsc::Sender<Event>,
+    frame_rate: f64,
+    tick_rate: f64,
+    mouse: bool,
+    paste: bool,
 }
 
 impl Tui {
@@ -68,13 +67,11 @@ impl Tui {
         })
     }
 
-    #[allow(dead_code)]
     pub fn tick_rate(mut self, r: f64) -> Self {
         self.tick_rate = r;
         self
     }
 
-    #[allow(dead_code)]
     pub fn frame_rate(mut self, r: f64) -> Self {
         self.frame_rate = r;
         self
@@ -133,19 +130,11 @@ impl Tui {
     }
 
     pub fn stop(&self) -> anyhow::Result<()> {
+        // Signal the event loop to exit gracefully, then abort the JoinHandle
+        // to ensure cleanup without blocking. No thread::sleep — callers may
+        // be on a Tokio worker thread.
         self.cancel();
-        let mut counter = 0u32;
-        while !self.task.is_finished() {
-            std::thread::sleep(Duration::from_millis(1));
-            counter += 1;
-            if counter > 50 {
-                self.task.abort();
-            }
-            if counter > 100 {
-                error!("Tui task did not stop within 100ms");
-                break;
-            }
-        }
+        self.task.abort();
         Ok(())
     }
 
@@ -182,12 +171,6 @@ impl Tui {
 
     pub fn cancel(&self) {
         self.cancellation_token.cancel();
-    }
-
-    // TODO: do we even need this method since it's not used
-    #[allow(dead_code)]
-    pub fn size(&self) -> anyhow::Result<ratatui::layout::Size> {
-        self.terminal.size().context("getting terminal size")
     }
 
     pub async fn next_event(&mut self) -> Option<Event> {

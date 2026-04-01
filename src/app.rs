@@ -353,7 +353,7 @@ impl App {
                 Action::Suspend => self.should_suspend = true,
                 Action::Resume => self.should_suspend = false,
                 Action::ClearScreen => {
-                    tui.terminal.clear().context("clearing screen")?;
+                    tui.clear().context("clearing screen")?;
                 }
                 Action::ToggleHelp => {
                     self.show_help = !self.show_help;
@@ -388,7 +388,7 @@ impl App {
     }
 
     fn render(&mut self, tui: &mut Tui) -> Result<()> {
-        self.render_to(&mut tui.terminal)
+        self.render_to(&mut *tui)
     }
 
     /// Inner render that accepts any ratatui backend; used directly in tests via TestBackend.
