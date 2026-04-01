@@ -1,4 +1,4 @@
-# [MED] Blanket `#![allow(unused)]` / `#![allow(dead_code)]` suppress entire modules
+# [MED] Blanket `#![allow(unused)]` / `#![allow(dead_code)]` suppress entire modules — DONE (action.rs); snapshots.rs deferred to Step 4
 
 ## Location
 - `src/action.rs:3` — `#![allow(unused)]`

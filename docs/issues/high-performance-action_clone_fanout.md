@@ -1,4 +1,4 @@
-# [HIGH] Full `Action` payloads cloned 5× per tick at 60 Hz
+# [HIGH] Full `Action` payloads cloned 5× per tick at 60 Hz — DONE
 
 ## Location
 `src/app.rs:381, 385`
