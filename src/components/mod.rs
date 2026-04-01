@@ -71,7 +71,6 @@ pub const SERIES_COLORS: [Color; 32] = [
 ];
 
 /// Shared view-state for list panels (Net, Disk) that support filtering and detail drill-down.
-#[allow(dead_code)] // used in net.rs / disk.rs (added next)
 #[derive(Debug, Clone, Default)]
 pub(crate) enum ListView {
     #[default]
@@ -85,12 +84,11 @@ pub(crate) enum ListView {
 }
 
 /// Result of processing a key event while in filter mode.
-#[allow(dead_code)] // used in net.rs / disk.rs (added next)
 pub(crate) enum FilterEvent {
     /// Esc: discard filter, return to list.
     Clear,
-    /// Enter: accept current input, return to list.
-    Commit(String),
+    /// Enter: accept current input (already reflected in `self.filter`), return to list.
+    Commit,
     /// Backspace/Char: input was updated.
     Update(String),
     /// Key not consumed; original input returned unchanged.
@@ -98,15 +96,13 @@ pub(crate) enum FilterEvent {
 }
 
 /// Stateless helper for filter-mode key handling shared by Net and Disk panels.
-#[allow(dead_code)] // used in net.rs / disk.rs (added next)
 pub(crate) struct FilterInput;
 
-#[allow(dead_code)] // used in net.rs / disk.rs (added next)
 impl FilterInput {
     pub(crate) fn handle_key(input: String, key: KeyEvent) -> FilterEvent {
         match key.code {
             KeyCode::Esc => FilterEvent::Clear,
-            KeyCode::Enter => FilterEvent::Commit(input),
+            KeyCode::Enter => FilterEvent::Commit,
             KeyCode::Backspace => {
                 let mut s = input;
                 s.pop();

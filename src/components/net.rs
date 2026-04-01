@@ -15,21 +15,13 @@ use ratatui::{
 
 use crate::{
     action::Action,
-    components::{Component, HISTORY_LEN, fmt_rate, fmt_rate_col, keyed_title, truncate},
+    components::{
+        Component, FilterEvent, FilterInput, HISTORY_LEN, ListView, fmt_rate, fmt_rate_col,
+        keyed_title, truncate,
+    },
     stats::snapshots::NetSnapshot,
     theme::ColorPalette,
 };
-
-/// Which view the net panel is currently showing.
-#[derive(Debug, Clone)]
-enum NetView {
-    /// Text list of all interfaces with live TX/RX rates.
-    List,
-    /// User is typing a name filter to narrow the interface list.
-    Filter { input: String },
-    /// Detail view for a specific interface: stats header + TX/RX graph.
-    Detail { name: String },
-}
 
 #[derive(Debug)]
 pub struct NetComponent {
@@ -41,8 +33,8 @@ pub struct NetComponent {
     history: HashMap<String, (VecDeque<u64>, VecDeque<u64>)>,
     /// Aggregate TX/RX history: sum of all interface rates per tick.
     agg_history: (VecDeque<u64>, VecDeque<u64>),
-    view: NetView,
-    /// Active name-substring filter. Empty string = no filter.
+    view: ListView,
+    /// Active name-substring filter (stored lowercase). Empty string = no filter.
     filter: String,
     focused: bool,
     is_fullscreen: bool,
@@ -57,7 +49,7 @@ impl NetComponent {
             list_state: ListState::default(),
             history: HashMap::new(),
             agg_history: (VecDeque::new(), VecDeque::new()),
-            view: NetView::List,
+            view: ListView::List,
             filter: String::new(),
             focused: false,
             is_fullscreen: false,
@@ -65,18 +57,18 @@ impl NetComponent {
     }
 
     fn name_matches(&self, name: &str) -> bool {
-        self.filter.is_empty() || name.to_lowercase().contains(&self.filter.to_lowercase())
+        // self.filter is stored lowercase, so only the name needs lowercasing.
+        self.filter.is_empty() || name.to_lowercase().contains(&self.filter)
     }
 
     fn clamp_selection(&mut self) {
-        let filter = self.filter.to_lowercase();
         let filtered_len = self.latest.as_ref().map(|snap| {
-            if filter.is_empty() {
+            if self.filter.is_empty() {
                 snap.interfaces.len()
             } else {
                 snap.interfaces
                     .iter()
-                    .filter(|i| i.name.to_lowercase().contains(&filter))
+                    .filter(|i| i.name.to_lowercase().contains(&self.filter))
                     .count()
             }
         });
@@ -122,11 +114,11 @@ impl Component for NetComponent {
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
-        match &self.view.clone() {
-            NetView::Detail { .. } => {
+        match &self.view {
+            ListView::Detail { .. } => {
                 match key.code {
                     KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
-                        self.view = NetView::List;
+                        self.view = ListView::List;
                         // If we opened fullscreen on Enter, close it now.
                         let action = if self.is_fullscreen {
                             Action::ToggleFullScreen
@@ -140,35 +132,34 @@ impl Component for NetComponent {
                     _ => return Ok(Some(Action::Render)),
                 }
             }
-            NetView::Filter { input } => {
-                match key.code {
-                    KeyCode::Esc => {
+            ListView::Filter { .. } => {
+                // Take ownership of input without cloning the whole enum.
+                let input = match std::mem::replace(&mut self.view, ListView::List) {
+                    ListView::Filter { input } => input,
+                    _ => unreachable!("variant confirmed above"),
+                };
+                match FilterInput::handle_key(input, key) {
+                    FilterEvent::Clear => {
                         self.filter = String::new();
-                        self.view = NetView::List;
+                        self.clamp_selection();
+                        // view is already ListView::List from replace above
+                    }
+                    FilterEvent::Commit => {
+                        // filter stays as-is (already updated per keypress); view stays ListView::List
+                    }
+                    FilterEvent::Update(s) => {
+                        self.filter = s.to_lowercase(); // keep stored filter lowercased
+                        self.view = ListView::Filter { input: s };
                         self.clamp_selection();
                     }
-                    KeyCode::Enter => {
-                        self.view = NetView::List;
+                    FilterEvent::Ignored(input) => {
+                        // key not consumed — restore view
+                        self.view = ListView::Filter { input };
                     }
-                    KeyCode::Backspace => {
-                        let mut s = input.clone();
-                        s.pop();
-                        self.filter = s.clone();
-                        self.view = NetView::Filter { input: s };
-                        self.clamp_selection();
-                    }
-                    KeyCode::Char(c) => {
-                        let mut s = input.clone();
-                        s.push(c);
-                        self.filter = s.clone();
-                        self.view = NetView::Filter { input: s };
-                        self.clamp_selection();
-                    }
-                    _ => {}
                 }
                 return Ok(Some(Action::Render));
             }
-            NetView::List => {
+            ListView::List => {
                 let filtered_names: Vec<String> = match &self.latest {
                     None => return Ok(None),
                     Some(snap) => snap
@@ -211,7 +202,7 @@ impl Component for NetComponent {
                         let idx = self.list_state.selected().unwrap_or(0);
                         if let Some(name) = filtered_names.get(idx) {
                             let name = name.clone();
-                            self.view = NetView::Detail { name };
+                            self.view = ListView::Detail { name };
                             // Open the fullscreen modal unless already fullscreen.
                             let action = if !self.is_fullscreen {
                                 Action::ToggleFullScreen
@@ -222,7 +213,7 @@ impl Component for NetComponent {
                         }
                     }
                     KeyCode::Char('/') => {
-                        self.view = NetView::Filter {
+                        self.view = ListView::Filter {
                             input: self.filter.clone(),
                         };
                         return Ok(Some(Action::Render));
@@ -272,9 +263,12 @@ impl Component for NetComponent {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        match self.view.clone() {
-            NetView::List | NetView::Filter { .. } => self.draw_list(frame, area),
-            NetView::Detail { name } => self.draw_detail(frame, area, &name),
+        match &self.view {
+            ListView::List | ListView::Filter { .. } => self.draw_list(frame, area),
+            ListView::Detail { name } => {
+                let name = name.clone();
+                self.draw_detail(frame, area, &name)
+            }
         }
     }
 }
@@ -294,7 +288,7 @@ impl NetComponent {
 
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let title_rest = match &self.view {
-            NetView::Filter { input } => format!("ET [/{}▌]", input),
+            ListView::Filter { input } => format!("ET [/{}▌]", input),
             _ if !self.filter.is_empty() => format!("ET [/{}]", self.filter),
             _ => "ET".to_string(),
         };
@@ -537,7 +531,7 @@ impl NetComponent {
 
         // --- Stats header ---
         if stats_rows > 0
-            && let Some(snap) = &self.latest.clone()
+            && let Some(snap) = self.latest.as_ref()
             && let Some(iface) = snap.interfaces.iter().find(|i| i.name == name)
         {
             let dim = Style::new().fg(self.palette.dim);
@@ -775,10 +769,10 @@ mod tests {
         // Select first interface and press Enter
         comp.list_state.select(Some(0));
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
-        assert!(matches!(comp.view, NetView::Detail { .. }));
+        assert!(matches!(comp.view, ListView::Detail { .. }));
         // Esc returns to list
         comp.handle_key_event(key(KeyCode::Esc)).unwrap();
-        assert!(matches!(comp.view, NetView::List));
+        assert!(matches!(comp.view, ListView::List));
     }
 
     #[test]
@@ -788,10 +782,10 @@ mod tests {
             .unwrap();
         comp.list_state.select(Some(0));
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
-        assert!(matches!(comp.view, NetView::Detail { .. }));
+        assert!(matches!(comp.view, ListView::Detail { .. }));
         // q also returns to list
         comp.handle_key_event(key(KeyCode::Char('q'))).unwrap();
-        assert!(matches!(comp.view, NetView::List));
+        assert!(matches!(comp.view, ListView::List));
     }
 
     #[test]
@@ -816,7 +810,7 @@ mod tests {
             .unwrap();
         // Simulate fullscreen being active (as the app would set via ToggleFullScreen).
         comp.is_fullscreen = true;
-        comp.view = NetView::Detail {
+        comp.view = ListView::Detail {
             name: "lo".to_string(),
         };
         let action = comp.handle_key_event(key(KeyCode::Esc)).unwrap();
@@ -824,7 +818,7 @@ mod tests {
             matches!(action, Some(Action::ToggleFullScreen)),
             "Esc from detail must close fullscreen"
         );
-        assert!(matches!(comp.view, NetView::List));
+        assert!(matches!(comp.view, ListView::List));
     }
 
     #[test]
@@ -902,7 +896,7 @@ mod tests {
             .unwrap();
         comp.list_state.select(Some(0));
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
-        assert!(matches!(comp.view, NetView::Detail { .. }));
+        assert!(matches!(comp.view, ListView::Detail { .. }));
 
         for code in [
             KeyCode::Tab,
@@ -918,7 +912,7 @@ mod tests {
                 "{code:?} must be consumed in detail view, got None"
             );
             assert!(
-                matches!(comp.view, NetView::Detail { .. }),
+                matches!(comp.view, ListView::Detail { .. }),
                 "{code:?} must not exit detail view"
             );
         }
@@ -1190,7 +1184,7 @@ mod tests {
             .unwrap();
         comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
         assert!(
-            matches!(comp.view, NetView::Filter { .. }),
+            matches!(comp.view, ListView::Filter { .. }),
             "/ must enter filter mode"
         );
     }
@@ -1204,7 +1198,7 @@ mod tests {
         comp.handle_key_event(key(KeyCode::Char('e'))).unwrap();
         comp.handle_key_event(key(KeyCode::Char('t'))).unwrap();
         assert_eq!(comp.filter, "et");
-        assert!(matches!(comp.view, NetView::Filter { ref input } if input == "et"));
+        assert!(matches!(comp.view, ListView::Filter { ref input } if input == "et"));
     }
 
     #[test]
@@ -1229,7 +1223,7 @@ mod tests {
         comp.handle_key_event(key(KeyCode::Esc)).unwrap();
         assert_eq!(comp.filter, "", "Esc must clear filter");
         assert!(
-            matches!(comp.view, NetView::List),
+            matches!(comp.view, ListView::List),
             "Esc must return to list"
         );
     }
@@ -1244,7 +1238,7 @@ mod tests {
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
         assert_eq!(comp.filter, "l", "Enter must keep filter");
         assert!(
-            matches!(comp.view, NetView::List),
+            matches!(comp.view, ListView::List),
             "Enter must return to list"
         );
     }
@@ -1289,7 +1283,7 @@ mod tests {
         comp.list_state.select(Some(0));
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
         assert!(
-            matches!(&comp.view, NetView::Detail { name } if name == "wlan0"),
+            matches!(&comp.view, ListView::Detail { name } if name == "wlan0"),
             "Enter must open the filtered interface, got: {:?}",
             comp.view
         );
@@ -1305,7 +1299,7 @@ mod tests {
             let action = comp.handle_key_event(key(code)).unwrap();
             assert!(action.is_some(), "{code:?} must be consumed in filter mode");
             assert!(
-                matches!(comp.view, NetView::Filter { .. }),
+                matches!(comp.view, ListView::Filter { .. }),
                 "{code:?} must not exit filter mode"
             );
         }
