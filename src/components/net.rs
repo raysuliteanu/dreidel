@@ -27,6 +27,8 @@ pub const HISTORY_LEN: usize = 100;
 enum NetView {
     /// Text list of all interfaces with live TX/RX rates.
     List,
+    /// User is typing a name filter to narrow the interface list.
+    Filter { input: String },
     /// Detail view for a specific interface: stats header + TX/RX graph.
     Detail { name: String },
 }
@@ -42,6 +44,8 @@ pub struct NetComponent {
     /// Aggregate TX/RX history: sum of all interface rates per tick.
     agg_history: (VecDeque<u64>, VecDeque<u64>),
     view: NetView,
+    /// Active name-substring filter. Empty string = no filter.
+    filter: String,
     focused: bool,
     is_fullscreen: bool,
 }
@@ -56,8 +60,34 @@ impl NetComponent {
             history: HashMap::new(),
             agg_history: (VecDeque::new(), VecDeque::new()),
             view: NetView::List,
+            filter: String::new(),
             focused: false,
             is_fullscreen: false,
+        }
+    }
+
+    fn name_matches(&self, name: &str) -> bool {
+        self.filter.is_empty() || name.to_lowercase().contains(&self.filter.to_lowercase())
+    }
+
+    fn clamp_selection(&mut self) {
+        let filter = self.filter.to_lowercase();
+        let filtered_len = self.latest.as_ref().map(|snap| {
+            if filter.is_empty() {
+                snap.interfaces.len()
+            } else {
+                snap.interfaces
+                    .iter()
+                    .filter(|i| i.name.to_lowercase().contains(&filter))
+                    .count()
+            }
+        });
+        match filtered_len {
+            None | Some(0) => self.list_state.select(None),
+            Some(n) => {
+                let sel = self.list_state.selected().unwrap_or(0).min(n - 1);
+                self.list_state.select(Some(sel));
+            }
         }
     }
 }
@@ -124,11 +154,45 @@ impl Component for NetComponent {
                     _ => return Ok(Some(Action::Render)),
                 }
             }
+            NetView::Filter { input } => {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.filter = String::new();
+                        self.view = NetView::List;
+                        self.clamp_selection();
+                    }
+                    KeyCode::Enter => {
+                        self.view = NetView::List;
+                    }
+                    KeyCode::Backspace => {
+                        let mut s = input.clone();
+                        s.pop();
+                        self.filter = s.clone();
+                        self.view = NetView::Filter { input: s };
+                        self.clamp_selection();
+                    }
+                    KeyCode::Char(c) => {
+                        let mut s = input.clone();
+                        s.push(c);
+                        self.filter = s.clone();
+                        self.view = NetView::Filter { input: s };
+                        self.clamp_selection();
+                    }
+                    _ => {}
+                }
+                return Ok(Some(Action::Render));
+            }
             NetView::List => {
-                let Some(snap) = &self.latest else {
-                    return Ok(None);
+                let filtered_names: Vec<String> = match &self.latest {
+                    None => return Ok(None),
+                    Some(snap) => snap
+                        .interfaces
+                        .iter()
+                        .filter(|i| self.name_matches(&i.name))
+                        .map(|i| i.name.clone())
+                        .collect(),
                 };
-                let len = snap.interfaces.len();
+                let len = filtered_names.len();
                 if len == 0 {
                     return Ok(None);
                 }
@@ -159,10 +223,9 @@ impl Component for NetComponent {
                     }
                     KeyCode::Enter => {
                         let idx = self.list_state.selected().unwrap_or(0);
-                        if let Some(iface) = snap.interfaces.get(idx) {
-                            self.view = NetView::Detail {
-                                name: iface.name.clone(),
-                            };
+                        if let Some(name) = filtered_names.get(idx) {
+                            let name = name.clone();
+                            self.view = NetView::Detail { name };
                             // Open the fullscreen modal unless already fullscreen.
                             let action = if !self.is_fullscreen {
                                 Action::ToggleFullScreen
@@ -171,6 +234,12 @@ impl Component for NetComponent {
                             };
                             return Ok(Some(action));
                         }
+                    }
+                    KeyCode::Char('/') => {
+                        self.view = NetView::Filter {
+                            input: self.filter.clone(),
+                        };
+                        return Ok(Some(Action::Render));
                     }
                     _ => {}
                 }
@@ -185,14 +254,6 @@ impl Component for NetComponent {
                 let mut snap = snap;
                 snap.interfaces
                     .sort_by(|left, right| left.name.cmp(&right.name));
-                // Select first row on initial data; keep selection in bounds after refresh
-                let len = snap.interfaces.len();
-                if len == 0 {
-                    self.list_state.select(None);
-                } else {
-                    let sel = self.list_state.selected().unwrap_or(0).min(len - 1);
-                    self.list_state.select(Some(sel));
-                }
                 // Accumulate per-interface rate history
                 for iface in &snap.interfaces {
                     let entry = self.history.entry(iface.name.clone()).or_default();
@@ -213,6 +274,8 @@ impl Component for NetComponent {
                 self.agg_history.0.push_back(total_tx);
                 self.agg_history.1.push_back(total_rx);
                 self.latest = Some(snap);
+                // Clamp selection to the filtered list length.
+                self.clamp_selection();
             }
             Action::ToggleFullScreen if self.focused => {
                 self.is_fullscreen = !self.is_fullscreen;
@@ -224,7 +287,7 @@ impl Component for NetComponent {
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         match self.view.clone() {
-            NetView::List => self.draw_list(frame, area),
+            NetView::List | NetView::Filter { .. } => self.draw_list(frame, area),
             NetView::Detail { name } => self.draw_detail(frame, area, &name),
         }
     }
@@ -244,7 +307,12 @@ impl NetComponent {
     }
 
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        let block = self.border_block("ET");
+        let title_rest = match &self.view {
+            NetView::Filter { input } => format!("ET [/{}▌]", input),
+            _ if !self.filter.is_empty() => format!("ET [/{}]", self.filter),
+            _ => "ET".to_string(),
+        };
+        let block = self.border_block(&title_rest);
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
@@ -333,9 +401,11 @@ impl NetComponent {
         frame.render_widget(Line::from(header_spans), layout[2]);
 
         let palette = &self.palette;
+        let filter = self.filter.to_lowercase();
         let items: Vec<ListItem> = snap
             .interfaces
             .iter()
+            .filter(|i| filter.is_empty() || i.name.to_lowercase().contains(&filter))
             .map(|iface| {
                 let mut spans = vec![
                     Span::styled(
@@ -1108,5 +1178,127 @@ mod tests {
             rendered.contains("TX Pkt/s:"),
             "bottom bar must show packet rates"
         );
+    }
+
+    #[test]
+    fn slash_enters_filter_mode() {
+        let mut comp = NetComponent::default();
+        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
+        assert!(
+            matches!(comp.view, NetView::Filter { .. }),
+            "/ must enter filter mode"
+        );
+    }
+
+    #[test]
+    fn filter_mode_char_updates_filter_and_view() {
+        let mut comp = NetComponent::default();
+        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('e'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('t'))).unwrap();
+        assert_eq!(comp.filter, "et");
+        assert!(matches!(comp.view, NetView::Filter { ref input } if input == "et"));
+    }
+
+    #[test]
+    fn filter_mode_backspace_removes_char() {
+        let mut comp = NetComponent::default();
+        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('e'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('t'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Backspace)).unwrap();
+        assert_eq!(comp.filter, "e");
+    }
+
+    #[test]
+    fn filter_mode_esc_clears_filter_and_returns_to_list() {
+        let mut comp = NetComponent::default();
+        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('l'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Esc)).unwrap();
+        assert_eq!(comp.filter, "", "Esc must clear filter");
+        assert!(
+            matches!(comp.view, NetView::List),
+            "Esc must return to list"
+        );
+    }
+
+    #[test]
+    fn filter_mode_enter_keeps_filter_and_returns_to_list() {
+        let mut comp = NetComponent::default();
+        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('l'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Enter)).unwrap();
+        assert_eq!(comp.filter, "l", "Enter must keep filter");
+        assert!(
+            matches!(comp.view, NetView::List),
+            "Enter must return to list"
+        );
+    }
+
+    #[test]
+    fn filter_narrows_list_for_navigation() {
+        // Three interfaces; filter to only "lo" (one match).
+        let snap = NetSnapshot {
+            interfaces: vec![interface("eth0"), interface("lo"), interface("wlan0")],
+        };
+        let mut comp = NetComponent::default();
+        comp.update(Action::NetUpdate(snap)).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('l'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('o'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Enter)).unwrap(); // exit filter mode
+        assert_eq!(comp.filter, "lo");
+        // Down must be a no-op since filtered list has only 1 item.
+        let sel_before = comp.list_state.selected();
+        comp.handle_key_event(key(KeyCode::Down)).unwrap();
+        assert_eq!(
+            comp.list_state.selected(),
+            sel_before,
+            "Down must not advance past the last filtered item"
+        );
+    }
+
+    #[test]
+    fn filter_enter_opens_filtered_interface() {
+        let snap = NetSnapshot {
+            interfaces: vec![interface("eth0"), interface("lo"), interface("wlan0")],
+        };
+        let mut comp = NetComponent::default();
+        comp.update(Action::NetUpdate(snap)).unwrap();
+        // Filter to "wlan" then Enter to keep filter and navigate.
+        comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
+        for c in "wlan".chars() {
+            comp.handle_key_event(key(KeyCode::Char(c))).unwrap();
+        }
+        comp.handle_key_event(key(KeyCode::Enter)).unwrap(); // exit filter mode
+        // Row 0 of the filtered list is "wlan0". Enter must open it.
+        comp.list_state.select(Some(0));
+        comp.handle_key_event(key(KeyCode::Enter)).unwrap();
+        assert!(
+            matches!(&comp.view, NetView::Detail { name } if name == "wlan0"),
+            "Enter must open the filtered interface, got: {:?}",
+            comp.view
+        );
+    }
+
+    #[test]
+    fn filter_mode_swallows_keys() {
+        let mut comp = NetComponent::default();
+        comp.update(Action::NetUpdate(NetSnapshot::stub())).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
+        for code in [KeyCode::Tab, KeyCode::BackTab, KeyCode::F(1)] {
+            let action = comp.handle_key_event(key(code)).unwrap();
+            assert!(action.is_some(), "{code:?} must be consumed in filter mode");
+            assert!(
+                matches!(comp.view, NetView::Filter { .. }),
+                "{code:?} must not exit filter mode"
+            );
+        }
     }
 }

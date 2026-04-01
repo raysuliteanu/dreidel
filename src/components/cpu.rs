@@ -26,6 +26,16 @@ fn core_color(idx: usize) -> Color {
     SERIES_COLORS[idx % SERIES_COLORS.len()]
 }
 
+/// State for the CPU panel's filter input mode.
+#[derive(Debug, Default, Clone, PartialEq)]
+enum CpuState {
+    #[default]
+    Normal,
+    FilterMode {
+        input: String,
+    },
+}
+
 #[derive(Debug)]
 pub struct CpuComponent {
     palette: ColorPalette,
@@ -34,6 +44,9 @@ pub struct CpuComponent {
     /// Per-core usage history (0.0–100.0). Oldest at front, newest at back.
     pub per_core_history: Vec<VecDeque<f64>>,
     scroll_offset: usize,
+    state: CpuState,
+    /// Active core-label filter. Empty = show all cores.
+    filter: String,
     focused: bool,
     is_fullscreen: bool,
 }
@@ -46,6 +59,8 @@ impl Default for CpuComponent {
             latest: None,
             per_core_history: Vec::new(),
             scroll_offset: 0,
+            state: CpuState::Normal,
+            filter: String::new(),
             focused: false,
             is_fullscreen: false,
         }
@@ -65,9 +80,21 @@ impl CpuComponent {
         self.latest.as_ref().map(|s| s.per_core.len()).unwrap_or(0)
     }
 
-    /// Clamp scroll_offset so the last visible row never exceeds the last core.
-    fn clamp_scroll(&mut self, visible: usize) {
+    /// Returns the indices of cores whose label matches the active filter.
+    /// When the filter is empty, all core indices are returned.
+    fn filtered_cores(&self) -> Vec<usize> {
         let n = self.num_cores();
+        if self.filter.is_empty() {
+            return (0..n).collect();
+        }
+        let f = self.filter.to_lowercase();
+        (0..n).filter(|&i| format!("cpu{i}").contains(&f)).collect()
+    }
+
+    /// Clamp scroll_offset so the last visible row never exceeds the last
+    /// matching core in the filtered list.
+    fn clamp_scroll(&mut self, visible: usize) {
+        let n = self.filtered_cores().len();
         if n == 0 || visible >= n {
             self.scroll_offset = 0;
         } else {
@@ -137,18 +164,21 @@ impl CpuComponent {
             Layout::horizontal([Constraint::Fill(1), Constraint::Length(LABEL_TOTAL_W)])
                 .areas(area);
 
-        let n_cores = snap.per_core.len();
+        // Apply the active filter to get the indices of visible cores.
+        let filtered = self.filtered_cores();
+        let n_filtered = filtered.len();
         // Borders::LEFT only reduces width, not height.
         let visible = label_area.height as usize;
         self.clamp_scroll(visible);
         let first = self.scroll_offset;
-        let last = n_cores.min(first + visible);
+        let last = n_filtered.min(first + visible);
 
         // Build data vecs before constructing datasets; datasets borrow them.
         let hist_len = HISTORY_LEN as f64;
-        let core_data: Vec<Vec<(f64, f64)>> = (first..last)
-            .map(|i| {
-                let hist = &self.per_core_history[i];
+        let core_data: Vec<Vec<(f64, f64)>> = filtered[first..last]
+            .iter()
+            .map(|&core_idx| {
+                let hist = &self.per_core_history[core_idx];
                 let n = hist.len();
                 // Right-align: newest sample sits at x = HISTORY_LEN - 1.
                 hist.iter()
@@ -158,13 +188,14 @@ impl CpuComponent {
             })
             .collect();
 
-        let datasets: Vec<Dataset> = (first..last)
+        let datasets: Vec<Dataset> = filtered[first..last]
+            .iter()
             .zip(core_data.iter())
-            .map(|(i, data)| {
+            .map(|(&core_idx, data)| {
                 Dataset::default()
                     .marker(symbols::Marker::Braille)
                     .graph_type(GraphType::Line)
-                    .style(Style::new().fg(core_color(i)))
+                    .style(Style::new().fg(core_color(core_idx)))
                     .data(data)
             })
             .collect();
@@ -200,7 +231,7 @@ impl CpuComponent {
         )
         .split(label_inner);
 
-        for (row_idx, core_idx) in (first..first + actual_visible).enumerate() {
+        for (row_idx, &core_idx) in filtered[first..first + actual_visible].iter().enumerate() {
             let pct = snap.per_core[core_idx];
             let label = Span::styled(
                 // "cpu00  100%" — index padded to 2, pct right-aligned in 5, one decimal
@@ -218,13 +249,44 @@ impl Component for CpuComponent {
     }
 
     fn preferred_height(&self) -> Option<u16> {
-        // 2 borders + one row per core, capped at 8 for the compact layout hint.
-        let cores = self.num_cores().min(8);
+        // 2 borders + one row per visible (filtered) core, capped at 8.
+        let cores = self.filtered_cores().len().min(8);
         Some(2 + cores as u16)
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
-        let n = self.num_cores();
+        match self.state.clone() {
+            CpuState::FilterMode { input } => {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.filter = String::new();
+                        self.state = CpuState::Normal;
+                        self.scroll_offset = 0;
+                    }
+                    KeyCode::Enter => {
+                        self.state = CpuState::Normal;
+                    }
+                    KeyCode::Backspace => {
+                        let mut s = input;
+                        s.pop();
+                        self.filter = s.clone();
+                        self.state = CpuState::FilterMode { input: s };
+                        self.scroll_offset = 0;
+                    }
+                    KeyCode::Char(c) => {
+                        let mut s = input;
+                        s.push(c);
+                        self.filter = s.clone();
+                        self.state = CpuState::FilterMode { input: s };
+                        self.scroll_offset = 0;
+                    }
+                    _ => {}
+                }
+                return Ok(Some(Action::Render));
+            }
+            CpuState::Normal => {}
+        }
+        let n = self.filtered_cores().len();
         match key.code {
             KeyCode::Up => {
                 self.scroll_offset = self.scroll_offset.saturating_sub(1);
@@ -241,6 +303,12 @@ impl Component for CpuComponent {
                 if n > 0 {
                     self.scroll_offset = (self.scroll_offset + 8).min(n - 1);
                 }
+            }
+            KeyCode::Char('/') => {
+                self.state = CpuState::FilterMode {
+                    input: self.filter.clone(),
+                };
+                return Ok(Some(Action::Render));
             }
             _ => {}
         }
@@ -277,7 +345,12 @@ impl Component for CpuComponent {
         } else {
             self.palette.border
         };
-        let title: Line = keyed_title(self.focus_key, "PU", &self.palette);
+        let title_rest = match &self.state {
+            CpuState::FilterMode { input } => format!("PU [/{}▌]", input),
+            CpuState::Normal if !self.filter.is_empty() => format!("PU [/{}]", self.filter),
+            CpuState::Normal => "PU".to_string(),
+        };
+        let title: Line = keyed_title(self.focus_key, &title_rest, &self.palette);
         let block = Block::default()
             .title(title)
             .borders(Borders::ALL)
@@ -386,5 +459,96 @@ mod tests {
         // Colors cycle at SERIES_COLORS.len() (32).
         assert_eq!(core_color(0), core_color(SERIES_COLORS.len()));
         assert_ne!(core_color(0), core_color(1));
+    }
+
+    #[test]
+    fn slash_enters_filter_mode() {
+        let mut comp = CpuComponent::default();
+        comp.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap();
+        comp.handle_key_event(crossterm::event::KeyEvent::new(
+            KeyCode::Char('/'),
+            crossterm::event::KeyModifiers::NONE,
+        ))
+        .unwrap();
+        assert!(
+            matches!(comp.state, CpuState::FilterMode { .. }),
+            "/ must enter filter mode"
+        );
+    }
+
+    #[test]
+    fn filter_mode_char_updates_filter_and_state() {
+        let mut comp = CpuComponent::default();
+        comp.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap();
+        let key = |c| {
+            crossterm::event::KeyEvent::new(KeyCode::Char(c), crossterm::event::KeyModifiers::NONE)
+        };
+        comp.handle_key_event(key('/')).unwrap();
+        comp.handle_key_event(key('0')).unwrap();
+        assert_eq!(comp.filter, "0");
+        assert!(matches!(comp.state, CpuState::FilterMode { ref input } if input == "0"));
+    }
+
+    #[test]
+    fn filter_mode_esc_clears_filter_and_returns_to_normal() {
+        let mut comp = CpuComponent::default();
+        comp.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap();
+        let key = |c| {
+            crossterm::event::KeyEvent::new(KeyCode::Char(c), crossterm::event::KeyModifiers::NONE)
+        };
+        comp.handle_key_event(key('/')).unwrap();
+        comp.handle_key_event(key('1')).unwrap();
+        comp.handle_key_event(crossterm::event::KeyEvent::new(
+            KeyCode::Esc,
+            crossterm::event::KeyModifiers::NONE,
+        ))
+        .unwrap();
+        assert_eq!(comp.filter, "", "Esc must clear filter");
+        assert_eq!(comp.state, CpuState::Normal);
+    }
+
+    #[test]
+    fn filter_mode_enter_keeps_filter_and_returns_to_normal() {
+        let mut comp = CpuComponent::default();
+        comp.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap();
+        let key = |c| {
+            crossterm::event::KeyEvent::new(KeyCode::Char(c), crossterm::event::KeyModifiers::NONE)
+        };
+        comp.handle_key_event(key('/')).unwrap();
+        comp.handle_key_event(key('1')).unwrap();
+        comp.handle_key_event(crossterm::event::KeyEvent::new(
+            KeyCode::Enter,
+            crossterm::event::KeyModifiers::NONE,
+        ))
+        .unwrap();
+        assert_eq!(comp.filter, "1", "Enter must keep filter");
+        assert_eq!(comp.state, CpuState::Normal);
+    }
+
+    #[test]
+    fn filtered_cores_matches_only_matching_cores() {
+        // CpuSnapshot::stub() has 4 cores (cpu0..cpu3).
+        let mut comp = CpuComponent::default();
+        comp.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap();
+        comp.filter = "1".to_string(); // matches cpu1
+        let cores = comp.filtered_cores();
+        assert!(
+            cores.contains(&1),
+            "filter '1' must include cpu1; got: {cores:?}"
+        );
+        assert!(
+            !cores.contains(&0),
+            "filter '1' must not include cpu0; got: {cores:?}"
+        );
+    }
+
+    #[test]
+    fn empty_filter_shows_all_cores() {
+        let mut comp = CpuComponent::default();
+        comp.update(Action::CpuUpdate(CpuSnapshot::stub())).unwrap();
+        assert_eq!(
+            comp.filtered_cores(),
+            (0..comp.num_cores()).collect::<Vec<_>>()
+        );
     }
 }

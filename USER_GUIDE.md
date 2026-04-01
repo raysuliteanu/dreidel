@@ -81,10 +81,15 @@ the [config file](#keybindings).
 
 ### CPU Keys
 
-| Key             | Action                           |
-| --------------- | -------------------------------- |
-| `↑` / `↓`       | Scroll the per-core view up/down |
-| `PageUp` / `PageDown` | Scroll by 8 cores          |
+| Key             | Action                                      | Mode        |
+| --------------- | ------------------------------------------- | ----------- |
+| `↑` / `↓`       | Scroll the per-core view up/down            | Normal      |
+| `PageUp` / `PageDown` | Scroll by 8 cores                     | Normal      |
+| `/`             | Enter filter mode                           | Normal      |
+| Any character   | Append to filter query                      | Filter mode |
+| `Backspace`     | Delete last filter character                | Filter mode |
+| `Enter`         | Confirm filter and return to normal         | Filter mode |
+| `Esc`           | Clear filter and return to normal           | Filter mode |
 
 ### Network Keys
 
@@ -93,6 +98,11 @@ the [config file](#keybindings).
 | `↑` / `↓`       | Move interface selection                                         | List        |
 | `PageUp` / `PageDown` | Jump 10 interfaces                                         | List        |
 | `Enter`         | Open per-interface graph (auto-enters fullscreen if not already) | List        |
+| `/`             | Enter filter mode                                                | List        |
+| Any character   | Append to filter query                                           | Filter mode |
+| `Backspace`     | Delete last filter character                                     | Filter mode |
+| `Enter`         | Confirm filter and return to list                                | Filter mode |
+| `Esc`           | Clear filter and return to list                                  | Filter mode |
 | `Esc` / `q`     | Close graph and return to list                                   | Detail view |
 
 ### Disk Keys
@@ -102,6 +112,11 @@ the [config file](#keybindings).
 | `↑` / `↓`       | Move device selection                                            | List        |
 | `PageUp` / `PageDown` | Jump 10 devices                                            | List        |
 | `Enter`         | Open per-device graph (auto-enters fullscreen if not already)    | List        |
+| `/`             | Enter filter mode                                                | List        |
+| Any character   | Append to filter query                                           | Filter mode |
+| `Backspace`     | Delete last filter character                                     | Filter mode |
+| `Enter`         | Confirm filter and return to list                                | Filter mode |
+| `Esc`           | Clear filter and return to list                                  | Filter mode |
 | `Esc` / `q`     | Close graph and return to list                                   | Detail view |
 
 ### Process Keys
@@ -148,6 +163,21 @@ for smooth resolution.
 - Up to 8 cores are visible in compact mode; use `↑`/`↓` or
   `PageUp`/`PageDown` to scroll.
 
+**Filtering** (`/` when focused):
+
+Press `/` to enter filter mode. The title changes to show the
+active query:
+
+```
+┌─ [C]PU [/cpu0▌] ───────────────┐
+```
+
+Type a substring to narrow which cores are visible (case-insensitive
+match against the core label, e.g. `cpu0` matches `cpu0`, `cpu00`,
+`cpu01`…). Press `Enter` to keep the filter or `Esc` to clear it.
+When a filter is active but not being edited the title shows
+`[/query]` without the cursor.
+
 **Fullscreen** (`f` when focused):
 
 - A stats header appears at the top with: CPU brand,
@@ -175,6 +205,17 @@ enough vertical space.
 
 When fullscreen or in a wide layout (≥ 100 columns), additional
 columns appear: TX packets/sec, RX packets/sec, and IP address.
+
+**Filtering** (`/` when focused):
+
+Press `/` to enter filter mode. The title changes to show the query:
+
+```
+┌─ [N]ET [/eth▌] ─────────────────────────────────────────────────────────┐
+```
+
+Type a substring to narrow the interface list (case-insensitive).
+Press `Enter` to keep the filter or `Esc` to clear it.
 
 **Per-interface detail view** (`Enter` on a selected interface):
 
@@ -212,6 +253,17 @@ rates and usage percentage. Usage is color-coded green → orange
 │  sdb          0 B/s        0 B/s       8%             │
 └───────────────────────────────────────────────────────┘
 ```
+
+**Filtering** (`/` when focused):
+
+Press `/` to enter filter mode. The title changes to show the query:
+
+```
+┌─ [D]ISK [/sda▌] ──────────────────────────────────────────────────────┐
+```
+
+Type a substring to narrow the device list (case-insensitive).
+Press `Enter` to keep the filter or `Esc` to clear it.
 
 **Per-device detail view** (`Enter` on a selected device):
 
@@ -562,7 +614,7 @@ help       = "?"   # Open help overlay
 | Fullscreen won't exit | Press `f` to toggle, or `Esc`/`q` |
 | Config file ignored | Verify path is `~/.config/dreidel/config.toml`; use `--config <path>` to specify an alternate |
 | Process list empty | Check that `process` is in `layout.show` and not in `--hide` |
-| Filter not matching | Press `/` first to enter filter mode; `Esc` clears the filter |
+| Filter not matching | Press `/` first to enter filter mode; `Esc` clears the filter (works in CPU, Net, Disk, and Process panels) |
 | Can't kill a process | You need to own the process or run dreidel as root; the error dialog will explain |
 | High CPU use by dreidel | Increase `--refresh-rate` to `2s` or more |
 | Temperature not shown | Temperature collection requires Linux and a supported CPU sensor |

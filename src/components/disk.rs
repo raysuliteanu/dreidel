@@ -27,6 +27,8 @@ pub const HISTORY_LEN: usize = 100;
 enum DiskView {
     /// Text list of all devices with live read/write rates.
     List,
+    /// User is typing a name filter to narrow the device list.
+    Filter { input: String },
     /// Detail view for a specific device: stats header + read/write graph.
     Detail { name: String },
 }
@@ -40,6 +42,8 @@ pub struct DiskComponent {
     /// Per-device ring buffers: (read_bytes_per_sec, write_bytes_per_sec).
     history: HashMap<String, (VecDeque<u64>, VecDeque<u64>)>,
     view: DiskView,
+    /// Active name-substring filter. Empty string = no filter.
+    filter: String,
     focused: bool,
     is_fullscreen: bool,
 }
@@ -53,8 +57,34 @@ impl DiskComponent {
             list_state: ListState::default(),
             history: HashMap::new(),
             view: DiskView::List,
+            filter: String::new(),
             focused: false,
             is_fullscreen: false,
+        }
+    }
+
+    fn name_matches(&self, name: &str) -> bool {
+        self.filter.is_empty() || name.to_lowercase().contains(&self.filter.to_lowercase())
+    }
+
+    fn clamp_selection(&mut self) {
+        let filter = self.filter.to_lowercase();
+        let filtered_len = self.latest.as_ref().map(|snap| {
+            if filter.is_empty() {
+                snap.devices.len()
+            } else {
+                snap.devices
+                    .iter()
+                    .filter(|d| d.name.to_lowercase().contains(&filter))
+                    .count()
+            }
+        });
+        match filtered_len {
+            None | Some(0) => self.list_state.select(None),
+            Some(n) => {
+                let sel = self.list_state.selected().unwrap_or(0).min(n - 1);
+                self.list_state.select(Some(sel));
+            }
         }
     }
 }
@@ -126,11 +156,45 @@ impl Component for DiskComponent {
                     _ => return Ok(Some(Action::Render)),
                 }
             }
+            DiskView::Filter { input } => {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.filter = String::new();
+                        self.view = DiskView::List;
+                        self.clamp_selection();
+                    }
+                    KeyCode::Enter => {
+                        self.view = DiskView::List;
+                    }
+                    KeyCode::Backspace => {
+                        let mut s = input.clone();
+                        s.pop();
+                        self.filter = s.clone();
+                        self.view = DiskView::Filter { input: s };
+                        self.clamp_selection();
+                    }
+                    KeyCode::Char(c) => {
+                        let mut s = input.clone();
+                        s.push(c);
+                        self.filter = s.clone();
+                        self.view = DiskView::Filter { input: s };
+                        self.clamp_selection();
+                    }
+                    _ => {}
+                }
+                return Ok(Some(Action::Render));
+            }
             DiskView::List => {
-                let Some(snap) = &self.latest else {
-                    return Ok(None);
+                let filtered_names: Vec<String> = match &self.latest {
+                    None => return Ok(None),
+                    Some(snap) => snap
+                        .devices
+                        .iter()
+                        .filter(|d| self.name_matches(&d.name))
+                        .map(|d| d.name.clone())
+                        .collect(),
                 };
-                let len = snap.devices.len();
+                let len = filtered_names.len();
                 if len == 0 {
                     return Ok(None);
                 }
@@ -161,10 +225,9 @@ impl Component for DiskComponent {
                     }
                     KeyCode::Enter => {
                         let idx = self.list_state.selected().unwrap_or(0);
-                        if let Some(dev) = snap.devices.get(idx) {
-                            self.view = DiskView::Detail {
-                                name: dev.name.clone(),
-                            };
+                        if let Some(name) = filtered_names.get(idx) {
+                            let name = name.clone();
+                            self.view = DiskView::Detail { name };
                             // Open the fullscreen modal unless already fullscreen.
                             let action = if !self.is_fullscreen {
                                 Action::ToggleFullScreen
@@ -173,6 +236,12 @@ impl Component for DiskComponent {
                             };
                             return Ok(Some(action));
                         }
+                    }
+                    KeyCode::Char('/') => {
+                        self.view = DiskView::Filter {
+                            input: self.filter.clone(),
+                        };
+                        return Ok(Some(Action::Render));
                     }
                     _ => {}
                 }
@@ -190,14 +259,6 @@ impl Component for DiskComponent {
                 // sysinfo can report the same device multiple times (one per mount
                 // point). Sort puts duplicates adjacent; dedup removes them.
                 snap.devices.dedup_by(|a, b| a.name == b.name);
-                // Select first row on initial data; keep selection in bounds after refresh
-                let len = snap.devices.len();
-                if len == 0 {
-                    self.list_state.select(None);
-                } else {
-                    let sel = self.list_state.selected().unwrap_or(0).min(len - 1);
-                    self.list_state.select(Some(sel));
-                }
                 // Accumulate per-device rate history
                 for dev in &snap.devices {
                     let entry = self.history.entry(dev.name.clone()).or_default();
@@ -209,6 +270,8 @@ impl Component for DiskComponent {
                     entry.1.push_back(dev.write_bytes);
                 }
                 self.latest = Some(snap);
+                // Clamp selection to the filtered list length.
+                self.clamp_selection();
             }
             Action::ToggleFullScreen if self.focused => {
                 self.is_fullscreen = !self.is_fullscreen;
@@ -220,7 +283,7 @@ impl Component for DiskComponent {
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         match self.view.clone() {
-            DiskView::List => self.draw_list(frame, area),
+            DiskView::List | DiskView::Filter { .. } => self.draw_list(frame, area),
             DiskView::Detail { name } => self.draw_detail(frame, area, &name),
         }
     }
@@ -240,7 +303,12 @@ impl DiskComponent {
     }
 
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        let block = self.border_block("DISK");
+        let title_rest = match &self.view {
+            DiskView::Filter { input } => format!("DISK [/{}▌]", input),
+            _ if !self.filter.is_empty() => format!("DISK [/{}]", self.filter),
+            _ => "DISK".to_string(),
+        };
+        let block = self.border_block(&title_rest);
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
@@ -276,9 +344,11 @@ impl DiskComponent {
         frame.render_widget(header, chunks[0]);
 
         let palette = &self.palette;
+        let filter = self.filter.to_lowercase();
         let items: Vec<ListItem> = snap
             .devices
             .iter()
+            .filter(|d| filter.is_empty() || d.name.to_lowercase().contains(&filter))
             .map(|dev| {
                 // Color usage% by severity: normal → accent, high → warn, critical → critical
                 let usage_color = if dev.usage_pct >= 90.0 {
@@ -895,6 +965,138 @@ mod tests {
             assert!(
                 matches!(comp.view, DiskView::Detail { .. }),
                 "{code:?} must not exit detail view"
+            );
+        }
+    }
+
+    #[test]
+    fn slash_enters_filter_mode() {
+        let mut comp = DiskComponent::default();
+        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+            .unwrap();
+        comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
+        assert!(
+            matches!(comp.view, DiskView::Filter { .. }),
+            "/ must enter filter mode"
+        );
+    }
+
+    #[test]
+    fn filter_mode_char_updates_filter_and_view() {
+        let mut comp = DiskComponent::default();
+        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+            .unwrap();
+        comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('s'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('d'))).unwrap();
+        assert_eq!(comp.filter, "sd");
+        assert!(matches!(comp.view, DiskView::Filter { ref input } if input == "sd"));
+    }
+
+    #[test]
+    fn filter_mode_backspace_removes_char() {
+        let mut comp = DiskComponent::default();
+        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+            .unwrap();
+        comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('s'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('d'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Backspace)).unwrap();
+        assert_eq!(comp.filter, "s");
+    }
+
+    #[test]
+    fn filter_mode_esc_clears_filter_and_returns_to_list() {
+        let mut comp = DiskComponent::default();
+        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+            .unwrap();
+        comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('s'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Esc)).unwrap();
+        assert_eq!(comp.filter, "", "Esc must clear filter");
+        assert!(
+            matches!(comp.view, DiskView::List),
+            "Esc must return to list"
+        );
+    }
+
+    #[test]
+    fn filter_mode_enter_keeps_filter_and_returns_to_list() {
+        let mut comp = DiskComponent::default();
+        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+            .unwrap();
+        comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('s'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Enter)).unwrap();
+        assert_eq!(comp.filter, "s", "Enter must keep filter");
+        assert!(
+            matches!(comp.view, DiskView::List),
+            "Enter must return to list"
+        );
+    }
+
+    #[test]
+    fn filter_narrows_list_for_navigation() {
+        // Three devices; filter to only those matching "sda" (one device).
+        let snap = DiskSnapshot {
+            devices: vec![device("nvme0n1"), device("sda"), device("sdb")],
+        };
+        let mut comp = DiskComponent::default();
+        comp.update(Action::DiskUpdate(snap)).unwrap();
+        // Filter to "sda" only — Down must not advance past index 0.
+        comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('s'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('d'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('a'))).unwrap();
+        comp.handle_key_event(key(KeyCode::Enter)).unwrap(); // exit filter mode
+        assert_eq!(comp.filter, "sda");
+        // Down should be a no-op since filtered list has only 1 item.
+        let sel_before = comp.list_state.selected();
+        comp.handle_key_event(key(KeyCode::Down)).unwrap();
+        assert_eq!(
+            comp.list_state.selected(),
+            sel_before,
+            "Down must not advance past the last filtered item"
+        );
+    }
+
+    #[test]
+    fn filter_enter_opens_filtered_device() {
+        // Two devices: nvme0n1 and sda. Filter to "nvme", then Enter.
+        let snap = DiskSnapshot {
+            devices: vec![device("nvme0n1"), device("sda")],
+        };
+        let mut comp = DiskComponent::default();
+        comp.update(Action::DiskUpdate(snap)).unwrap();
+        comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
+        for c in "nvme".chars() {
+            comp.handle_key_event(key(KeyCode::Char(c))).unwrap();
+        }
+        comp.handle_key_event(key(KeyCode::Enter)).unwrap(); // exit filter mode, keeping "nvme"
+        // Row 0 of the filtered list is "nvme0n1". Enter should open it.
+        comp.list_state.select(Some(0));
+        comp.handle_key_event(key(KeyCode::Enter)).unwrap();
+        assert!(
+            matches!(&comp.view, DiskView::Detail { name } if name == "nvme0n1"),
+            "Enter must open the filtered device, got: {:?}",
+            comp.view
+        );
+    }
+
+    #[test]
+    fn filter_mode_swallows_keys() {
+        let mut comp = DiskComponent::default();
+        comp.update(Action::DiskUpdate(DiskSnapshot::stub()))
+            .unwrap();
+        comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
+        // Even unrecognised keys must return Some(Render) so the global handler
+        // cannot shift focus while the user is typing.
+        for code in [KeyCode::Tab, KeyCode::BackTab, KeyCode::F(1)] {
+            let action = comp.handle_key_event(key(code)).unwrap();
+            assert!(action.is_some(), "{code:?} must be consumed in filter mode");
+            assert!(
+                matches!(comp.view, DiskView::Filter { .. }),
+                "{code:?} must not exit filter mode"
             );
         }
     }
