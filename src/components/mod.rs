@@ -7,10 +7,11 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
+    widgets::{Block, Borders},
 };
 use strum::{Display, EnumIter};
 
-use crate::theme::ColorPalette;
+use crate::{action::Action, theme::ColorPalette};
 
 pub mod cpu;
 pub mod disk;
@@ -179,6 +180,48 @@ pub(crate) fn fmt_rate_col(bytes_per_sec: u64) -> String {
     } else {
         format!("{} B", bytes_per_sec)
     }
+}
+
+/// Handle a key event while the panel is in `ListView::Detail`.
+///
+/// Returns `Some(action)` in all cases (detail mode swallows every key so the
+/// global handler cannot shift focus or close the modal), and resets `view` to
+/// `ListView::List` on Esc / q / Q.  Used by both `NetComponent` and
+/// `DiskComponent` to avoid duplicating this arm.
+pub(crate) fn handle_detail_key(key: KeyEvent, is_fullscreen: bool, view: &mut ListView) -> Action {
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
+            *view = ListView::List;
+            if is_fullscreen {
+                Action::ToggleFullScreen
+            } else {
+                Action::Render
+            }
+        }
+        // Swallow all other keys so they don't reach the global handler
+        // (which would shift focus or trigger other app-level shortcuts).
+        _ => Action::Render,
+    }
+}
+
+/// Build the focused/unfocused border block used by list panels (Net, Disk).
+///
+/// Shared between `NetComponent` and `DiskComponent` — identical implementation.
+pub(crate) fn list_border_block(
+    focus_key: char,
+    rest: &str,
+    palette: &ColorPalette,
+    focused: bool,
+) -> Block<'static> {
+    let border_color = if focused {
+        palette.accent
+    } else {
+        palette.border
+    };
+    Block::default()
+        .title(keyed_title(focus_key, rest, palette))
+        .borders(Borders::ALL)
+        .border_style(Style::new().fg(border_color))
 }
 
 /// Core interface every TUI panel must implement.

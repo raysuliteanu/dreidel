@@ -17,7 +17,7 @@ use crate::{
     action::Action,
     components::{
         Component, FilterEvent, FilterInput, HISTORY_LEN, ListView, fmt_rate, fmt_rate_col,
-        keyed_title, truncate,
+        handle_detail_key, list_border_block, truncate,
     },
     stats::snapshots::NetSnapshot,
     theme::ColorPalette,
@@ -116,21 +116,11 @@ impl Component for NetComponent {
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
         match &self.view {
             ListView::Detail { .. } => {
-                match key.code {
-                    KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
-                        self.view = ListView::List;
-                        // If we opened fullscreen on Enter, close it now.
-                        let action = if self.is_fullscreen {
-                            Action::ToggleFullScreen
-                        } else {
-                            Action::Render
-                        };
-                        return Ok(Some(action));
-                    }
-                    // Swallow all other keys so they don't reach the global handler
-                    // (which would shift focus or trigger other app-level shortcuts).
-                    _ => return Ok(Some(Action::Render)),
-                }
+                return Ok(Some(handle_detail_key(
+                    key,
+                    self.is_fullscreen,
+                    &mut self.view,
+                )));
             }
             ListView::Filter { .. } => {
                 // Take ownership of input without cloning the whole enum.
@@ -275,15 +265,7 @@ impl Component for NetComponent {
 
 impl NetComponent {
     fn border_block(&self, rest: &str) -> Block<'static> {
-        let border_color = if self.focused {
-            self.palette.accent
-        } else {
-            self.palette.border
-        };
-        Block::default()
-            .title(keyed_title(self.focus_key, rest, &self.palette))
-            .borders(Borders::ALL)
-            .border_style(Style::new().fg(border_color))
+        list_border_block(self.focus_key, rest, &self.palette, self.focused)
     }
 
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {

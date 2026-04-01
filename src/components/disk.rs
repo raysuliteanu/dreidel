@@ -15,21 +15,13 @@ use ratatui::{
 
 use crate::{
     action::Action,
-    components::{Component, HISTORY_LEN, fmt_rate, fmt_rate_col, keyed_title, truncate},
+    components::{
+        Component, FilterEvent, FilterInput, HISTORY_LEN, ListView, fmt_rate, fmt_rate_col,
+        handle_detail_key, list_border_block, truncate,
+    },
     stats::snapshots::DiskSnapshot,
     theme::ColorPalette,
 };
-
-/// Which view the disk panel is currently showing.
-#[derive(Debug, Clone)]
-enum DiskView {
-    /// Text list of all devices with live read/write rates.
-    List,
-    /// User is typing a name filter to narrow the device list.
-    Filter { input: String },
-    /// Detail view for a specific device: stats header + read/write graph.
-    Detail { name: String },
-}
 
 #[derive(Debug)]
 pub struct DiskComponent {
@@ -39,8 +31,8 @@ pub struct DiskComponent {
     list_state: ListState,
     /// Per-device ring buffers: (read_bytes_per_sec, write_bytes_per_sec).
     history: HashMap<String, (VecDeque<u64>, VecDeque<u64>)>,
-    view: DiskView,
-    /// Active name-substring filter. Empty string = no filter.
+    view: ListView,
+    /// Active name-substring filter (stored lowercase). Empty string = no filter.
     filter: String,
     focused: bool,
     is_fullscreen: bool,
@@ -54,7 +46,7 @@ impl DiskComponent {
             latest: None,
             list_state: ListState::default(),
             history: HashMap::new(),
-            view: DiskView::List,
+            view: ListView::List,
             filter: String::new(),
             focused: false,
             is_fullscreen: false,
@@ -62,18 +54,18 @@ impl DiskComponent {
     }
 
     fn name_matches(&self, name: &str) -> bool {
-        self.filter.is_empty() || name.to_lowercase().contains(&self.filter.to_lowercase())
+        // self.filter is stored lowercase, so only the name needs lowercasing.
+        self.filter.is_empty() || name.to_lowercase().contains(&self.filter)
     }
 
     fn clamp_selection(&mut self) {
-        let filter = self.filter.to_lowercase();
         let filtered_len = self.latest.as_ref().map(|snap| {
-            if filter.is_empty() {
+            if self.filter.is_empty() {
                 snap.devices.len()
             } else {
                 snap.devices
                     .iter()
-                    .filter(|d| d.name.to_lowercase().contains(&filter))
+                    .filter(|d| d.name.to_lowercase().contains(&self.filter))
                     .count()
             }
         });
@@ -124,53 +116,42 @@ impl Component for DiskComponent {
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
-        match &self.view.clone() {
-            DiskView::Detail { .. } => {
-                match key.code {
-                    KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => {
-                        self.view = DiskView::List;
-                        // If we opened fullscreen on Enter, close it now.
-                        let action = if self.is_fullscreen {
-                            Action::ToggleFullScreen
-                        } else {
-                            Action::Render
-                        };
-                        return Ok(Some(action));
-                    }
-                    // Swallow all other keys so they don't reach the global handler
-                    // (which would shift focus or trigger other app-level shortcuts).
-                    _ => return Ok(Some(Action::Render)),
-                }
+        match &self.view {
+            ListView::Detail { .. } => {
+                return Ok(Some(handle_detail_key(
+                    key,
+                    self.is_fullscreen,
+                    &mut self.view,
+                )));
             }
-            DiskView::Filter { input } => {
-                match key.code {
-                    KeyCode::Esc => {
+            ListView::Filter { .. } => {
+                // Take ownership of input without cloning the whole enum.
+                let input = match std::mem::replace(&mut self.view, ListView::List) {
+                    ListView::Filter { input } => input,
+                    _ => unreachable!("variant confirmed above"),
+                };
+                match FilterInput::handle_key(input, key) {
+                    FilterEvent::Clear => {
                         self.filter = String::new();
-                        self.view = DiskView::List;
+                        self.clamp_selection();
+                        // view is already ListView::List from replace above
+                    }
+                    FilterEvent::Commit => {
+                        // filter stays as-is (already updated per keypress); view stays ListView::List
+                    }
+                    FilterEvent::Update(s) => {
+                        self.filter = s.to_lowercase(); // keep stored filter lowercased
+                        self.view = ListView::Filter { input: s };
                         self.clamp_selection();
                     }
-                    KeyCode::Enter => {
-                        self.view = DiskView::List;
+                    FilterEvent::Ignored(input) => {
+                        // key not consumed — restore view
+                        self.view = ListView::Filter { input };
                     }
-                    KeyCode::Backspace => {
-                        let mut s = input.clone();
-                        s.pop();
-                        self.filter = s.clone();
-                        self.view = DiskView::Filter { input: s };
-                        self.clamp_selection();
-                    }
-                    KeyCode::Char(c) => {
-                        let mut s = input.clone();
-                        s.push(c);
-                        self.filter = s.clone();
-                        self.view = DiskView::Filter { input: s };
-                        self.clamp_selection();
-                    }
-                    _ => {}
                 }
                 return Ok(Some(Action::Render));
             }
-            DiskView::List => {
+            ListView::List => {
                 let filtered_names: Vec<String> = match &self.latest {
                     None => return Ok(None),
                     Some(snap) => snap
@@ -213,7 +194,7 @@ impl Component for DiskComponent {
                         let idx = self.list_state.selected().unwrap_or(0);
                         if let Some(name) = filtered_names.get(idx) {
                             let name = name.clone();
-                            self.view = DiskView::Detail { name };
+                            self.view = ListView::Detail { name };
                             // Open the fullscreen modal unless already fullscreen.
                             let action = if !self.is_fullscreen {
                                 Action::ToggleFullScreen
@@ -224,7 +205,7 @@ impl Component for DiskComponent {
                         }
                     }
                     KeyCode::Char('/') => {
-                        self.view = DiskView::Filter {
+                        self.view = ListView::Filter {
                             input: self.filter.clone(),
                         };
                         return Ok(Some(Action::Render));
@@ -268,29 +249,24 @@ impl Component for DiskComponent {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
-        match self.view.clone() {
-            DiskView::List | DiskView::Filter { .. } => self.draw_list(frame, area),
-            DiskView::Detail { name } => self.draw_detail(frame, area, &name),
+        match &self.view {
+            ListView::List | ListView::Filter { .. } => self.draw_list(frame, area),
+            ListView::Detail { name } => {
+                let name = name.clone();
+                self.draw_detail(frame, area, &name)
+            }
         }
     }
 }
 
 impl DiskComponent {
     fn border_block(&self, rest: &str) -> Block<'static> {
-        let border_color = if self.focused {
-            self.palette.accent
-        } else {
-            self.palette.border
-        };
-        Block::default()
-            .title(keyed_title(self.focus_key, rest, &self.palette))
-            .borders(Borders::ALL)
-            .border_style(Style::new().fg(border_color))
+        list_border_block(self.focus_key, rest, &self.palette, self.focused)
     }
 
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let title_rest = match &self.view {
-            DiskView::Filter { input } => format!("DISK [/{}▌]", input),
+            ListView::Filter { input } => format!("DISK [/{}▌]", input),
             _ if !self.filter.is_empty() => format!("DISK [/{}]", self.filter),
             _ => "DISK".to_string(),
         };
@@ -330,11 +306,11 @@ impl DiskComponent {
         frame.render_widget(header, chunks[0]);
 
         let palette = &self.palette;
-        let filter = self.filter.to_lowercase();
+        let filter = &self.filter; // already lowercase
         let items: Vec<ListItem> = snap
             .devices
             .iter()
-            .filter(|d| filter.is_empty() || d.name.to_lowercase().contains(&filter))
+            .filter(|d| filter.is_empty() || d.name.to_lowercase().contains(filter.as_str()))
             .map(|dev| {
                 // Color usage% by severity: normal → accent, high → warn, critical → critical
                 let usage_color = if dev.usage_pct >= 90.0 {
@@ -401,7 +377,7 @@ impl DiskComponent {
 
         // --- Stats header ---
         if stats_rows > 0
-            && let Some(snap) = &self.latest.clone()
+            && let Some(snap) = self.latest.as_ref()
             && let Some(dev) = snap.devices.iter().find(|d| d.name == name)
         {
             let dim = Style::new().fg(self.palette.dim);
@@ -621,7 +597,7 @@ mod tests {
         comp.list_state.select(Some(0));
         let action = comp.handle_key_event(key(KeyCode::Enter)).unwrap();
         assert!(
-            matches!(comp.view, DiskView::Detail { .. }),
+            matches!(comp.view, ListView::Detail { .. }),
             "Enter must switch to detail view"
         );
         assert!(
@@ -637,9 +613,9 @@ mod tests {
             .unwrap();
         comp.list_state.select(Some(0));
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
-        assert!(matches!(comp.view, DiskView::Detail { .. }));
+        assert!(matches!(comp.view, ListView::Detail { .. }));
         comp.handle_key_event(key(KeyCode::Esc)).unwrap();
-        assert!(matches!(comp.view, DiskView::List));
+        assert!(matches!(comp.view, ListView::List));
     }
 
     #[test]
@@ -649,9 +625,9 @@ mod tests {
             .unwrap();
         comp.list_state.select(Some(0));
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
-        assert!(matches!(comp.view, DiskView::Detail { .. }));
+        assert!(matches!(comp.view, ListView::Detail { .. }));
         comp.handle_key_event(key(KeyCode::Char('q'))).unwrap();
-        assert!(matches!(comp.view, DiskView::List));
+        assert!(matches!(comp.view, ListView::List));
     }
 
     #[test]
@@ -662,7 +638,7 @@ mod tests {
             .unwrap();
         // Simulate fullscreen being active (as the app would set via ToggleFullScreen).
         comp.is_fullscreen = true;
-        comp.view = DiskView::Detail {
+        comp.view = ListView::Detail {
             name: "sda".to_string(),
         };
         let action = comp.handle_key_event(key(KeyCode::Esc)).unwrap();
@@ -670,7 +646,7 @@ mod tests {
             matches!(action, Some(Action::ToggleFullScreen)),
             "Esc from detail must close fullscreen"
         );
-        assert!(matches!(comp.view, DiskView::List));
+        assert!(matches!(comp.view, ListView::List));
     }
 
     #[test]
@@ -933,7 +909,7 @@ mod tests {
             .unwrap();
         comp.list_state.select(Some(0));
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
-        assert!(matches!(comp.view, DiskView::Detail { .. }));
+        assert!(matches!(comp.view, ListView::Detail { .. }));
 
         for code in [
             KeyCode::Tab,
@@ -949,7 +925,7 @@ mod tests {
                 "{code:?} must be consumed in detail view, got None"
             );
             assert!(
-                matches!(comp.view, DiskView::Detail { .. }),
+                matches!(comp.view, ListView::Detail { .. }),
                 "{code:?} must not exit detail view"
             );
         }
@@ -962,7 +938,7 @@ mod tests {
             .unwrap();
         comp.handle_key_event(key(KeyCode::Char('/'))).unwrap();
         assert!(
-            matches!(comp.view, DiskView::Filter { .. }),
+            matches!(comp.view, ListView::Filter { .. }),
             "/ must enter filter mode"
         );
     }
@@ -976,7 +952,7 @@ mod tests {
         comp.handle_key_event(key(KeyCode::Char('s'))).unwrap();
         comp.handle_key_event(key(KeyCode::Char('d'))).unwrap();
         assert_eq!(comp.filter, "sd");
-        assert!(matches!(comp.view, DiskView::Filter { ref input } if input == "sd"));
+        assert!(matches!(comp.view, ListView::Filter { ref input } if input == "sd"));
     }
 
     #[test]
@@ -1001,7 +977,7 @@ mod tests {
         comp.handle_key_event(key(KeyCode::Esc)).unwrap();
         assert_eq!(comp.filter, "", "Esc must clear filter");
         assert!(
-            matches!(comp.view, DiskView::List),
+            matches!(comp.view, ListView::List),
             "Esc must return to list"
         );
     }
@@ -1016,7 +992,7 @@ mod tests {
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
         assert_eq!(comp.filter, "s", "Enter must keep filter");
         assert!(
-            matches!(comp.view, DiskView::List),
+            matches!(comp.view, ListView::List),
             "Enter must return to list"
         );
     }
@@ -1063,7 +1039,7 @@ mod tests {
         comp.list_state.select(Some(0));
         comp.handle_key_event(key(KeyCode::Enter)).unwrap();
         assert!(
-            matches!(&comp.view, DiskView::Detail { name } if name == "nvme0n1"),
+            matches!(&comp.view, ListView::Detail { name } if name == "nvme0n1"),
             "Enter must open the filtered device, got: {:?}",
             comp.view
         );
@@ -1081,7 +1057,7 @@ mod tests {
             let action = comp.handle_key_event(key(code)).unwrap();
             assert!(action.is_some(), "{code:?} must be consumed in filter mode");
             assert!(
-                matches!(comp.view, DiskView::Filter { .. }),
+                matches!(comp.view, ListView::Filter { .. }),
                 "{code:?} must not exit filter mode"
             );
         }
