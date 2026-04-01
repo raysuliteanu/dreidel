@@ -3,10 +3,12 @@
 #
 # Usage: scripts/release [-n|--dry-run] [patch|minor|major]
 #
-# Runs cargo-release to bump the version, regenerate CHANGELOG.md, commit, and
-# tag, then syncs jj and pushes the bookmark and tag to origin.
+# Regenerates CHANGELOG.md via git-cliff, commits it, then runs cargo-release
+# to bump the version, commit, and tag, then syncs jj and pushes the bookmark
+# and tag to origin.
 #
 # Dry-run mode (-n / --dry-run):
+#   - git-cliff/jj commit steps are echoed but not run
 #   - cargo release runs without --execute (its own dry-run)
 #   - jj/git push commands are echoed with the real resolved values but not run
 
@@ -59,6 +61,10 @@ TAG="v${next_version}"
 
 if "$DRY_RUN"; then
     printf '[dry run] %s -> %s\n\n' "$current_version" "$next_version"
+    printf '[dry run] would run:\n'
+    printf '  git-cliff --tag %s --output CHANGELOG.md\n' "$TAG"
+    printf '  jj commit -m "chore: update changelog for %s"\n' "$TAG"
+    printf '\n'
     # cargo release has its own dry-run mode (omit --execute); let it run for real.
     # It always exits non-zero in dry-run ("aborting upload due to dry run"),
     # so suppress the exit code — the output is what matters here.
@@ -69,7 +75,13 @@ if "$DRY_RUN"; then
     printf '  jj git push --bookmark main\n'
     printf '  git push origin %s\n' "$TAG"
 else
-    # Bump version, regenerate CHANGELOG, commit, and create the git tag.
+    # Regenerate CHANGELOG and commit it before the cargo-release version-bump
+    # commit. Done here (not in a cargo-release pre-release-hook) so we can use
+    # jj to commit rather than git add, keeping the workflow jj-native.
+    git-cliff --tag "$TAG" --output CHANGELOG.md
+    jj commit -m "chore: update changelog for $TAG"
+
+    # Bump version in Cargo.toml, commit, and create the git tag.
     cargo release "$LEVEL" --execute
 
     printf '\nPushing %s to origin...\n' "$TAG"

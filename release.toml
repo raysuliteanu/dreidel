@@ -2,13 +2,6 @@
 # Usage: cargo release [patch|minor|major] --execute
 # Dry-run (default, no --execute): previews all steps without making changes.
 
-# Update CHANGELOG.md via git-cliff before tagging.
-pre-release-hook = [
-    "git-cliff",
-    "--tag", "v{{version}}",
-    "--output", "CHANGELOG.md",
-]
-
 # Commit message for the version bump commit.
 pre-release-commit-message = "chore: release v{{version}}"
 
