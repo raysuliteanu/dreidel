@@ -4,7 +4,7 @@ use clap::Parser;
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
-#[command(name = "dreidel", about = "A modern TUI system monitor", version = env!("DREIDEL_VERSION"))]
+#[command(name = "dreidel", about = "A modern TUI system monitor", version = version())]
 pub struct Args {
     #[arg(long, help = "Color theme: auto | light | dark")]
     pub theme: Option<String>,
@@ -50,6 +50,17 @@ pub struct Args {
 
     #[arg(short, long, action = clap::ArgAction::Count, help = "Increase verbosity (-v, -vv)")]
     pub verbose: u8,
+}
+
+// clap's version attribute requires &'static str. Since we need a short SHA
+// suffix computed from a compile-time constant, we build the string once and
+// leak it to satisfy the 'static bound.
+fn version() -> &'static str {
+    static V: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    V.get_or_init(|| {
+        let sha = &env!("VERGEN_GIT_SHA")[..7];
+        Box::leak(format!("{} ({sha})", env!("CARGO_PKG_VERSION")).into_boxed_str())
+    })
 }
 
 #[cfg(test)]
