@@ -78,18 +78,6 @@ jobs:
           key: aarch64
       - run: cargo check --locked --target aarch64-unknown-linux-gnu
 
-  audit:
-    name: Audit
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      checks: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
   deny:
     name: Deny
     runs-on: ubuntu-latest
