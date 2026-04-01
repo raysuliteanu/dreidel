@@ -60,9 +60,10 @@ TAG="v${next_version}"
 if "$DRY_RUN"; then
     printf '[dry run] %s -> %s\n\n' "$current_version" "$next_version"
     # cargo release has its own dry-run mode (omit --execute); let it run for real.
+    # --no-hooks prevents the git-cliff pre-release hook from actually writing CHANGELOG.md.
     # It always exits non-zero in dry-run ("aborting upload due to dry run"),
     # so suppress the exit code — the output is what matters here.
-    cargo release "$LEVEL" || true
+    cargo release "$LEVEL" --no-hooks || true
     printf '\n[dry run] would run:\n'
     printf '  jj git fetch\n'
     printf '  jj bookmark set main -r @-\n'
