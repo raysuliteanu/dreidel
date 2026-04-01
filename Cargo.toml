@@ -11,10 +11,18 @@ readme = "README.md"
 license = "GPL-3.0-only"
 exclude = [
     "ARCHITECTURE.md",
+    "BUILDING.md",
+    "CHANGELOG.md",
     "CLAUDE.md",
     "TODO.md",
+    "USER_GUIDE.md",
+    "cliff.toml",
+    "deny.toml",
+    "mise.toml",
+    "release.toml",
     "docs/",
     "scripts/",
+    "tests/",
 ]
 
 [lib]
