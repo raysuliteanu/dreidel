@@ -26,7 +26,6 @@ expression: terminal.backend()
 "   │ Ent  open detail (fullscreen)                       │  "
 "   │                                                     │  "
 "   │https://github.com/raysuliteanu/dreidel              │  "
-"   │change id: [CHANGE_ID]                                  │  "
 "   │   config: [CONFIG_PATH]             │  "
 "   │      log: [LOG_PATH]        │  "
 "   │                                                     │  "

@@ -182,9 +182,9 @@ mod tests {
     #[test]
     fn renders_help_overlay() {
         let mut settings = insta::Settings::clone_current();
-        // JJ change IDs are baked in at compile time and change every commit;
-        // redact them so the snapshot stays stable across commits.
-        settings.add_filter(r"change id: [a-z0-9]+", "change id: [CHANGE_ID]");
+        // The "change id:" line is only rendered when jj is available at build time (not in CI).
+        // Strip the entire line so the snapshot is stable in both environments.
+        settings.add_filter(r"[^\n]*change id:[^\n]*\n", "");
         // Config and log paths vary per system; redact them for snapshot stability.
         settings.add_filter(r"config: \S+", "config: [CONFIG_PATH]");
         settings.add_filter(r"log: \S+", "log: [LOG_PATH]");
