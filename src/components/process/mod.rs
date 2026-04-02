@@ -47,6 +47,8 @@ pub enum ProcessState {
     KillConfirm {
         pid: u32,
         name: String,
+        /// Which button currently has keyboard focus. `false` = Cancel (default).
+        ok_focused: bool,
     },
     /// Kill command was attempted but failed — show an error dialog to the user.
     KillError {
@@ -190,12 +192,15 @@ impl Component for ProcessComponent {
 
         // For the remaining states extract only scalar/Copy data so the borrow
         // on self.state is released before we mutate it below.
-        let (is_detail, is_kill_confirm, kill_pid, is_kill_error) = match &self.state {
-            ProcessState::DetailView { .. } => (true, false, 0u32, false),
-            ProcessState::KillConfirm { pid, .. } => (false, true, *pid, false),
-            ProcessState::KillError { .. } => (false, false, 0u32, true),
-            _ => (false, false, 0u32, false),
-        };
+        let (is_detail, is_kill_confirm, kill_pid, kill_ok_focused, is_kill_error) =
+            match &self.state {
+                ProcessState::DetailView { .. } => (true, false, 0u32, false, false),
+                ProcessState::KillConfirm {
+                    pid, ok_focused, ..
+                } => (false, true, *pid, *ok_focused, false),
+                ProcessState::KillError { .. } => (false, false, 0u32, false, true),
+                _ => (false, false, 0u32, false, false),
+            };
 
         if is_detail {
             match key.code {
@@ -212,19 +217,26 @@ impl Component for ProcessComponent {
         if is_kill_confirm {
             let pid = kill_pid;
             match key.code {
-                KeyCode::Char('y') | KeyCode::Enter => {
-                    if let Err(e) = kill_process(pid) {
-                        self.state = ProcessState::KillError {
-                            message: e.to_string(),
-                        };
+                KeyCode::Tab | KeyCode::BackTab => {
+                    if let ProcessState::KillConfirm { ok_focused, .. } = &mut self.state {
+                        *ok_focused = !*ok_focused;
+                    }
+                }
+                KeyCode::Enter => {
+                    if kill_ok_focused {
+                        if let Err(e) = kill_process(pid) {
+                            self.state = ProcessState::KillError {
+                                message: e.to_string(),
+                            };
+                        } else {
+                            self.state = ProcessState::NormalList;
+                        }
                     } else {
                         self.state = ProcessState::NormalList;
                     }
-                    return Ok(Some(Action::Render));
                 }
-                KeyCode::Char('n') | KeyCode::Esc => {
+                KeyCode::Esc => {
                     self.state = ProcessState::NormalList;
-                    return Ok(Some(Action::Render));
                 }
                 _ => {}
             }
@@ -307,6 +319,7 @@ impl Component for ProcessComponent {
                         self.state = ProcessState::KillConfirm {
                             pid: p.pid,
                             name: p.name.clone(),
+                            ok_focused: false,
                         };
                         return Ok(Some(Action::Render));
                     }
@@ -428,14 +441,66 @@ impl Component for ProcessComponent {
             return Ok(());
         }
 
-        // Kill confirm overlay — shown in place of the table
-        if let ProcessState::KillConfirm { pid, name } = &self.state {
-            let msg = format!(" Kill {} (pid {})? [y/n] ", name, pid);
-            let line = Line::from(Span::styled(
-                msg,
-                Style::new().fg(self.palette.critical).bold(),
-            ));
-            frame.render_widget(line, inner);
+        // Kill confirm dialog
+        if let ProcessState::KillConfirm {
+            pid,
+            name,
+            ok_focused,
+        } = &self.state
+        {
+            let pid = *pid;
+            let name = name.clone();
+            let ok_focused = *ok_focused;
+
+            let msg = format!("Kill \"{}\" (pid {})?", name, pid);
+            let dialog_w = (msg.len() as u16 + 6).max(32).min(inner.width);
+            let dialog_h = 6_u16.min(inner.height);
+            let dialog = Rect::new(
+                inner.x + (inner.width.saturating_sub(dialog_w)) / 2,
+                inner.y + (inner.height.saturating_sub(dialog_h)) / 2,
+                dialog_w,
+                dialog_h,
+            );
+            frame.render_widget(Clear, dialog);
+
+            let confirm_block = Block::default()
+                .title(Span::styled(
+                    " Kill Process ",
+                    Style::new().fg(self.palette.critical).bold(),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::new().fg(self.palette.critical));
+            let dialog_inner = confirm_block.inner(dialog);
+            frame.render_widget(confirm_block, dialog);
+
+            let ok_style = if ok_focused {
+                Style::new()
+                    .fg(self.palette.bg)
+                    .bg(self.palette.critical)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::new().fg(self.palette.dim)
+            };
+            let cancel_style = if !ok_focused {
+                Style::new()
+                    .fg(self.palette.bg)
+                    .bg(self.palette.accent)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::new().fg(self.palette.dim)
+            };
+
+            let body = Paragraph::new(vec![
+                Line::from(Span::styled(msg, Style::new().fg(self.palette.fg))),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("[ OK ]", ok_style),
+                    Span::raw("    "),
+                    Span::styled("[ Cancel ]", cancel_style),
+                ]),
+            ])
+            .centered();
+            frame.render_widget(body, dialog_inner);
             return Ok(());
         }
 
@@ -1056,5 +1121,147 @@ mod tests {
                 "{code:?} must not exit detail view"
             );
         }
+    }
+
+    fn kill_confirm_state(pid: u32, name: &str, ok_focused: bool) -> ProcessState {
+        ProcessState::KillConfirm {
+            pid,
+            name: name.to_string(),
+            ok_focused,
+        }
+    }
+
+    #[test]
+    fn kill_confirm_default_focuses_cancel() {
+        let mut comp = ProcessComponent::default();
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+            .unwrap();
+        comp.table_state.select(Some(0));
+        comp.handle_key_event(key('k')).unwrap();
+        assert!(
+            matches!(
+                comp.state,
+                ProcessState::KillConfirm {
+                    ok_focused: false,
+                    ..
+                }
+            ),
+            "Cancel must be the default focused button"
+        );
+    }
+
+    #[test]
+    fn kill_confirm_tab_cycles_focus() {
+        let mut comp = ProcessComponent {
+            state: kill_confirm_state(42, "test", false),
+            ..Default::default()
+        };
+        // Tab: Cancel → OK
+        comp.handle_key_event(key_code(KeyCode::Tab)).unwrap();
+        assert!(
+            matches!(
+                comp.state,
+                ProcessState::KillConfirm {
+                    ok_focused: true,
+                    ..
+                }
+            ),
+            "Tab must move focus to OK"
+        );
+        // Tab again: OK → Cancel
+        comp.handle_key_event(key_code(KeyCode::Tab)).unwrap();
+        assert!(
+            matches!(
+                comp.state,
+                ProcessState::KillConfirm {
+                    ok_focused: false,
+                    ..
+                }
+            ),
+            "Second Tab must move focus back to Cancel"
+        );
+        // BackTab also cycles
+        comp.handle_key_event(key_code(KeyCode::BackTab)).unwrap();
+        assert!(matches!(
+            comp.state,
+            ProcessState::KillConfirm {
+                ok_focused: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn kill_confirm_enter_on_cancel_returns_to_list() {
+        let mut comp = ProcessComponent {
+            state: kill_confirm_state(42, "test", false), // Cancel focused
+            ..Default::default()
+        };
+        comp.handle_key_event(key_code(KeyCode::Enter)).unwrap();
+        assert_eq!(
+            comp.state,
+            ProcessState::NormalList,
+            "Enter on Cancel must cancel"
+        );
+    }
+
+    #[test]
+    fn kill_confirm_esc_returns_to_list() {
+        let mut comp = ProcessComponent {
+            state: kill_confirm_state(42, "test", true), // OK focused
+            ..Default::default()
+        };
+        comp.handle_key_event(key_code(KeyCode::Esc)).unwrap();
+        assert_eq!(
+            comp.state,
+            ProcessState::NormalList,
+            "Esc must always cancel"
+        );
+    }
+
+    #[test]
+    fn kill_confirm_swallows_unhandled_keys() {
+        let mut comp = ProcessComponent {
+            state: kill_confirm_state(42, "test", false),
+            ..Default::default()
+        };
+        // Keys that used to work (y/n) must now be swallowed without side effects.
+        let action = comp.handle_key_event(key('y')).unwrap();
+        assert!(action.is_some(), "'y' must be swallowed in kill confirm");
+        assert!(
+            matches!(comp.state, ProcessState::KillConfirm { .. }),
+            "'y' must not confirm kill"
+        );
+        let action = comp.handle_key_event(key('n')).unwrap();
+        assert!(action.is_some(), "'n' must be swallowed in kill confirm");
+        assert!(
+            matches!(comp.state, ProcessState::KillConfirm { .. }),
+            "'n' must not cancel kill"
+        );
+    }
+
+    #[test]
+    fn kill_confirm_renders_dialog_with_buttons() {
+        let mut comp = ProcessComponent {
+            state: kill_confirm_state(1234, "my-process", false),
+            ..Default::default()
+        };
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        let rendered = format!("{:?}", terminal.backend());
+        assert!(
+            rendered.contains("Kill Process"),
+            "dialog must show 'Kill Process' title"
+        );
+        assert!(
+            rendered.contains("my-process"),
+            "dialog must show process name"
+        );
+        assert!(rendered.contains("OK"), "dialog must have OK button");
+        assert!(
+            rendered.contains("Cancel"),
+            "dialog must have Cancel button"
+        );
+        assert_snapshot!("kill_confirm_dialog", terminal.backend());
     }
 }
