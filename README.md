@@ -53,8 +53,9 @@ cargo build --release
 
 ### cargo install
 
-_`cargo install` support coming once the crate is published to
-crates.io._
+```sh
+cargo install dreidel
+```
 
 ### cargo binstall
 
