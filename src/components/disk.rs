@@ -353,6 +353,16 @@ impl DiskComponent {
         let list = List::new(items)
             .highlight_style(Style::new().bg(self.palette.border).fg(self.palette.fg));
 
+        // The app renders the compact layout before the fullscreen overlay each frame.
+        // The compact render sets list_state.offset for a small visible area; ratatui
+        // will not reduce that offset when the fullscreen area is larger.  Reset before
+        // the fullscreen render so ratatui computes a fresh offset for the larger area.
+        if self.is_fullscreen {
+            let sel = self.list_state.selected();
+            self.list_state = ListState::default();
+            self.list_state.select(sel);
+        }
+
         frame.render_stateful_widget(list, chunks[1], &mut self.list_state);
         Ok(())
     }

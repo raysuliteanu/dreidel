@@ -435,6 +435,18 @@ impl NetComponent {
         let list = List::new(items)
             .highlight_style(Style::new().bg(self.palette.border).fg(self.palette.fg));
 
+        // The app renders the normal (compact) layout first, then the fullscreen
+        // overlay, both within the same terminal.draw closure.  The compact render
+        // sets list_state.offset based on its small visible area; ratatui will not
+        // reduce that offset even when the fullscreen area is large enough to show
+        // all items from row 0.  Reset before the fullscreen render so ratatui
+        // computes a fresh offset appropriate for the larger area.
+        if self.is_fullscreen {
+            let sel = self.list_state.selected();
+            self.list_state = ListState::default();
+            self.list_state.select(sel);
+        }
+
         frame.render_stateful_widget(list, layout[3], &mut self.list_state);
         Ok(())
     }
