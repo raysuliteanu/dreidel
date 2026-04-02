@@ -94,6 +94,11 @@ const PKT_W: u16 = 10;
 /// Width of the TX and RX metric columns (right-aligned).
 const COL_W: u16 = 12;
 
+/// Width of the graph legend column inner area: "TX  1.2 MB/s" = 12 chars.
+const LEGEND_INNER_W: u16 = 12;
+/// Total legend column width including the Borders::LEFT separator.
+const LEGEND_TOTAL_W: u16 = LEGEND_INNER_W + 1;
+
 /// Format a packet count for the packet-rate column (no "/s" — header provides context).
 fn fmt_packets(pkts: u64) -> String {
     const K: u64 = 1_000;
@@ -437,9 +442,13 @@ impl NetComponent {
     /// Draws the compact aggregate TX/RX chart used in the list view header.
     fn draw_compact_chart(&self, frame: &mut Frame, area: Rect) {
         let (tx_hist, rx_hist) = &self.agg_history;
-        if tx_hist.is_empty() {
+        if tx_hist.is_empty() || area.width <= LEGEND_TOTAL_W + 4 {
             return;
         }
+
+        let [graph_area, legend_area] =
+            Layout::horizontal([Constraint::Fill(1), Constraint::Length(LEGEND_TOTAL_W)])
+                .areas(area);
 
         let hist_len = HISTORY_LEN as f64;
         let n = tx_hist.len();
@@ -484,13 +493,45 @@ impl NetComponent {
             .y_axis(
                 Axis::default()
                     .bounds([0.0, y_max])
-                    .labels([
-                        Span::styled("0", Style::new().fg(self.palette.dim)),
-                        Span::styled(fmt_rate(y_max as u64), Style::new().fg(self.palette.dim)),
-                    ])
                     .style(Style::new().fg(self.palette.dim)),
             );
-        frame.render_widget(chart, area);
+        frame.render_widget(chart, graph_area);
+
+        // Left border of the legend block acts as the y-axis separator.
+        let legend_block = Block::default()
+            .borders(Borders::LEFT)
+            .border_style(Style::new().fg(self.palette.border));
+        let legend_inner = legend_block.inner(legend_area);
+        frame.render_widget(legend_block, legend_area);
+
+        let tx_cur = tx_hist.back().copied().unwrap_or(0);
+        let rx_cur = rx_hist.back().copied().unwrap_or(0);
+        let rows = (legend_inner.height as usize).min(2);
+        if rows == 0 {
+            return;
+        }
+
+        let label_rows =
+            Layout::vertical((0..rows).map(|_| Constraint::Length(1)).collect::<Vec<_>>())
+                .split(legend_inner);
+
+        let rate_w = LEGEND_INNER_W as usize - 3; // "TX " prefix is 3 chars
+        frame.render_widget(
+            Span::styled(
+                format!("TX {:>rate_w$}", fmt_rate(tx_cur)),
+                Style::new().fg(self.palette.accent),
+            ),
+            label_rows[0],
+        );
+        if rows >= 2 {
+            frame.render_widget(
+                Span::styled(
+                    format!("RX {:>rate_w$}", fmt_rate(rx_cur)),
+                    Style::new().fg(self.palette.highlight),
+                ),
+                label_rows[1],
+            );
+        }
     }
 
     fn draw_detail(&mut self, frame: &mut Frame, area: Rect, name: &str) -> Result<()> {
@@ -620,13 +661,11 @@ impl NetComponent {
 
         let datasets = vec![
             Dataset::default()
-                .name("TX")
                 .marker(symbols::Marker::Braille)
                 .graph_type(GraphType::Line)
                 .style(Style::new().fg(self.palette.accent))
                 .data(&tx_data),
             Dataset::default()
-                .name("RX")
                 .marker(symbols::Marker::Braille)
                 .graph_type(GraphType::Line)
                 .style(Style::new().fg(self.palette.highlight))
@@ -642,17 +681,48 @@ impl NetComponent {
             .y_axis(
                 Axis::default()
                     .bounds([0.0, y_max])
-                    .labels([
-                        Span::styled("0", Style::new().fg(self.palette.dim)),
-                        Span::styled(
-                            fmt_rate(y_max as u64 / 2),
-                            Style::new().fg(self.palette.dim),
-                        ),
-                        Span::styled(fmt_rate(y_max as u64), Style::new().fg(self.palette.dim)),
-                    ])
                     .style(Style::new().fg(self.palette.dim)),
             );
-        frame.render_widget(chart, sections[2]);
+
+        let [graph_area, legend_area] =
+            Layout::horizontal([Constraint::Fill(1), Constraint::Length(LEGEND_TOTAL_W)])
+                .areas(sections[2]);
+
+        frame.render_widget(chart, graph_area);
+
+        // Left border of the legend block acts as the y-axis separator.
+        let legend_block = Block::default()
+            .borders(Borders::LEFT)
+            .border_style(Style::new().fg(self.palette.border));
+        let legend_inner = legend_block.inner(legend_area);
+        frame.render_widget(legend_block, legend_area);
+
+        let tx_cur = tx_hist.back().copied().unwrap_or(0);
+        let rx_cur = rx_hist.back().copied().unwrap_or(0);
+        let rows = (legend_inner.height as usize).min(2);
+        if rows > 0 {
+            let label_rows =
+                Layout::vertical((0..rows).map(|_| Constraint::Length(1)).collect::<Vec<_>>())
+                    .split(legend_inner);
+
+            let rate_w = LEGEND_INNER_W as usize - 3; // "TX " prefix is 3 chars
+            frame.render_widget(
+                Span::styled(
+                    format!("TX {:>rate_w$}", fmt_rate(tx_cur)),
+                    Style::new().fg(self.palette.accent),
+                ),
+                label_rows[0],
+            );
+            if rows >= 2 {
+                frame.render_widget(
+                    Span::styled(
+                        format!("RX {:>rate_w$}", fmt_rate(rx_cur)),
+                        Style::new().fg(self.palette.highlight),
+                    ),
+                    label_rows[1],
+                );
+            }
+        }
 
         // --- Bottom summary line ---
         if let Some(snap) = &self.latest
