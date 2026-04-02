@@ -327,8 +327,8 @@ impl Component for ProcessComponent {
                 KeyCode::Char('s') => {
                     // Cycle through sortable columns in the order they appear
                     // on screen so the indicator always moves left-to-right.
-                    // Normal view:   PID | Name | CPU% | MEM | Status
-                    // Extended view: PID | S    | %CPU | %MEM | Command(Name)
+                    // Normal view:   PID | User | Name | CPU% | MEM | Status
+                    // Extended view: PID | User | PR | NI | VIRT | RES | SHR | S | %CPU | %MEM | TIME | Command
                     let cols: &[SortColumn] = if self.is_wide_layout {
                         &[
                             SortColumn::Pid,
@@ -347,6 +347,7 @@ impl Component for ProcessComponent {
                     } else {
                         &[
                             SortColumn::Pid,
+                            SortColumn::User,
                             SortColumn::Name,
                             SortColumn::Cpu,
                             SortColumn::Mem,
@@ -558,21 +559,24 @@ impl ProcessComponent {
         } else {
             "▲"
         };
-        let header_cells = ["PID", "Name", "CPU%", "MEM", "Status"].iter().map(|h| {
-            let label = match *h {
-                "CPU%" if self.sort_col == SortColumn::Cpu => format!("CPU%{}", dir_sym),
-                "MEM" if self.sort_col == SortColumn::Mem => format!("MEM{}", dir_sym),
-                "PID" if self.sort_col == SortColumn::Pid => format!("PID{}", dir_sym),
-                "Name" if self.sort_col == SortColumn::Name => format!("Name{}", dir_sym),
-                "Status" if self.sort_col == SortColumn::Status => format!("Status{}", dir_sym),
-                _ => h.to_string(),
-            };
-            ratatui::widgets::Cell::from(label).style(
-                Style::new()
-                    .fg(self.palette.accent)
-                    .add_modifier(Modifier::BOLD),
-            )
-        });
+        let header_cells = ["PID", "User", "Name", "CPU%", "MEM", "Status"]
+            .iter()
+            .map(|h| {
+                let label = match *h {
+                    "CPU%" if self.sort_col == SortColumn::Cpu => format!("CPU%{}", dir_sym),
+                    "MEM" if self.sort_col == SortColumn::Mem => format!("MEM{}", dir_sym),
+                    "PID" if self.sort_col == SortColumn::Pid => format!("PID{}", dir_sym),
+                    "User" if self.sort_col == SortColumn::User => format!("User{}", dir_sym),
+                    "Name" if self.sort_col == SortColumn::Name => format!("Name{}", dir_sym),
+                    "Status" if self.sort_col == SortColumn::Status => format!("Status{}", dir_sym),
+                    _ => h.to_string(),
+                };
+                ratatui::widgets::Cell::from(label).style(
+                    Style::new()
+                        .fg(self.palette.accent)
+                        .add_modifier(Modifier::BOLD),
+                )
+            });
         let header = Row::new(header_cells).height(1);
 
         let rows: Vec<Row> = self
@@ -581,6 +585,7 @@ impl ProcessComponent {
             .map(|p| {
                 Row::new(vec![
                     p.pid.to_string(),
+                    p.user.clone(),
                     p.name.clone(),
                     format!("{:.1}", p.cpu_pct),
                     format!("{:.1}%", p.mem_pct),
@@ -591,6 +596,7 @@ impl ProcessComponent {
             .collect();
 
         let widths = [
+            Constraint::Length(7),
             Constraint::Length(7),
             Constraint::Fill(1),
             Constraint::Length(7),
@@ -947,7 +953,7 @@ mod tests {
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
         let rendered = format!("{:?}", terminal.backend());
         assert!(
-            rendered.contains("CPU%") && rendered.contains("Status"),
+            rendered.contains("CPU%") && rendered.contains("Status") && rendered.contains("User"),
             "narrow area must render normal columns; got: {rendered}"
         );
         // Extended-only columns must not appear.
@@ -1015,7 +1021,7 @@ mod tests {
     }
 
     /// Sort cycle in the normal (narrow) view follows column left-to-right order:
-    /// PID → Name → CPU% → MEM → Status → PID …
+    /// PID → User → Name → CPU% → MEM → Status → PID …
     #[test]
     fn normal_view_sort_cycle_follows_column_order() {
         let mut comp = ProcessComponent::default();
@@ -1061,12 +1067,20 @@ mod tests {
             "expected PID▼ after Status→Pid; got: {rendered}"
         );
 
-        // Pid → Name
+        // Pid → User
+        comp.handle_key_event(key_code(KeyCode::Char('s'))).unwrap();
+        let rendered = render(&mut comp, &mut terminal);
+        assert!(
+            rendered.contains("User▼"),
+            "expected User▼ after Pid→User; got: {rendered}"
+        );
+
+        // User → Name
         comp.handle_key_event(key_code(KeyCode::Char('s'))).unwrap();
         let rendered = render(&mut comp, &mut terminal);
         assert!(
             rendered.contains("Name▼"),
-            "expected Name▼ after Pid→Name; got: {rendered}"
+            "expected Name▼ after User→Name; got: {rendered}"
         );
 
         // Name → Cpu (wraps back)
