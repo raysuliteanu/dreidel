@@ -58,8 +58,16 @@ pub struct Args {
 fn version() -> &'static str {
     static V: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
     V.get_or_init(|| {
-        let sha = &env!("VERGEN_GIT_SHA")[..7];
-        Box::leak(format!("{} ({sha})", env!("CARGO_PKG_VERSION")).into_boxed_str())
+        let pkg_version = env!("CARGO_PKG_VERSION");
+        let raw_sha = env!("VERGEN_GIT_SHA");
+        // vergen sets the env var to a placeholder like "VERGEN_GIT_SHA" when
+        // git metadata is unavailable (e.g. cargo install from crates.io).
+        if raw_sha.starts_with("VERGEN_") {
+            Box::leak(pkg_version.to_string().into_boxed_str())
+        } else {
+            let sha = &raw_sha[..7];
+            Box::leak(format!("{pkg_version} ({sha})").into_boxed_str())
+        }
     })
 }
 
