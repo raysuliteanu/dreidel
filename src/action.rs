@@ -9,7 +9,6 @@ use strum::Display;
 #[derive(Debug, Clone, Display, Serialize, Deserialize)]
 pub enum Action {
     // Infrastructure
-    Tick,
     Render,
     Quit,
     #[allow(dead_code)] // reserved for platforms that support suspend (SIGTSTP)

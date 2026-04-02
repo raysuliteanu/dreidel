@@ -49,7 +49,7 @@ sysinfo → stats/mod.rs (spawn_collector) → Action::*Update → App::handle_a
 `action.rs` defines the `Action` enum. All app logic communicates via this channel. Key variants:
 - `*Update(Snapshot)` — metric payloads from the stats collector
 - `FocusComponent(ComponentId)`, `ToggleFullScreen`, `ToggleDebug` — UI state
-- `Render`, `Tick`, `Quit` — infrastructure
+- `Render`, `Quit` — infrastructure
 
 ### Component trait
 

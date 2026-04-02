@@ -28,7 +28,6 @@ pub enum Event {
     Quit,
     Error,
     Closed,
-    Tick,
     Render,
     FocusGained,
     FocusLost,
@@ -45,7 +44,6 @@ pub struct Tui {
     event_rx: mpsc::Receiver<Event>,
     event_tx: mpsc::Sender<Event>,
     frame_rate: f64,
-    tick_rate: f64,
     mouse: bool,
     paste: bool,
 }
@@ -61,15 +59,9 @@ impl Tui {
             event_rx,
             event_tx,
             frame_rate: 1.0,
-            tick_rate: 1.0,
             mouse: false,
             paste: false,
         })
-    }
-
-    pub fn tick_rate(mut self, r: f64) -> Self {
-        self.tick_rate = r;
-        self
     }
 
     pub fn frame_rate(mut self, r: f64) -> Self {
@@ -88,27 +80,19 @@ impl Tui {
         let event_loop = Self::event_loop(
             self.event_tx.clone(),
             self.cancellation_token.clone(),
-            self.tick_rate,
             self.frame_rate,
         );
         self.task = tokio::spawn(event_loop);
     }
 
-    async fn event_loop(
-        tx: mpsc::Sender<Event>,
-        token: CancellationToken,
-        tick_rate: f64,
-        frame_rate: f64,
-    ) {
+    async fn event_loop(tx: mpsc::Sender<Event>, token: CancellationToken, frame_rate: f64) {
         let mut stream = EventStream::new();
-        let mut tick = interval(Duration::from_secs_f64(1.0 / tick_rate));
         let mut render = interval(Duration::from_secs_f64(1.0 / frame_rate));
 
         let _ = tx.send(Event::Init).await;
         loop {
             let event = tokio::select! {
                 _ = token.cancelled() => break,
-                _ = tick.tick()   => Event::Tick,
                 _ = render.tick() => Event::Render,
                 ev = stream.next().fuse() => match ev {
                     Some(Ok(CrosstermEvent::Key(k))) if k.kind == KeyEventKind::Press => Event::Key(k),

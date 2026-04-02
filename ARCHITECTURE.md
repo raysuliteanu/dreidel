@@ -88,7 +88,7 @@ handler sees them.
 
 The single enum that all app logic communicates through:
 
-- Infrastructure: `Tick`, `Render`, `Quit`, `Suspend`, `Resume`, `Resize`, `ClearScreen`
+- Infrastructure: `Render`, `Quit`, `Suspend`, `Resume`, `Resize`, `ClearScreen`
 - UI state: `FocusComponent(ComponentId)`, `ToggleFullScreen`, `ToggleDebug`, `ToggleHelp`
 - Metric payloads: `CpuUpdate(CpuSnapshot)`, `MemUpdate`, `NetUpdate`, `DiskUpdate`,
   `ProcUpdate`, `SysUpdate` — these carry the snapshot structs from the stats collector

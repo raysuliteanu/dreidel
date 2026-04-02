@@ -169,7 +169,7 @@ impl App {
         // Key presses trigger an immediate render (see handle_events) to keep
         // UI response snappy independent of this rate.
         let fps = 1000.0 / self.config.general.refresh_rate_ms as f64;
-        let mut tui = Tui::new()?.mouse(true).frame_rate(fps).tick_rate(fps);
+        let mut tui = Tui::new()?.mouse(true).frame_rate(fps);
         tui.enter().context("entering TUI")?;
 
         let collector_token = tokio_util::sync::CancellationToken::new();
@@ -224,9 +224,6 @@ impl App {
                 Event::Render => {
                     let _ = self.action_tx.try_send(Action::Render);
                 }
-                Event::Tick => {
-                    let _ = self.action_tx.try_send(Action::Tick);
-                }
                 _ => {}
             }
             return Ok(());
@@ -236,9 +233,6 @@ impl App {
         match &event {
             Event::Quit => {
                 let _ = tx.try_send(Action::Quit);
-            }
-            Event::Tick => {
-                let _ = tx.try_send(Action::Tick);
             }
             Event::Render => {
                 let _ = tx.try_send(Action::Render);
@@ -359,11 +353,10 @@ impl App {
 
     fn handle_actions(&mut self, tui: &mut Tui) -> Result<()> {
         while let Ok(action) = self.action_rx.try_recv() {
-            if !matches!(action, Action::Tick | Action::Render) {
+            if !matches!(action, Action::Render) {
                 debug!("action: {action}");
             }
             match &action {
-                Action::Tick => {}
                 Action::Quit => self.should_quit = true,
                 Action::Suspend => self.should_suspend = true,
                 Action::Resume => self.should_suspend = false,
