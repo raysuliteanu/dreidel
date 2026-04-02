@@ -810,25 +810,29 @@ impl NetComponent {
         if let Some(snap) = &self.latest
             && let Some(iface) = snap.interfaces.iter().find(|i| i.name == name)
         {
+            // Fixed widths prevent the line from shifting as units change
+            // (b/s → KB/s → MB/s). 10 chars fits "999.9 KB/s"; 6 fits "999.9K".
+            const RATE_W: usize = 10;
+            const PKT_W: usize = 6;
             let summary = Line::from(vec![
                 Span::styled("TX: ", Style::new().fg(self.palette.dim)),
                 Span::styled(
-                    fmt_rate(iface.tx_bytes),
+                    format!("{:>RATE_W$}", fmt_rate(iface.tx_bytes)),
                     Style::new().fg(self.palette.accent),
                 ),
                 Span::styled("  RX: ", Style::new().fg(self.palette.dim)),
                 Span::styled(
-                    fmt_rate(iface.rx_bytes),
+                    format!("{:>RATE_W$}", fmt_rate(iface.rx_bytes)),
                     Style::new().fg(self.palette.highlight),
                 ),
                 Span::styled("  TX Pkt/s: ", Style::new().fg(self.palette.dim)),
                 Span::styled(
-                    fmt_packets(iface.tx_packets),
+                    format!("{:>PKT_W$}", fmt_packets(iface.tx_packets)),
                     Style::new().fg(self.palette.accent),
                 ),
                 Span::styled("  RX: ", Style::new().fg(self.palette.dim)),
                 Span::styled(
-                    fmt_packets(iface.rx_packets),
+                    format!("{:>PKT_W$}", fmt_packets(iface.rx_packets)),
                     Style::new().fg(self.palette.highlight),
                 ),
                 Span::styled("   Esc/q: back", Style::new().fg(self.palette.dim)),
