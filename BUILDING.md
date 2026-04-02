@@ -64,6 +64,7 @@ cargo release patch --execute
 ```
 
 This will:
+
 1. Bump the version in `Cargo.toml`
 2. Regenerate `CHANGELOG.md` via `git-cliff`
 3. Commit the version bump
@@ -89,11 +90,11 @@ scripts/release [patch|minor|major]   # default: patch
 
 This project follows [Semantic Versioning](https://semver.org/):
 
-| Change | Command |
-|--------|---------|
-| Bug fixes, minor improvements | `cargo release patch` |
+| Change                             | Command               |
+| ---------------------------------- | --------------------- |
+| Bug fixes, minor improvements      | `cargo release patch` |
 | New features, backwards-compatible | `cargo release minor` |
-| Breaking changes | `cargo release major` |
+| Breaking changes                   | `cargo release major` |
 
 While the version is `0.x`, minor-version bumps may include breaking changes
 per semver convention.
@@ -102,16 +103,16 @@ per semver convention.
 
 GitHub Actions runs on every push and pull request to `main`:
 
-| Job | What it checks |
-|-----|---------------|
-| `fmt` | `cargo fmt --check` |
-| `clippy` | `cargo clippy --locked -- -D warnings` |
-| `test` | `cargo test --locked` on stable |
-| `msrv` | `cargo test --locked` on Rust 1.88 (declared MSRV) |
-| `coverage` | `cargo llvm-cov --locked --fail-under-lines 80` |
-| `cross-check` | `cargo check --locked --target aarch64-unknown-linux-gnu` |
-| `audit` | `cargo audit` via `rustsec/audit-check` — known CVEs |
-| `deny` | `cargo deny check` via `EmbarkStudios/cargo-deny-action` — licenses + advisories |
-| `semver` | `cargo semver-checks` — disabled until first crates.io publish |
+| Job           | What it checks                                                                   |
+| ------------- | -------------------------------------------------------------------------------- |
+| `fmt`         | `cargo fmt --check`                                                              |
+| `clippy`      | `cargo clippy --locked -- -D warnings`                                           |
+| `test`        | `cargo test --locked` on stable                                                  |
+| `msrv`        | `cargo test --locked` on Rust 1.88 (declared MSRV)                               |
+| `coverage`    | `cargo llvm-cov --locked --fail-under-lines 80`                                  |
+| `cross-check` | `cargo check --locked --target aarch64-unknown-linux-gnu`                        |
+| `audit`       | `cargo audit` via `rustsec/audit-check` — known CVEs                             |
+| `deny`        | `cargo deny check` via `EmbarkStudios/cargo-deny-action` — licenses + advisories |
+| `semver`      | `cargo semver-checks` — disabled until first crates.io publish                   |
 
 Config: `.github/workflows/ci.yml`.
