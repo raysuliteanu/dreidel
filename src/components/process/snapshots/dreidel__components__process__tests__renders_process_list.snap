@@ -3,7 +3,7 @@ source: src/components/process/mod.rs
 expression: terminal.backend()
 ---
 "┌ [P]rocesses ─────────────────────────────────────────────────────────────────────────────────────┐"
-"│PID     User    Name                                                   CPU%▼   MEM      Status    │"
+"│PID     UID     Name                                                   CPU%▼   MEM      Status    │"
 "│12345   ray     firefox                                                18.4    3.2%     running   │"
 "│                                                                                                  │"
 "│                                                                                                  │"

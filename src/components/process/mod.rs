@@ -559,14 +559,14 @@ impl ProcessComponent {
         } else {
             "▲"
         };
-        let header_cells = ["PID", "User", "Name", "CPU%", "MEM", "Status"]
+        let header_cells = ["PID", "UID", "Name", "CPU%", "MEM", "Status"]
             .iter()
             .map(|h| {
                 let label = match *h {
                     "CPU%" if self.sort_col == SortColumn::Cpu => format!("CPU%{}", dir_sym),
                     "MEM" if self.sort_col == SortColumn::Mem => format!("MEM{}", dir_sym),
                     "PID" if self.sort_col == SortColumn::Pid => format!("PID{}", dir_sym),
-                    "User" if self.sort_col == SortColumn::User => format!("User{}", dir_sym),
+                    "UID" if self.sort_col == SortColumn::User => format!("UID{}", dir_sym),
                     "Name" if self.sort_col == SortColumn::Name => format!("Name{}", dir_sym),
                     "Status" if self.sort_col == SortColumn::Status => format!("Status{}", dir_sym),
                     _ => h.to_string(),
@@ -953,7 +953,7 @@ mod tests {
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
         let rendered = format!("{:?}", terminal.backend());
         assert!(
-            rendered.contains("CPU%") && rendered.contains("Status") && rendered.contains("User"),
+            rendered.contains("CPU%") && rendered.contains("Status") && rendered.contains("UID"),
             "narrow area must render normal columns; got: {rendered}"
         );
         // Extended-only columns must not appear.
@@ -1071,8 +1071,8 @@ mod tests {
         comp.handle_key_event(key_code(KeyCode::Char('s'))).unwrap();
         let rendered = render(&mut comp, &mut terminal);
         assert!(
-            rendered.contains("User▼"),
-            "expected User▼ after Pid→User; got: {rendered}"
+            rendered.contains("UID▼"),
+            "expected UID▼ after Pid→User; got: {rendered}"
         );
 
         // User → Name
