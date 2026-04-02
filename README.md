@@ -9,11 +9,9 @@
 
 ## Screenshots
 
-<!-- screenshot: sidebar layout -->
-<!-- screenshot: dashboard layout -->
-<!-- screenshot: process fullscreen -->
+![dreidel screenshot 1](docs/dreidel-1.png)
 
-_Screenshots coming soon._
+![dreidel screenshot 2](docs/dreidel-2.png)
 
 ---
 
