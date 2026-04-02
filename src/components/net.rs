@@ -621,7 +621,8 @@ impl NetComponent {
             Constraint::Length(stats_rows),
             Constraint::Length(sep_h),
             Constraint::Fill(1),
-            Constraint::Length(1),
+            Constraint::Length(1), // separator before summary
+            Constraint::Length(1), // summary line
         ])
         .split(inner);
 
@@ -797,6 +798,14 @@ impl NetComponent {
             }
         }
 
+        // --- Separator above summary ---
+        frame.render_widget(
+            Block::default()
+                .borders(Borders::TOP)
+                .border_style(Style::new().fg(self.palette.border)),
+            sections[3],
+        );
+
         // --- Bottom summary line ---
         if let Some(snap) = &self.latest
             && let Some(iface) = snap.interfaces.iter().find(|i| i.name == name)
@@ -824,7 +833,7 @@ impl NetComponent {
                 ),
                 Span::styled("   Esc/q: back", Style::new().fg(self.palette.dim)),
             ]);
-            frame.render_widget(summary, sections[3]);
+            frame.render_widget(summary, sections[4]);
         }
 
         Ok(())
