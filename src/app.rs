@@ -505,6 +505,10 @@ impl App {
                     self.components.iter_mut().find(|(cid, _)| cid == id)
             {
                 let modal = centered_pct(main_area, 90, 90);
+                // Signal to the component that the next draw() call is the overlay
+                // pass, not the compact background pass.  The component uses this
+                // one-shot flag to render live state rather than frozen snapshot.
+                comp.begin_overlay_render();
                 frame.render_widget(Clear, modal);
                 if let Err(e) = comp.draw(frame, modal) {
                     warn!(component = ?component_id, error = %e, "component draw failed");

@@ -248,6 +248,14 @@ pub trait Component: std::fmt::Debug {
         Ok(None)
     }
 
+    /// Called by `App` immediately before the fullscreen overlay render pass.
+    ///
+    /// The default no-op is correct for components that do not support fullscreen.
+    /// Components that support fullscreen override this to set an internal
+    /// `rendering_as_overlay` flag, which `draw()` consumes to distinguish the
+    /// compact background pass from the overlay pass.
+    fn begin_overlay_render(&mut self) {}
+
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()>;
 }
 

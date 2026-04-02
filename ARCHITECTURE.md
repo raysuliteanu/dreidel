@@ -135,6 +135,43 @@ fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()>
 
 Note that `update` receives `&Action` — the action is not cloned per component.
 
+#### Fullscreen state isolation
+
+The App renders every visible component in the compact sidebar layout first, then
+renders the fullscreen-focused component again as a modal overlay in the same frame.
+Because both passes call the same component instance, a two-part mechanism prevents
+fullscreen interactions (navigation, sort, filter) from affecting the compact sidebar.
+
+**Part 1 — save-and-restore on enter/exit:**
+
+- On `Action::ToggleFullScreen` while entering: a `compact_snapshot` struct is frozen,
+  capturing selection index, filter string, sort state, sub-mode, and (for Process)
+  the displayed row list.
+- On `Action::ToggleFullScreen` while exiting, or on `set_focused(false)` mid-fullscreen:
+  the snapshot is restored and cleared, returning the component to its pre-fullscreen state.
+
+**Part 2 — render-time isolation via `begin_overlay_render()`:**
+
+`App::render()` calls `comp.begin_overlay_render()` immediately before the fullscreen
+overlay draw. Components set a one-shot `rendering_as_overlay: bool` flag in that
+method. Inside `draw()`, the flag is consumed:
+
+- `is_fullscreen=true, rendering_as_overlay=false` → compact background pass:
+  component temporarily swaps in snapshot state, calls `draw()` with `is_fullscreen=false`
+  (which prevents re-entry and disables overlay-only rendering features), then restores
+  live state. The compact sidebar always shows frozen pre-fullscreen content.
+- `is_fullscreen=true, rendering_as_overlay=true` → overlay pass: component renders
+  normally with live state, showing the current fullscreen view to the user.
+
+Key events are not involved in this isolation: `App::handle_events` already dispatches
+key events only to the focused component, which is the fullscreen modal when active.
+The compact "view" never receives key events during fullscreen; it only needs render
+isolation, which Part 2 provides.
+
+The snapshot covers all mutable UI state the user can change during fullscreen.
+This keeps the compact sidebar pixel-identical to how it was before the overlay
+was opened.
+
 `ComponentId` is a `strum`-derived enum with `#[strum(serialize_all = "lowercase")]`;
 the lowercase string representations (`"cpu"`, `"mem"`, `"net"`, `"disk"`,
 `"process"`) are what appear in config and CLI flags.

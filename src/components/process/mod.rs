@@ -56,6 +56,18 @@ pub enum ProcessState {
     },
 }
 
+struct ProcessCompactSnapshot {
+    selected: Option<usize>,
+    sort_col: SortColumn,
+    sort_dir: SortDir,
+    filter: ProcessFilter,
+    state: ProcessState,
+    /// Cached displayed list at the moment fullscreen was entered.  Used by the
+    /// compact background pass so it renders the same rows without calling
+    /// `refresh_display()` with live filter/sort state.
+    displayed: Vec<ProcessEntry>,
+}
+
 pub struct ProcessComponent {
     palette: ColorPalette,
     focus_key: char,
@@ -72,6 +84,10 @@ pub struct ProcessComponent {
     /// or area width ≥ 120).  Stored here so the sort-cycle key handler can use
     /// the column order that matches what is actually visible on screen.
     is_wide_layout: bool,
+    compact_snapshot: Option<ProcessCompactSnapshot>,
+    /// One-shot flag set by `begin_overlay_render()`.  Consumed at the start of
+    /// `draw()` to distinguish the compact background pass from the overlay pass.
+    rendering_as_overlay: bool,
 }
 
 impl std::fmt::Debug for ProcessComponent {
@@ -103,6 +119,8 @@ impl Default for ProcessComponent {
             focused: false,
             is_fullscreen: false,
             is_wide_layout: false,
+            compact_snapshot: None,
+            rendering_as_overlay: false,
         }
     }
 }
@@ -141,14 +159,68 @@ impl ProcessComponent {
         }
         self.displayed = list;
     }
+
+    fn restore_compact_snapshot(&mut self) {
+        if let Some(snap) = self.compact_snapshot.take() {
+            self.sort_col = snap.sort_col;
+            self.sort_dir = snap.sort_dir;
+            self.filter = snap.filter;
+            self.state = snap.state;
+            self.refresh_display();
+            let max = self.displayed.len().saturating_sub(1);
+            self.table_state.select(snap.selected.map(|s| s.min(max)));
+        }
+        self.is_fullscreen = false;
+    }
+
+    /// Render the compact sidebar appearance using the frozen snapshot state.
+    ///
+    /// Temporarily swaps live fields (sort, filter, state, displayed list,
+    /// table selection) with snapshot values, calls `draw()` with
+    /// `is_fullscreen = false`, then restores live state.  Setting
+    /// `is_fullscreen` to false prevents the recursive `draw()` call from
+    /// re-entering this method.
+    fn draw_compact_background(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        let Some(snap) = self.compact_snapshot.take() else {
+            return Ok(()); // no snapshot yet — render nothing
+        };
+
+        let live_sort_col = std::mem::replace(&mut self.sort_col, snap.sort_col);
+        let live_sort_dir = std::mem::replace(&mut self.sort_dir, snap.sort_dir);
+        let live_filter = std::mem::replace(&mut self.filter, snap.filter.clone());
+        let live_state = std::mem::replace(&mut self.state, snap.state.clone());
+        let live_displayed = std::mem::replace(&mut self.displayed, snap.displayed.clone());
+        let live_fs = std::mem::replace(&mut self.is_fullscreen, false);
+        let mut tmp_table = TableState::default();
+        tmp_table.select(snap.selected);
+        let live_table = std::mem::replace(&mut self.table_state, tmp_table);
+        // rendering_as_overlay is already false (consumed at top of draw()).
+
+        let result = self.draw(frame, area);
+
+        self.sort_col = live_sort_col;
+        self.sort_dir = live_sort_dir;
+        self.filter = live_filter;
+        self.state = live_state;
+        self.displayed = live_displayed;
+        self.is_fullscreen = live_fs;
+        self.table_state = live_table;
+        self.compact_snapshot = Some(snap);
+
+        result
+    }
 }
 
 impl Component for ProcessComponent {
     fn set_focused(&mut self, focused: bool) {
         self.focused = focused;
-        if !focused {
-            self.is_fullscreen = false;
+        if !focused && self.is_fullscreen {
+            self.restore_compact_snapshot();
         }
+    }
+
+    fn begin_overlay_render(&mut self) {
+        self.rendering_as_overlay = true;
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
@@ -381,7 +453,25 @@ impl Component for ProcessComponent {
                 self.refresh_display();
             }
             Action::ToggleFullScreen if self.focused => {
-                self.is_fullscreen = !self.is_fullscreen;
+                if !self.is_fullscreen {
+                    let safe_state = match &self.state {
+                        ProcessState::NormalList | ProcessState::FilterMode { .. } => {
+                            self.state.clone()
+                        }
+                        _ => ProcessState::NormalList,
+                    };
+                    self.compact_snapshot = Some(ProcessCompactSnapshot {
+                        selected: self.table_state.selected(),
+                        sort_col: self.sort_col,
+                        sort_dir: self.sort_dir,
+                        filter: self.filter.clone(),
+                        state: safe_state,
+                        displayed: self.displayed.clone(),
+                    });
+                    self.is_fullscreen = true;
+                } else {
+                    self.restore_compact_snapshot();
+                }
             }
             _ => {}
         }
@@ -389,6 +479,15 @@ impl Component for ProcessComponent {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        // One-shot overlay flag: consumed here so the compact background pass
+        // and the overlay pass can be distinguished.
+        let is_overlay = std::mem::replace(&mut self.rendering_as_overlay, false);
+
+        // Compact background pass: render from frozen snapshot state.
+        if self.is_fullscreen && !is_overlay {
+            return self.draw_compact_background(frame, area);
+        }
+
         let title_rest = match &self.state {
             ProcessState::FilterMode { input } => format!("rocesses [filter: {}▌]", input),
             _ => "rocesses".to_string(),
@@ -1277,5 +1376,140 @@ mod tests {
             "dialog must have Cancel button"
         );
         assert_snapshot!("kill_confirm_dialog", terminal.backend());
+    }
+
+    #[test]
+    fn compact_state_restored_after_fullscreen_exit() {
+        let mut comp = ProcessComponent::default();
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+            .unwrap();
+        comp.set_focused(true);
+        // Record initial state
+        let initial_sort = comp.sort_col;
+        let initial_dir = comp.sort_dir;
+        // Enter fullscreen
+        comp.update(&Action::ToggleFullScreen).unwrap();
+        assert!(comp.is_fullscreen);
+        // Change sort column
+        comp.handle_key_event(key_code(KeyCode::Char('s'))).unwrap();
+        assert_ne!(
+            comp.sort_col, initial_sort,
+            "sort must change in fullscreen"
+        );
+        // Exit fullscreen
+        comp.update(&Action::ToggleFullScreen).unwrap();
+        assert!(!comp.is_fullscreen);
+        assert_eq!(comp.sort_col, initial_sort, "sort_col must be restored");
+        assert_eq!(comp.sort_dir, initial_dir, "sort_dir must be restored");
+    }
+
+    #[test]
+    fn kill_confirm_state_not_saved_in_compact_snapshot() {
+        let mut comp = ProcessComponent::default();
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+            .unwrap();
+        comp.set_focused(true);
+        // Put component in KillConfirm state
+        comp.state = ProcessState::KillConfirm {
+            pid: 12345,
+            name: "test".to_string(),
+            ok_focused: false,
+        };
+        // Enter fullscreen — KillConfirm should be coerced to NormalList in snapshot
+        comp.update(&Action::ToggleFullScreen).unwrap();
+        // Exit fullscreen
+        comp.update(&Action::ToggleFullScreen).unwrap();
+        assert_eq!(
+            comp.state,
+            ProcessState::NormalList,
+            "KillConfirm must be coerced to NormalList in snapshot"
+        );
+    }
+
+    /// Compact background pass renders the frozen pre-fullscreen sort order.
+    ///
+    /// After entering fullscreen and pressing 's' to change the sort column, a
+    /// `draw()` call WITHOUT `begin_overlay_render()` (i.e. the compact background
+    /// pass) must show the ORIGINAL sort indicator, not the changed one.
+    #[test]
+    fn compact_background_shows_frozen_sort_during_fullscreen() {
+        let mut comp = ProcessComponent::default();
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+            .unwrap();
+        comp.set_focused(true);
+
+        // Render compact baseline — must show default sort (CPU%▼ on 80-col terminal).
+        let mut terminal = Terminal::new(TestBackend::new(80, 30)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        let baseline = format!("{:?}", terminal.backend());
+        assert!(
+            baseline.contains("CPU%▼"),
+            "baseline must show CPU%▼; got: {baseline}"
+        );
+
+        // Enter fullscreen and change the sort column to MEM.
+        comp.update(&Action::ToggleFullScreen).unwrap();
+        comp.handle_key_event(key_code(KeyCode::Char('s'))).unwrap();
+        assert_eq!(
+            comp.sort_col,
+            sort::SortColumn::Mem,
+            "sort must advance to Mem after 's'"
+        );
+
+        // Compact background pass (no begin_overlay_render): must show original sort.
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        let compact_bg = format!("{:?}", terminal.backend());
+        assert!(
+            compact_bg.contains("CPU%▼"),
+            "compact background pass must still show CPU%▼ (frozen); got: {compact_bg}"
+        );
+        assert!(
+            !compact_bg.contains("MEM▼"),
+            "compact background pass must NOT show MEM▼ (live state); got: {compact_bg}"
+        );
+
+        // Overlay pass (begin_overlay_render): must show new sort.
+        comp.begin_overlay_render();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        let overlay = format!("{:?}", terminal.backend());
+        assert!(
+            overlay.contains("MEM▼"),
+            "overlay pass must show MEM▼ (live state); got: {overlay}"
+        );
+    }
+
+    /// Compact background pass renders the frozen filter string.
+    ///
+    /// After entering fullscreen and typing a filter, the compact background pass
+    /// must show no filter in the title (filter was empty when fullscreen opened).
+    #[test]
+    fn compact_background_shows_frozen_filter_during_fullscreen() {
+        let mut comp = ProcessComponent::default();
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+            .unwrap();
+        comp.set_focused(true);
+        comp.update(&Action::ToggleFullScreen).unwrap();
+
+        // In fullscreen: enter filter mode and type a filter string.
+        comp.handle_key_event(key('/')).unwrap();
+        comp.handle_key_event(key('b')).unwrap();
+        assert!(
+            matches!(comp.state, ProcessState::FilterMode { ref input } if input == "b"),
+            "must be in FilterMode with input 'b'"
+        );
+
+        // Compact background pass: title must NOT show the filter.
+        let mut terminal = Terminal::new(TestBackend::new(80, 30)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        let compact_bg = format!("{:?}", terminal.backend());
+        assert!(
+            !compact_bg.contains("filter: b"),
+            "compact background must not show live filter; got: {compact_bg}"
+        );
+        // keyed_title renders "[P]rocesses"; check the non-key portion is present.
+        assert!(
+            compact_bg.contains("rocesses"),
+            "compact background must show plain 'rocesses' in title; got: {compact_bg}"
+        );
     }
 }

@@ -24,6 +24,12 @@ use crate::{
 };
 
 #[derive(Debug)]
+struct NetCompactSnapshot {
+    selected: Option<usize>,
+    filter: String,
+}
+
+#[derive(Debug)]
 pub struct NetComponent {
     palette: ColorPalette,
     focus_key: char,
@@ -38,6 +44,10 @@ pub struct NetComponent {
     filter: String,
     focused: bool,
     is_fullscreen: bool,
+    compact_snapshot: Option<NetCompactSnapshot>,
+    /// One-shot flag set by `begin_overlay_render()`.  Consumed at the start of
+    /// `draw()` to distinguish the compact background pass from the overlay pass.
+    rendering_as_overlay: bool,
 }
 
 impl NetComponent {
@@ -53,6 +63,8 @@ impl NetComponent {
             filter: String::new(),
             focused: false,
             is_fullscreen: false,
+            compact_snapshot: None,
+            rendering_as_overlay: false,
         }
     }
 
@@ -113,9 +125,13 @@ fn fmt_packets(pkts: u64) -> String {
 impl Component for NetComponent {
     fn set_focused(&mut self, focused: bool) {
         self.focused = focused;
-        if !focused {
-            self.is_fullscreen = false;
+        if !focused && self.is_fullscreen {
+            self.restore_compact_snapshot();
         }
+    }
+
+    fn begin_overlay_render(&mut self) {
+        self.rendering_as_overlay = true;
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
@@ -250,7 +266,15 @@ impl Component for NetComponent {
                 self.clamp_selection();
             }
             Action::ToggleFullScreen if self.focused => {
-                self.is_fullscreen = !self.is_fullscreen;
+                if !self.is_fullscreen {
+                    self.compact_snapshot = Some(NetCompactSnapshot {
+                        selected: self.list_state.selected(),
+                        filter: self.filter.clone(),
+                    });
+                    self.is_fullscreen = true;
+                } else {
+                    self.restore_compact_snapshot();
+                }
             }
             _ => {}
         }
@@ -258,6 +282,15 @@ impl Component for NetComponent {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        // One-shot overlay flag: consumed here so the compact background pass
+        // and the overlay pass can be distinguished.
+        let is_overlay = std::mem::replace(&mut self.rendering_as_overlay, false);
+
+        // Compact background pass: render from frozen snapshot state.
+        if self.is_fullscreen && !is_overlay {
+            return self.draw_compact_background(frame, area);
+        }
+
         match &self.view {
             ListView::List | ListView::Filter { .. } => self.draw_list(frame, area),
             ListView::Detail { name } => {
@@ -269,6 +302,46 @@ impl Component for NetComponent {
 }
 
 impl NetComponent {
+    fn restore_compact_snapshot(&mut self) {
+        if let Some(snap) = self.compact_snapshot.take() {
+            self.filter = snap.filter;
+            self.view = ListView::List;
+            let mut ls = ListState::default();
+            ls.select(snap.selected);
+            self.list_state = ls;
+        }
+        self.is_fullscreen = false;
+    }
+
+    /// Render the compact sidebar appearance using the frozen snapshot state.
+    ///
+    /// Temporarily swaps live fields with snapshot values, calls `draw()` with
+    /// `is_fullscreen = false`, then restores live state.  Setting `is_fullscreen`
+    /// to false also makes `draw_list` use the compact (narrow) column layout.
+    fn draw_compact_background(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        let Some(snap) = self.compact_snapshot.take() else {
+            return Ok(()); // no snapshot yet — render nothing
+        };
+
+        let live_filter = std::mem::replace(&mut self.filter, snap.filter.clone());
+        let live_view = std::mem::replace(&mut self.view, ListView::List);
+        let live_fs = std::mem::replace(&mut self.is_fullscreen, false);
+        let mut tmp_state = ListState::default();
+        tmp_state.select(snap.selected);
+        let live_list = std::mem::replace(&mut self.list_state, tmp_state);
+        // rendering_as_overlay is already false (consumed at top of draw()).
+
+        let result = self.draw(frame, area);
+
+        self.filter = live_filter;
+        self.view = live_view;
+        self.is_fullscreen = live_fs;
+        self.list_state = live_list;
+        self.compact_snapshot = Some(snap);
+
+        result
+    }
+
     fn border_block(&self, rest: &str) -> Block<'static> {
         list_border_block(self.focus_key, rest, &self.palette, self.focused)
     }
@@ -434,18 +507,6 @@ impl NetComponent {
 
         let list = List::new(items)
             .highlight_style(Style::new().bg(self.palette.border).fg(self.palette.fg));
-
-        // The app renders the normal (compact) layout first, then the fullscreen
-        // overlay, both within the same terminal.draw closure.  The compact render
-        // sets list_state.offset based on its small visible area; ratatui will not
-        // reduce that offset even when the fullscreen area is large enough to show
-        // all items from row 0.  Reset before the fullscreen render so ratatui
-        // computes a fresh offset appropriate for the larger area.
-        if self.is_fullscreen {
-            let sel = self.list_state.selected();
-            self.list_state = ListState::default();
-            self.list_state.select(sel);
-        }
 
         frame.render_stateful_widget(list, layout[3], &mut self.list_state);
         Ok(())
@@ -1367,5 +1428,76 @@ mod tests {
                 "{code:?} must not exit filter mode"
             );
         }
+    }
+
+    #[test]
+    fn compact_state_restored_after_fullscreen_exit() {
+        let two = NetSnapshot {
+            interfaces: vec![interface("eth0"), interface("lo")],
+        };
+        let mut comp = NetComponent::default();
+        comp.update(&Action::NetUpdate(two)).unwrap();
+        comp.set_focused(true);
+        // Record initial selection (idx 0)
+        assert_eq!(comp.list_state.selected(), Some(0));
+        // Enter fullscreen
+        comp.update(&Action::ToggleFullScreen).unwrap();
+        assert!(comp.is_fullscreen);
+        // Navigate down (change selection)
+        comp.handle_key_event(key(KeyCode::Down)).unwrap();
+        assert_eq!(
+            comp.list_state.selected(),
+            Some(1),
+            "selection must change in fullscreen"
+        );
+        // Apply a filter
+        comp.filter = "lo".to_string();
+        // Exit fullscreen
+        comp.update(&Action::ToggleFullScreen).unwrap();
+        assert_eq!(
+            comp.list_state.selected(),
+            Some(0),
+            "selection must be restored"
+        );
+        assert_eq!(comp.filter, "", "filter must be restored");
+        assert!(matches!(comp.view, ListView::List));
+        assert!(!comp.is_fullscreen);
+    }
+
+    /// Compact background pass renders the frozen pre-fullscreen list title.
+    ///
+    /// After entering fullscreen and applying a filter, the compact background
+    /// pass must show the title from before fullscreen (no filter in title).
+    #[test]
+    fn compact_background_shows_frozen_state_during_fullscreen() {
+        let snap = NetSnapshot {
+            interfaces: vec![interface("eth0"), interface("lo")],
+        };
+        let mut comp = NetComponent::default();
+        comp.update(&Action::NetUpdate(snap)).unwrap();
+        comp.set_focused(true);
+        comp.update(&Action::ToggleFullScreen).unwrap();
+
+        // In fullscreen: apply a filter (changes the rendered title).
+        comp.filter = "eth".to_string();
+
+        let mut terminal = Terminal::new(TestBackend::new(70, 8)).unwrap();
+
+        // Compact background pass (no begin_overlay_render): must NOT show filter.
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        let compact_bg = format!("{:?}", terminal.backend());
+        assert!(
+            !compact_bg.contains("/eth"),
+            "compact background must NOT show live filter '/eth'; got: {compact_bg}"
+        );
+
+        // Overlay pass (begin_overlay_render): MUST show the live filter.
+        comp.begin_overlay_render();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        let overlay = format!("{:?}", terminal.backend());
+        assert!(
+            overlay.contains("/eth") || overlay.contains("eth"),
+            "overlay pass must show live filter 'eth'; got: {overlay}"
+        );
     }
 }

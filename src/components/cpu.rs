@@ -24,6 +24,13 @@ fn core_color(idx: usize) -> Color {
     SERIES_COLORS[idx % SERIES_COLORS.len()]
 }
 
+#[derive(Debug)]
+struct CpuCompactSnapshot {
+    scroll_offset: usize,
+    state: CpuState,
+    filter: String,
+}
+
 /// State for the CPU panel's filter input mode.
 #[derive(Debug, Default, Clone, PartialEq)]
 enum CpuState {
@@ -47,6 +54,10 @@ pub struct CpuComponent {
     filter: String,
     focused: bool,
     is_fullscreen: bool,
+    compact_snapshot: Option<CpuCompactSnapshot>,
+    /// One-shot flag set by `begin_overlay_render()`.  Consumed at the start of
+    /// `draw()` to distinguish the compact background pass from the overlay pass.
+    rendering_as_overlay: bool,
 }
 
 impl Default for CpuComponent {
@@ -61,6 +72,8 @@ impl Default for CpuComponent {
             filter: String::new(),
             focused: false,
             is_fullscreen: false,
+            compact_snapshot: None,
+            rendering_as_overlay: false,
         }
     }
 }
@@ -257,11 +270,56 @@ impl CpuComponent {
             frame.render_widget(label, label_rows[row_idx]);
         }
     }
+
+    fn restore_compact_snapshot(&mut self) {
+        if let Some(snap) = self.compact_snapshot.take() {
+            self.scroll_offset = snap.scroll_offset;
+            self.state = snap.state;
+            self.filter = snap.filter;
+        }
+        self.is_fullscreen = false;
+    }
+
+    /// Render the compact sidebar appearance using the frozen snapshot state.
+    ///
+    /// Called during the compact background pass (when the fullscreen overlay is
+    /// open).  Temporarily swaps live fields with snapshot values, calls `draw()`
+    /// with `is_fullscreen = false` (which skips the overlay-only header and clears
+    /// the `is_fullscreen` guard so we don't recurse), then restores live state.
+    fn draw_compact_background(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        let Some(snap) = self.compact_snapshot.take() else {
+            return Ok(()); // no snapshot yet — render nothing
+        };
+
+        let live_scroll = std::mem::replace(&mut self.scroll_offset, snap.scroll_offset);
+        let live_state = std::mem::replace(&mut self.state, snap.state.clone());
+        let live_filter = std::mem::replace(&mut self.filter, snap.filter.clone());
+        let live_fs = std::mem::replace(&mut self.is_fullscreen, false);
+        // rendering_as_overlay is already false (consumed at top of draw()),
+        // so the recursive draw() call proceeds as a normal (non-fullscreen) render.
+
+        let result = self.draw(frame, area);
+
+        self.scroll_offset = live_scroll;
+        self.state = live_state;
+        self.filter = live_filter;
+        self.is_fullscreen = live_fs;
+        self.compact_snapshot = Some(snap);
+
+        result
+    }
 }
 
 impl Component for CpuComponent {
     fn set_focused(&mut self, focused: bool) {
         self.focused = focused;
+        if !focused && self.is_fullscreen {
+            self.restore_compact_snapshot();
+        }
+    }
+
+    fn begin_overlay_render(&mut self) {
+        self.rendering_as_overlay = true;
     }
 
     fn preferred_height(&self) -> Option<u16> {
@@ -345,7 +403,16 @@ impl Component for CpuComponent {
                 self.latest = Some(snap.clone());
             }
             Action::ToggleFullScreen => {
-                self.is_fullscreen = !self.is_fullscreen;
+                if !self.is_fullscreen {
+                    self.compact_snapshot = Some(CpuCompactSnapshot {
+                        scroll_offset: self.scroll_offset,
+                        state: self.state.clone(),
+                        filter: self.filter.clone(),
+                    });
+                    self.is_fullscreen = true;
+                } else {
+                    self.restore_compact_snapshot();
+                }
             }
             _ => {}
         }
@@ -353,6 +420,17 @@ impl Component for CpuComponent {
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
+        // One-shot overlay flag: consumed here so the compact background pass
+        // (is_fullscreen=true, rendering_as_overlay=false) and the overlay pass
+        // (is_fullscreen=true, rendering_as_overlay=true) can be distinguished.
+        let is_overlay = std::mem::replace(&mut self.rendering_as_overlay, false);
+
+        // Compact background pass: render from frozen snapshot so that changes
+        // made in the fullscreen overlay don't bleed into the compact sidebar.
+        if self.is_fullscreen && !is_overlay {
+            return self.draw_compact_background(frame, area);
+        }
+
         let border_color = if self.focused {
             self.palette.accent
         } else {
@@ -448,6 +526,9 @@ mod tests {
         comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
             .unwrap();
         comp.update(&Action::ToggleFullScreen).unwrap();
+        // Simulate the App's overlay render pass: App calls begin_overlay_render()
+        // immediately before the draw() that produces the fullscreen modal content.
+        comp.begin_overlay_render();
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
         assert_snapshot!("cpu_fullscreen", terminal.backend());
@@ -583,6 +664,102 @@ mod tests {
         assert_eq!(
             comp.filtered_cores(),
             (0..comp.num_cores()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn compact_state_restored_after_fullscreen_exit() {
+        let mut comp = CpuComponent::default();
+        comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
+            .unwrap();
+        comp.update(&Action::ToggleFullScreen).unwrap();
+        // In fullscreen: scroll down and filter
+        comp.handle_key_event(crossterm::event::KeyEvent::new(
+            KeyCode::Down,
+            crossterm::event::KeyModifiers::NONE,
+        ))
+        .unwrap();
+        comp.filter = "1".to_string();
+        // Exit fullscreen
+        comp.update(&Action::ToggleFullScreen).unwrap();
+        assert_eq!(
+            comp.scroll_offset, 0,
+            "scroll must be restored to pre-fullscreen value"
+        );
+        assert_eq!(
+            comp.filter, "",
+            "filter must be restored to pre-fullscreen value"
+        );
+        assert!(!comp.is_fullscreen);
+    }
+
+    /// Compact background pass renders without the fullscreen header, even when
+    /// `is_fullscreen` is true.  The header is an overlay-only feature; it must
+    /// not bleed into the compact sidebar that is rendered behind the modal.
+    #[test]
+    fn compact_background_hides_fullscreen_header() {
+        let mut comp = CpuComponent::default();
+        comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
+            .unwrap();
+        comp.update(&Action::ToggleFullScreen).unwrap();
+
+        // Compact background pass (no begin_overlay_render): must not show header.
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        let compact_bg = format!("{:?}", terminal.backend());
+        assert!(
+            !compact_bg.contains("Brand:"),
+            "compact background must NOT show CPU brand header; got: {compact_bg}"
+        );
+        assert!(
+            !compact_bg.contains("Freq:"),
+            "compact background must NOT show frequency header; got: {compact_bg}"
+        );
+
+        // Overlay pass (begin_overlay_render + tall area): must show the header.
+        comp.begin_overlay_render();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        let overlay = format!("{:?}", terminal.backend());
+        assert!(
+            overlay.contains("Brand:"),
+            "overlay pass must show CPU brand header; got: {overlay}"
+        );
+    }
+
+    /// Compact background pass renders frozen filter state; the overlay pass
+    /// renders the live filter being typed by the user.
+    #[test]
+    fn compact_background_shows_frozen_filter_during_fullscreen() {
+        let key = |c| {
+            crossterm::event::KeyEvent::new(KeyCode::Char(c), crossterm::event::KeyModifiers::NONE)
+        };
+        let mut comp = CpuComponent::default();
+        comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
+            .unwrap();
+        comp.update(&Action::ToggleFullScreen).unwrap();
+
+        // In fullscreen: enter filter mode and type "0".
+        comp.handle_key_event(key('/')).unwrap();
+        comp.handle_key_event(key('0')).unwrap();
+        assert_eq!(comp.filter, "0");
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+
+        // Compact background pass: title must NOT show the live filter.
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        let compact_bg = format!("{:?}", terminal.backend());
+        assert!(
+            !compact_bg.contains("/0"),
+            "compact background must not show live filter '/0'; got: {compact_bg}"
+        );
+
+        // Overlay pass: title MUST show the live filter.
+        comp.begin_overlay_render();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        let overlay = format!("{:?}", terminal.backend());
+        assert!(
+            overlay.contains("/0"),
+            "overlay pass must show live filter '/0'; got: {overlay}"
         );
     }
 }
