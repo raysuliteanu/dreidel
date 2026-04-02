@@ -537,13 +537,13 @@ impl Component for ProcessComponent {
             }
         }
 
-        // Use extended columns whenever the component has been given enough
-        // horizontal room — this covers both the explicit fullscreen overlay and
-        // full-width layout slots (e.g. Dashboard / Classic Bottom).
-        // 120 cols is wide enough to fit all fixed columns (79) plus a useful
-        // Command column, while staying below the ~104-col width that a sidebar
-        // right-panel gets on a typical 160-col terminal.
-        self.is_wide_layout = self.is_fullscreen || area.width >= 120;
+        // Use extended columns only when the area is wide enough.  The compact
+        // sidebar slot is typically <120 cols, so draw_normal runs there.  The
+        // fullscreen modal (90% of terminal) exceeds 120 cols on any ≥134-col
+        // terminal, so draw_fullscreen runs there.  Basing this solely on
+        // area.width (not is_fullscreen) prevents the extended layout from
+        // bleeding into the compact sidebar pass that runs before the overlay.
+        self.is_wide_layout = area.width >= 120;
         if self.is_wide_layout {
             self.draw_fullscreen(frame, inner)
         } else {
@@ -626,7 +626,7 @@ impl ProcessComponent {
         // gets the direction indicator automatically.
         let header_cells: Vec<_> = [
             ("PID", SortColumn::Pid),
-            ("User", SortColumn::User),
+            ("UID", SortColumn::User),
             ("PR", SortColumn::Priority),
             ("NI", SortColumn::Nice),
             ("VIRT", SortColumn::Virt),
@@ -933,7 +933,7 @@ mod tests {
         let rendered = format!("{:?}", terminal.backend());
         // Extended-only columns that do not appear in the normal view.
         assert!(
-            rendered.contains("User") && rendered.contains("VIRT") && rendered.contains("Command"),
+            rendered.contains("UID") && rendered.contains("VIRT") && rendered.contains("Command"),
             "wide area must render extended columns; got: {rendered}"
         );
         assert!(
@@ -964,7 +964,7 @@ mod tests {
     }
 
     /// Sort cycle in the extended view follows column left-to-right order:
-    /// PID → User → PR → NI → VIRT → RES → SHR → S → %CPU → %MEM → TIME → Command → PID …
+    /// PID → UID → PR → NI → VIRT → RES → SHR → S → %CPU → %MEM → TIME → Command → PID …
     #[test]
     fn extended_view_sort_cycle_follows_column_order() {
         let mut comp = ProcessComponent::default();
@@ -981,7 +981,7 @@ mod tests {
 
         // Start at default (Cpu, index 8 in the extended cycle).  Cycling
         // forwards visits every column exactly once before wrapping back.
-        // Cycle order: Pid(0) User(1) PR(2) NI(3) VIRT(4) RES(5) SHR(6)
+        // Cycle order: Pid(0) UID(1) PR(2) NI(3) VIRT(4) RES(5) SHR(6)
         //              S(7) %CPU(8) %MEM(9) TIME(10) Command(11)
         let steps: &[(&str, &str)] = &[
             ("%CPU▼", "initial default"),
@@ -989,8 +989,8 @@ mod tests {
             ("TIME▼", "Mem→Time"),
             ("Command▼", "Time→Name"),
             ("PID▼", "Name→Pid"),
-            ("User▼", "Pid→User"),
-            ("PR▼", "User→Priority"),
+            ("UID▼", "Pid→UID"),
+            ("PR▼", "UID→Priority"),
             ("NI▼", "Priority→Nice"),
             ("VIRT▼", "Nice→Virt"),
             ("RES▼", "Virt→Res"),
