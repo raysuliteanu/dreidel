@@ -101,6 +101,9 @@ dreidel --help        # see all CLI options
   filter.
 - **Sort processes:** Press `s` to cycle sort columns, `S` to
   reverse direction.
+- **Process tree view:** Press `t` to toggle tree mode — processes
+  are shown in a parent/child hierarchy with expand/collapse
+  (`Space`). On Linux, threads appear as children.
 - **Extended process columns:** Make the terminal ≥ 120 columns
   wide (or press `f` for fullscreen) to see the full htop-style
   column set: User, PR, NI, VIRT, RES, SHR, Time, Command.
@@ -150,6 +153,7 @@ A minimal example:
 ```toml
 [general]
 refresh_rate = "500ms"
+thread_refresh = "5s"   # how often to enumerate threads (Linux)
 theme = "dark"
 
 [layout]
@@ -158,6 +162,7 @@ preset = "dashboard"
 [process]
 default_sort = "cpu"
 default_sort_dir = "desc"
+show_tree = true         # start in tree view mode
 
 [keybindings]
 help = "h"   # prefer h over ? for the help overlay

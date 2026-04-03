@@ -80,9 +80,13 @@ Only build subtrees for expanded nodes. Skip `children_map` insertion entirely f
 
 **Expected impact:** Proportional to collapsed fraction. Zero benefit if all expanded.
 
-### Option 4: Throttle thread enumeration (low-risk, high I/O gain)
+### Option 4: Throttle thread enumeration (low-risk, high I/O gain) ✅ IMPLEMENTED
 
-Only enumerate threads every Nth tick (e.g., every 5s) instead of every tick. Cache thread entries and merge with fresh process data. Or make thread enumeration opt-in via config.
+Dual-interval collector: fast interval (`refresh_rate_ms`, default 1s) for all
+metrics; slow interval (`thread_refresh_ms`, default 5s) for thread enumeration
+via `/proc/<pid>/task/`. Thread entries are cached and merged into every
+`ProcUpdate`. Configurable via `general.thread_refresh` in config or
+`--thread-refresh` CLI flag.
 
 | Pros                                              | Cons                                                  |
 | ------------------------------------------------- | ----------------------------------------------------- |
@@ -107,7 +111,7 @@ Wrap `ProcessEntry` in `Rc<ProcessEntry>`. Tree builder, displayed list, and tre
 ## Recommended priority
 
 1. **Measure first** — criterion benchmarks + timing logs
-2. **Option 4** — Throttle thread enumeration (biggest I/O win, simplest)
+2. ~~**Option 4** — Throttle thread enumeration~~ ✅ Done
 3. **Option 1** — Reduce cloning (biggest allocation win)
 4. **Option 3** — Lazy expansion (free win when nodes collapsed)
 5. **Option 2** — Incremental updates (only if above isn't enough)

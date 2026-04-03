@@ -14,6 +14,13 @@ pub struct Args {
 
     #[arg(
         long,
+        value_name = "RATE",
+        help = "Thread enumeration interval e.g. 5s, 10s (default: 5s)"
+    )]
+    pub thread_refresh: Option<String>,
+
+    #[arg(
+        long,
         value_name = "LAYOUT",
         help = "Layout preset: sidebar | classic | dashboard | grid"
     )]

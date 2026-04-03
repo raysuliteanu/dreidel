@@ -179,6 +179,7 @@ impl App {
             self.action_tx.clone(),
             collector_token.child_token(),
             self.config.general.refresh_rate_ms,
+            self.config.general.thread_refresh_ms,
         );
 
         loop {

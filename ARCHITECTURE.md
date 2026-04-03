@@ -223,9 +223,19 @@ component so key handlers use the correct column order.
 
 #### `stats/mod.rs` — Collector
 
-`spawn_collector(tx, token, refresh_ms)` launches a Tokio task that loops on a
-`tokio::time::interval`. Each tick it refreshes `sysinfo::System`, `Networks`,
-`Disks`, and `Components`, then builds and sends six `Action::*Update` variants.
+`spawn_collector(tx, token, refresh_ms, thread_refresh_ms)` launches a Tokio task
+that runs two `tokio::time::interval` timers:
+
+- **Fast interval** (`refresh_ms`, default 1s) — refreshes `sysinfo::System`,
+  `Networks`, `Disks`, and `Components`, then builds and sends six
+  `Action::*Update` variants. Process data includes the full process list but
+  *not* per-process threads.
+- **Slow interval** (`thread_refresh_ms`, default 5s) — enumerates threads for
+  every process via `/proc/<pid>/task/` (Linux only). The resulting thread entries
+  are cached and merged into every subsequent `ProcUpdate` on the fast cadence.
+
+This dual-interval design avoids thousands of `/proc` syscalls on every tick while
+still keeping thread data visible in the UI.
 
 Linux-specific metrics (`temperature`, `swap_in/out_bytes`, per-process
 `priority/nice/threads/shr_bytes`) are guarded by `#[cfg(target_os = "linux")]`
@@ -244,7 +254,8 @@ in tests to avoid depending on the live stats collector. The structs are:
 Loaded from `~/.config/dreidel/config.toml` (XDG). All fields have serde defaults
 so a missing file is fine. Sub-structs:
 
-- `GeneralConfig` — `refresh_rate_ms` (humantime), `theme`, `channel_capacity`
+- `GeneralConfig` — `refresh_rate_ms` (humantime), `thread_refresh_ms` (humantime,
+  default 5s), `theme`, `channel_capacity`
 - `LayoutConfig` — `preset`, `status_bar` position, `show` component list, per-slot
   overrides
 - `ProcessConfig` — `default_sort`, `default_sort_dir`, `show_tree`
@@ -263,7 +274,8 @@ construction time; they do not query a global.
 
 - `--config <path>` — override config file location
 - `--init-config` — print the default config template and exit
-- `--debug` — start with the debug sidebar visible
+- `--refresh-rate <RATE>` — override refresh interval (e.g. `500ms`, `2s`)
+- `--thread-refresh <RATE>` — override thread enumeration interval (e.g. `5s`, `10s`)
 - `--show` / `--hide` — override which components are visible (comma-separated
   `ComponentId` strings)
 

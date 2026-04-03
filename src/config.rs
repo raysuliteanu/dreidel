@@ -8,6 +8,14 @@ use serde::{Deserialize, Serialize};
 pub struct GeneralConfig {
     #[serde(deserialize_with = "deserialize_duration", default = "default_refresh")]
     pub refresh_rate_ms: u64,
+    /// How often to enumerate per-process threads via `/proc/<pid>/task/`.
+    /// Thread enumeration is expensive (thousands of syscalls) and thread
+    /// lists don't change fast enough to justify running every tick.
+    #[serde(
+        deserialize_with = "deserialize_duration",
+        default = "default_thread_refresh"
+    )]
+    pub thread_refresh_ms: u64,
     pub theme: Theme,
     pub channel_capacity: usize,
 }
@@ -24,10 +32,15 @@ fn default_refresh() -> u64 {
     1000
 }
 
+fn default_thread_refresh() -> u64 {
+    5000
+}
+
 impl Default for GeneralConfig {
     fn default() -> Self {
         Self {
             refresh_rate_ms: 1000,
+            thread_refresh_ms: 5000,
             theme: Theme::Auto,
             // TODO: address magic number
             channel_capacity: 128,
