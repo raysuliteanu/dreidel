@@ -48,6 +48,9 @@ pub struct Args {
     #[arg(long, help = "Print default config to stdout and exit")]
     pub init_config: bool,
 
+    #[arg(long, help = "Detect terminal theme (light/dark) and exit")]
+    pub detect_theme: bool,
+
     #[arg(short, long, action = clap::ArgAction::Count, help = "Increase verbosity (-v, -vv)")]
     pub verbose: u8,
 }

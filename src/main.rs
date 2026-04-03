@@ -39,18 +39,30 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    if args.detect_theme {
+        print_detected_theme();
+        return Ok(());
+    }
+
     let mut cfg = config::Config::load(args.config.as_deref()).context("loading config")?;
     apply_cli_overrides(&mut cfg, &args)?;
 
     // Resolve Auto before entering raw mode — termbg queries the terminal via
     // OSC 11 which requires normal (non-raw) terminal state.
-    if cfg.general.theme == theme::Theme::Auto {
-        cfg.general.theme = detect_theme();
-    }
+    let detected_theme = if cfg.general.theme == theme::Theme::Auto {
+        let detected = detect_theme();
+        cfg.general.theme = detected;
+        Some(detected)
+    } else {
+        tracing::info!(theme = %cfg.general.theme, "using configured theme, skipping detection");
+        None
+    };
+    let active_theme = cfg.general.theme;
+    tracing::info!(%active_theme, ?detected_theme, "theme resolved");
 
     let rt = tokio::runtime::Runtime::new().context("creating tokio runtime")?;
     rt.block_on(async {
-        let mut app = app::App::new(cfg).context("creating App")?;
+        let mut app = app::App::new(cfg, detected_theme).context("creating App")?;
         app.run().await.context("running App")
     })
 }
@@ -58,9 +70,60 @@ fn main() -> anyhow::Result<()> {
 /// Query the terminal background color via OSC 11 and return Light or Dark.
 /// Falls back to Dark if the terminal doesn't respond or the query times out.
 fn detect_theme() -> theme::Theme {
-    match termbg::theme(std::time::Duration::from_millis(100)) {
-        Ok(termbg::Theme::Light) => theme::Theme::Light,
-        _ => theme::Theme::Dark,
+    let timeout = std::time::Duration::from_millis(100);
+    match termbg::theme(timeout) {
+        Ok(termbg::Theme::Light) => {
+            tracing::info!("termbg detected light terminal background");
+            theme::Theme::Light
+        }
+        Ok(termbg::Theme::Dark) => {
+            tracing::info!("termbg detected dark terminal background");
+            theme::Theme::Dark
+        }
+        Err(ref e) => {
+            tracing::warn!(error = %e, "termbg detection failed, defaulting to dark");
+            theme::Theme::Dark
+        }
+    }
+}
+
+/// Print theme detection diagnostics and exit.
+fn print_detected_theme() {
+    let timeout = std::time::Duration::from_millis(100);
+
+    println!("Terminal type: {:?}", termbg::terminal());
+    println!(
+        "stdin is_terminal: {}",
+        std::io::IsTerminal::is_terminal(&std::io::stdin())
+    );
+    println!(
+        "stdout is_terminal: {}",
+        std::io::IsTerminal::is_terminal(&std::io::stdout())
+    );
+    println!(
+        "stderr is_terminal: {}",
+        std::io::IsTerminal::is_terminal(&std::io::stderr())
+    );
+    if let Ok(term) = std::env::var("TERM") {
+        println!("TERM: {term}");
+    }
+    if let Ok(val) = std::env::var("COLORFGBG") {
+        println!("COLORFGBG: {val}");
+    }
+
+    match termbg::rgb(timeout) {
+        Ok(rgb) => {
+            println!("Background RGB: r={} g={} b={}", rgb.r, rgb.g, rgb.b);
+            // ITU-R BT.601 luminance (same formula termbg uses)
+            let y = rgb.r as f64 * 0.299 + rgb.g as f64 * 0.587 + rgb.b as f64 * 0.114;
+            let theme = if y > 32768.0 { "Light" } else { "Dark" };
+            println!("Luminance: {y:.0} (threshold: 32768)");
+            println!("Detected theme: {theme}");
+        }
+        Err(ref e) => {
+            println!("Theme detection failed: {e:?}");
+            println!("Would default to: Dark");
+        }
     }
 }
 

@@ -34,6 +34,8 @@ expression: terminal.backend()
 "   │────────────────────────────────────────────────────────────│   "
 "   │   config: [CONFIG_PATH]                    │   "
 "   │      log: [LOG_PATH]               │   "
+"   │ detected: [DETECTED]                                             │   "
+"   │    theme: [THEME]                                             │   "
 "   │────────────────────────────────────────────────────────────│   "
 "   │     Repo: https://github.com/raysuliteanu/dreidel          │   "
 "   │Commit id: [COMMIT_ID]                                          │   "

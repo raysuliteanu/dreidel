@@ -72,7 +72,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(config: Config) -> Result<Self> {
+    pub fn new(config: Config, detected_theme: Option<crate::theme::Theme>) -> Result<Self> {
         let (action_tx, action_rx) = mpsc::channel(config.general.channel_capacity);
         let palette = config.general.theme.palette();
 
@@ -144,6 +144,8 @@ impl App {
             help_comp: Box::new(HelpComponent::new(
                 palette.clone(),
                 config.keybindings.clone(),
+                detected_theme,
+                config.general.theme,
             )),
             focus: FocusState::Normal {
                 focused: ComponentId::Process,
@@ -567,7 +569,7 @@ mod tests {
     };
 
     fn make_app() -> App {
-        App::new(Config::default()).expect("app construction should not fail")
+        App::new(Config::default(), None).expect("app construction should not fail")
     }
 
     fn key(c: char) -> KeyEvent {
@@ -753,7 +755,7 @@ mod tests {
     fn app_new_rejects_invalid_component_in_show_list() {
         let mut cfg = Config::default();
         cfg.layout.show = vec!["cpu".into(), "foo".into()];
-        assert!(App::new(cfg).is_err());
+        assert!(App::new(cfg, None).is_err());
     }
 
     /// With a single visible component the adaptive layout should fill the
@@ -763,7 +765,7 @@ mod tests {
     fn adaptive_single_component_fills_content_area() {
         let mut cfg = Config::default();
         cfg.layout.show = vec!["net".into()];
-        let mut app = App::new(cfg).unwrap();
+        let mut app = App::new(cfg, None).unwrap();
         feed_stubs(&mut app);
 
         let width = 160u16;

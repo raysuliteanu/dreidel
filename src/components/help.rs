@@ -10,21 +10,37 @@ use ratatui::{
 };
 use std::path::PathBuf;
 
-use crate::{components::Component, config::KeyBindings, theme::ColorPalette};
+use crate::{
+    components::Component,
+    config::KeyBindings,
+    theme::{ColorPalette, Theme},
+};
 
 // Popup dimensions; inner area is (width-2) × (height-2) after the border.
 const POPUP_WIDTH: u16 = 62;
-const POPUP_HEIGHT: u16 = 33;
+const POPUP_HEIGHT: u16 = 35;
 
 #[derive(Debug)]
 pub struct HelpComponent {
     palette: ColorPalette,
     kb: KeyBindings,
+    detected_theme: Option<Theme>,
+    active_theme: Theme,
 }
 
 impl HelpComponent {
-    pub fn new(palette: ColorPalette, kb: KeyBindings) -> Self {
-        Self { palette, kb }
+    pub fn new(
+        palette: ColorPalette,
+        kb: KeyBindings,
+        detected_theme: Option<Theme>,
+        active_theme: Theme,
+    ) -> Self {
+        Self {
+            palette,
+            kb,
+            detected_theme,
+            active_theme,
+        }
     }
 
     /// Compute a centered rect of the given size within `area`.
@@ -146,6 +162,12 @@ impl Component for HelpComponent {
         );
 
         let footer_sep = Span::styled("─".repeat(inner.width as usize), dim);
+        let detected_str = match self.detected_theme {
+            Some(t) => t.to_string(),
+            None => "n/a".to_string(),
+        };
+        let active_str = self.active_theme.to_string();
+
         let mut footer_lines: Vec<Line> = vec![
             Line::from(vec![
                 Span::styled("   config: ", dim),
@@ -154,6 +176,14 @@ impl Component for HelpComponent {
             Line::from(vec![
                 Span::styled("      log: ", dim),
                 Span::styled(log_path, fg),
+            ]),
+            Line::from(vec![
+                Span::styled(" detected: ", dim),
+                Span::styled(detected_str, fg),
+            ]),
+            Line::from(vec![
+                Span::styled("    theme: ", dim),
+                Span::styled(active_str, fg),
             ]),
         ];
         if !repository.is_empty() || !commit_id.is_empty() {
@@ -255,10 +285,17 @@ mod tests {
         // Config and log paths vary per system; redact them for snapshot stability.
         settings.add_filter(r"config: \S+", "config: [CONFIG_PATH]");
         settings.add_filter(r"log: \S+", "log: [LOG_PATH]");
+        settings.add_filter(r"detected: \S+", "detected: [DETECTED]");
+        settings.add_filter(r"theme: \S+", "theme: [THEME]");
         settings.bind(|| {
-            let mut comp = HelpComponent::new(ColorPalette::dark(), KeyBindings::default());
+            let mut comp = HelpComponent::new(
+                ColorPalette::dark(),
+                KeyBindings::default(),
+                Some(Theme::Dark),
+                Theme::Dark,
+            );
             // Wide and tall enough to show the full popup (62×33) with margin.
-            let mut terminal = Terminal::new(TestBackend::new(68, 38)).unwrap();
+            let mut terminal = Terminal::new(TestBackend::new(68, 40)).unwrap();
             terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
             assert_snapshot!("help_overlay", terminal.backend());
         });
