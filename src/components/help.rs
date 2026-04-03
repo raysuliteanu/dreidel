@@ -140,6 +140,8 @@ impl Component for HelpComponent {
             kl('s', "cycle sort", &key, &dim),
             kl('S', "reverse sort", &key, &dim),
             kl('k', "kill", &key, &dim),
+            kl('t', "tree view", &key, &dim),
+            kl("Spc", "expand/collapse", &key, &dim),
         ];
         let net_lines: Vec<Line> = vec![
             Line::from(Span::styled("Net", section)),

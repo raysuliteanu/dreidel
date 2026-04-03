@@ -2,12 +2,12 @@
 source: src/components/process/mod.rs
 expression: terminal.backend()
 ---
-"┌ [P]rocesses ─────────────────────────────────────────────────────────────────────────────────────┐"
+"┌ [P]rocesses [tree] ──────────────────────────────────────────────────────────────────────────────┐"
 "│PID     UID     Name                                                   CPU%▼   MEM      Status    │"
-"│12345   ray     firefox                                                18.4    3.2%     running   │"
 "│1       root    systemd                                                0.1     0.1%     sleeping  │"
-"│501     ray     bash                                                   0.1     0.0%     sleeping  │"
-"│500     root    sshd                                                   0.0     0.0%     sleeping  │"
+"│12345   ray     ├── firefox                                            18.4    3.2%     running   │"
+"│500     root    └── sshd                                               0.0     0.0%     sleeping  │"
+"│501     ray         └── bash                                           0.1     0.0%     sleeping  │"
 "│                                                                                                  │"
 "│                                                                                                  │"
 "│                                                                                                  │"

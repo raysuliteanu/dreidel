@@ -2,6 +2,7 @@
 
 pub mod filter;
 pub mod sort;
+pub mod tree;
 
 use anyhow::{Context, Result};
 use crossterm::event::{KeyCode, KeyEvent};
@@ -22,6 +23,14 @@ use crate::{
 };
 use filter::ProcessFilter;
 use sort::{SortColumn, SortDir, sort_processes};
+use tree::TreeRow;
+
+/// Flat list or tree hierarchy view mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcessViewMode {
+    Flat,
+    Tree,
+}
 
 /// Returns a color from the palette based on CPU usage percentage.
 /// >95% → critical (red), >80% → warn (orange), else → fg (normal).
@@ -62,6 +71,9 @@ struct ProcessCompactSnapshot {
     sort_dir: SortDir,
     filter: ProcessFilter,
     state: ProcessState,
+    view_mode: ProcessViewMode,
+    expanded: std::collections::HashSet<u32>,
+    tree_rows: Vec<TreeRow>,
     /// Cached displayed list at the moment fullscreen was entered.  Used by the
     /// compact background pass so it renders the same rows without calling
     /// `refresh_display()` with live filter/sort state.
@@ -80,6 +92,12 @@ pub struct ProcessComponent {
     pub state: ProcessState,
     focused: bool,
     is_fullscreen: bool,
+    view_mode: ProcessViewMode,
+    /// Set of PIDs whose children are visible in tree mode.  When a process
+    /// first appears it is added here (expanded by default).
+    expanded: std::collections::HashSet<u32>,
+    /// Flattened tree rows — populated by `refresh_display()` when in Tree mode.
+    tree_rows: Vec<TreeRow>,
     /// True when the last draw used the extended column layout (fullscreen overlay
     /// or area width ≥ 120).  Stored here so the sort-cycle key handler can use
     /// the column order that matches what is actually visible on screen.
@@ -121,6 +139,9 @@ impl Default for ProcessComponent {
             is_wide_layout: false,
             compact_snapshot: None,
             rendering_as_overlay: false,
+            view_mode: ProcessViewMode::Flat,
+            expanded: std::collections::HashSet::new(),
+            tree_rows: Vec::new(),
         }
     }
 }
@@ -133,31 +154,62 @@ impl ProcessComponent {
         } else {
             SortDir::Desc
         };
+        let view_mode = if config.show_tree {
+            ProcessViewMode::Tree
+        } else {
+            ProcessViewMode::Flat
+        };
         Self {
             palette,
             focus_key,
             sort_col,
             sort_dir,
+            view_mode,
             ..Default::default()
         }
     }
 
     fn refresh_display(&mut self) {
-        let mut list: Vec<ProcessEntry> = self
-            .raw
-            .iter()
-            .filter(|p| self.filter.matches(p))
-            .cloned()
-            .collect();
-        sort_processes(&mut list, self.sort_col, self.sort_dir);
-        if list.is_empty() {
+        match self.view_mode {
+            ProcessViewMode::Flat => {
+                self.tree_rows.clear();
+                let mut list: Vec<ProcessEntry> = self
+                    .raw
+                    .iter()
+                    .filter(|p| self.filter.matches(p))
+                    .cloned()
+                    .collect();
+                sort_processes(&mut list, self.sort_col, self.sort_dir);
+                self.displayed = list;
+            }
+            ProcessViewMode::Tree => {
+                // Expand newly-appeared PIDs by default.  PIDs that were
+                // explicitly collapsed by the user are NOT in `expanded`
+                // and must stay that way.
+                let known: std::collections::HashSet<u32> =
+                    self.tree_rows.iter().map(|r| r.entry.pid).collect();
+                for p in &self.raw {
+                    if !known.contains(&p.pid) {
+                        self.expanded.insert(p.pid);
+                    }
+                }
+                self.tree_rows = tree::build_tree(
+                    &self.raw,
+                    self.sort_col,
+                    self.sort_dir,
+                    &self.filter,
+                    &self.expanded,
+                );
+                self.displayed = self.tree_rows.iter().map(|r| r.entry.clone()).collect();
+            }
+        }
+        if self.displayed.is_empty() {
             self.table_state.select(None);
         } else {
-            let max = list.len() - 1;
+            let max = self.displayed.len() - 1;
             let sel = self.table_state.selected().unwrap_or(0).min(max);
             self.table_state.select(Some(sel));
         }
-        self.displayed = list;
     }
 
     fn restore_compact_snapshot(&mut self) {
@@ -166,6 +218,9 @@ impl ProcessComponent {
             self.sort_dir = snap.sort_dir;
             self.filter = snap.filter;
             self.state = snap.state;
+            self.view_mode = snap.view_mode;
+            self.expanded = snap.expanded;
+            self.tree_rows = snap.tree_rows;
             self.refresh_display();
             let max = self.displayed.len().saturating_sub(1);
             self.table_state.select(snap.selected.map(|s| s.min(max)));
@@ -189,6 +244,9 @@ impl ProcessComponent {
         let live_sort_dir = std::mem::replace(&mut self.sort_dir, snap.sort_dir);
         let live_filter = std::mem::replace(&mut self.filter, snap.filter.clone());
         let live_state = std::mem::replace(&mut self.state, snap.state.clone());
+        let live_view_mode = std::mem::replace(&mut self.view_mode, snap.view_mode);
+        let live_expanded = std::mem::replace(&mut self.expanded, snap.expanded.clone());
+        let live_tree_rows = std::mem::replace(&mut self.tree_rows, snap.tree_rows.clone());
         let live_displayed = std::mem::replace(&mut self.displayed, snap.displayed.clone());
         let live_fs = std::mem::replace(&mut self.is_fullscreen, false);
         let mut tmp_table = TableState::default();
@@ -202,6 +260,9 @@ impl ProcessComponent {
         self.sort_dir = live_sort_dir;
         self.filter = live_filter;
         self.state = live_state;
+        self.view_mode = live_view_mode;
+        self.expanded = live_expanded;
+        self.tree_rows = live_tree_rows;
         self.displayed = live_displayed;
         self.is_fullscreen = live_fs;
         self.table_state = live_table;
@@ -440,6 +501,31 @@ impl Component for ProcessComponent {
                     self.refresh_display();
                     return Ok(Some(Action::Render));
                 }
+                KeyCode::Char('t') => {
+                    self.view_mode = match self.view_mode {
+                        ProcessViewMode::Flat => ProcessViewMode::Tree,
+                        ProcessViewMode::Tree => ProcessViewMode::Flat,
+                    };
+                    self.refresh_display();
+                    return Ok(Some(Action::Render));
+                }
+                KeyCode::Char(' ') if self.view_mode == ProcessViewMode::Tree => {
+                    // Toggle expand/collapse for the selected tree node.
+                    if let Some(sel) = self.table_state.selected()
+                        && let Some(row) = self.tree_rows.get(sel)
+                    {
+                        let pid = row.entry.pid;
+                        if row.has_children {
+                            if self.expanded.contains(&pid) {
+                                self.expanded.remove(&pid);
+                            } else {
+                                self.expanded.insert(pid);
+                            }
+                            self.refresh_display();
+                        }
+                    }
+                    return Ok(Some(Action::Render));
+                }
                 _ => {}
             }
             Ok(None)
@@ -466,6 +552,9 @@ impl Component for ProcessComponent {
                         sort_dir: self.sort_dir,
                         filter: self.filter.clone(),
                         state: safe_state,
+                        view_mode: self.view_mode,
+                        expanded: self.expanded.clone(),
+                        tree_rows: self.tree_rows.clone(),
                         displayed: self.displayed.clone(),
                     });
                     self.is_fullscreen = true;
@@ -488,9 +577,16 @@ impl Component for ProcessComponent {
             return self.draw_compact_background(frame, area);
         }
 
+        let tree_tag = if self.view_mode == ProcessViewMode::Tree {
+            " [tree]"
+        } else {
+            ""
+        };
         let title_rest = match &self.state {
-            ProcessState::FilterMode { input } => format!("rocesses [filter: {}▌]", input),
-            _ => "rocesses".to_string(),
+            ProcessState::FilterMode { input } => {
+                format!("rocesses{tree_tag} [filter: {}▌]", input)
+            }
+            _ => format!("rocesses{tree_tag}"),
         };
         let border_color = if self.focused {
             self.palette.accent
@@ -681,13 +777,39 @@ impl ProcessComponent {
         let rows: Vec<Row> = self
             .displayed
             .iter()
-            .map(|p| {
+            .enumerate()
+            .map(|(i, p)| {
+                let name = if self.view_mode == ProcessViewMode::Tree {
+                    let prefix = self
+                        .tree_rows
+                        .get(i)
+                        .map(|r| r.tree_prefix())
+                        .unwrap_or_default();
+                    let collapse_marker = self
+                        .tree_rows
+                        .get(i)
+                        .filter(|r| r.has_children && !r.is_expanded)
+                        .map(|_| "[+] ")
+                        .unwrap_or("");
+                    format!("{prefix}{collapse_marker}{}", p.name)
+                } else {
+                    p.name.clone()
+                };
+                let dash = "—".to_string();
                 Row::new(vec![
                     p.pid.to_string(),
                     p.user.clone(),
-                    p.name.clone(),
-                    format!("{:.1}", p.cpu_pct),
-                    format!("{:.1}%", p.mem_pct),
+                    name,
+                    if p.is_thread {
+                        dash.clone()
+                    } else {
+                        format!("{:.1}", p.cpu_pct)
+                    },
+                    if p.is_thread {
+                        dash.clone()
+                    } else {
+                        format!("{:.1}%", p.mem_pct)
+                    },
                     p.status.to_string(),
                 ])
                 .style(Style::new().fg(cpu_color(p.cpu_pct, &self.palette)))
@@ -767,7 +889,8 @@ impl ProcessComponent {
         let rows: Vec<Row> = self
             .displayed
             .iter()
-            .map(|p| {
+            .enumerate()
+            .map(|(i, p)| {
                 let status_char = match p.status {
                     crate::stats::snapshots::ProcessStatus::Running => "R",
                     crate::stats::snapshots::ProcessStatus::Sleeping => "S",
@@ -777,22 +900,67 @@ impl ProcessComponent {
                     crate::stats::snapshots::ProcessStatus::Dead => "X",
                     crate::stats::snapshots::ProcessStatus::Unknown => "?",
                 };
-                let cmd = if p.cmd.is_empty() {
+                let raw_cmd = if p.cmd.is_empty() {
                     p.name.clone()
                 } else {
                     p.cmd.join(" ")
                 };
+                let cmd = if self.view_mode == ProcessViewMode::Tree {
+                    let prefix = self
+                        .tree_rows
+                        .get(i)
+                        .map(|r| r.tree_prefix())
+                        .unwrap_or_default();
+                    let collapse_marker = self
+                        .tree_rows
+                        .get(i)
+                        .filter(|r| r.has_children && !r.is_expanded)
+                        .map(|_| "[+] ")
+                        .unwrap_or("");
+                    format!("{prefix}{collapse_marker}{raw_cmd}")
+                } else {
+                    raw_cmd
+                };
+                let dash = "\u{2014}".to_string();
                 Row::new(vec![
                     p.pid.to_string(),
                     p.user.clone(),
-                    p.priority.to_string(),
-                    p.nice.to_string(),
-                    fmt_rate_col(p.virt_bytes),
-                    fmt_rate_col(p.mem_bytes),
-                    fmt_rate_col(p.shr_bytes),
+                    if p.is_thread {
+                        dash.clone()
+                    } else {
+                        p.priority.to_string()
+                    },
+                    if p.is_thread {
+                        dash.clone()
+                    } else {
+                        p.nice.to_string()
+                    },
+                    if p.is_thread {
+                        dash.clone()
+                    } else {
+                        fmt_rate_col(p.virt_bytes)
+                    },
+                    if p.is_thread {
+                        dash.clone()
+                    } else {
+                        fmt_rate_col(p.mem_bytes)
+                    },
+                    if p.is_thread {
+                        dash.clone()
+                    } else {
+                        fmt_rate_col(p.shr_bytes)
+                    },
                     status_char.to_string(),
-                    format!("{:.1}", p.cpu_pct),
-                    format!("{:.1}", p.mem_pct),
+                    if p.is_thread {
+                        dash.clone()
+                    } else {
+                        format!("{:.1}", p.cpu_pct)
+                    },
+                    if p.is_thread {
+                        dash.clone()
+                    } else {
+                        format!("{:.1}", p.mem_pct)
+                    },
                     fmt_cpu_time(p.cpu_time_secs),
                     cmd,
                 ])
@@ -1511,5 +1679,142 @@ mod tests {
             compact_bg.contains("rocesses"),
             "compact background must show plain 'rocesses' in title; got: {compact_bg}"
         );
+    }
+
+    // ── Tree-view tests ──────────────────────────────────────────────
+
+    #[test]
+    fn t_key_toggles_tree_mode() {
+        let mut comp = ProcessComponent::default();
+        assert_eq!(comp.view_mode, ProcessViewMode::Flat);
+        comp.handle_key_event(key('t')).unwrap();
+        assert_eq!(comp.view_mode, ProcessViewMode::Tree);
+        comp.handle_key_event(key('t')).unwrap();
+        assert_eq!(comp.view_mode, ProcessViewMode::Flat);
+    }
+
+    #[test]
+    fn tree_mode_title_shows_tag() {
+        let mut comp = ProcessComponent::default();
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+            .unwrap();
+        comp.handle_key_event(key('t')).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        let rendered = format!("{:?}", terminal.backend());
+        assert!(
+            rendered.contains("[tree]"),
+            "title must contain [tree]; got: {rendered}"
+        );
+    }
+
+    #[test]
+    fn tree_mode_renders_hierarchy() {
+        let mut comp = ProcessComponent::default();
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+            .unwrap();
+        comp.handle_key_event(key('t')).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        assert_snapshot!("tree_view_normal", terminal.backend());
+    }
+
+    #[test]
+    fn tree_mode_fullscreen_renders_hierarchy() {
+        let mut comp = ProcessComponent::default();
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+            .unwrap();
+        comp.set_focused(true);
+        comp.handle_key_event(key('t')).unwrap();
+        comp.update(&Action::ToggleFullScreen).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(140, 20)).unwrap();
+        comp.begin_overlay_render();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        assert_snapshot!("tree_view_fullscreen", terminal.backend());
+    }
+
+    #[test]
+    fn space_collapses_tree_node() {
+        let mut comp = ProcessComponent::default();
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+            .unwrap();
+        comp.handle_key_event(key('t')).unwrap();
+
+        // Select root (systemd, pid 1) which is at index 0 in PID-asc sorted tree
+        // Default sort is CPU desc, so let's switch to PID asc first.
+        comp.sort_col = super::sort::SortColumn::Pid;
+        comp.sort_dir = super::sort::SortDir::Asc;
+        comp.refresh_display();
+        comp.table_state.select(Some(0));
+
+        let initial_len = comp.displayed.len();
+        assert!(
+            initial_len > 1,
+            "tree must have more than 1 row; got: {initial_len}"
+        );
+
+        // Collapse systemd.
+        comp.handle_key_event(key_code(KeyCode::Char(' '))).unwrap();
+        assert!(
+            comp.displayed.len() < initial_len,
+            "collapsing root must hide children; before={initial_len} after={}",
+            comp.displayed.len()
+        );
+
+        // Expand again.
+        comp.table_state.select(Some(0));
+        comp.handle_key_event(key_code(KeyCode::Char(' '))).unwrap();
+        assert_eq!(
+            comp.displayed.len(),
+            initial_len,
+            "expanding root must restore children"
+        );
+    }
+
+    #[test]
+    fn space_in_flat_mode_is_ignored() {
+        let mut comp = ProcessComponent::default();
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+            .unwrap();
+        assert_eq!(comp.view_mode, ProcessViewMode::Flat);
+        // Space should return Ok(None) and not panic.
+        let action = comp.handle_key_event(key_code(KeyCode::Char(' '))).unwrap();
+        assert!(
+            action.is_none(),
+            "space in flat mode must be unhandled (None)"
+        );
+    }
+
+    #[test]
+    fn tree_mode_preserved_across_fullscreen_toggle() {
+        let mut comp = ProcessComponent::default();
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+            .unwrap();
+        comp.set_focused(true);
+        // Switch to tree mode
+        comp.handle_key_event(key('t')).unwrap();
+        assert_eq!(comp.view_mode, ProcessViewMode::Tree);
+        // Enter fullscreen — compact snapshot stores tree mode.
+        comp.update(&Action::ToggleFullScreen).unwrap();
+        // Switch back to flat in fullscreen.
+        comp.handle_key_event(key('t')).unwrap();
+        assert_eq!(comp.view_mode, ProcessViewMode::Flat);
+        // Exit fullscreen — should restore tree mode.
+        comp.update(&Action::ToggleFullScreen).unwrap();
+        assert_eq!(
+            comp.view_mode,
+            ProcessViewMode::Tree,
+            "tree mode must be restored from compact snapshot"
+        );
+    }
+
+    #[test]
+    fn config_show_tree_sets_initial_mode() {
+        let config = ProcessConfig {
+            show_tree: true,
+            ..Default::default()
+        };
+        let comp = ProcessComponent::new(ColorPalette::dark(), 'p', &config);
+        assert_eq!(comp.view_mode, ProcessViewMode::Tree);
     }
 }

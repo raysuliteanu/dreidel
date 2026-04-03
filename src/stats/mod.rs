@@ -240,7 +240,7 @@ fn build_disk(disks: &Disks) -> DiskSnapshot {
 }
 
 fn build_proc(sys: &System) -> ProcSnapshot {
-    ProcSnapshot {
+    let mut snapshot = ProcSnapshot {
         processes: sys
             .processes()
             .values()
@@ -275,6 +275,7 @@ fn build_proc(sys: &System) -> ProcSnapshot {
                     priority: 0,
                     shr_bytes: 0,
                     cpu_time_secs: 0.0,
+                    is_thread: false,
                 };
 
                 #[cfg(target_os = "linux")]
@@ -294,7 +295,68 @@ fn build_proc(sys: &System) -> ProcSnapshot {
                 entry
             })
             .collect(),
+    };
+
+    // Enumerate threads for each process via /proc/<pid>/task/.
+    #[cfg(target_os = "linux")]
+    {
+        let tps = procfs::ticks_per_second() as f64;
+        let mut thread_entries = Vec::new();
+        for proc_entry in &snapshot.processes {
+            let pid = proc_entry.pid as i32;
+            if let Ok(proc) = procfs::process::Process::new(pid)
+                && let Ok(tasks) = proc.tasks()
+            {
+                for task_result in tasks {
+                    let Ok(task) = task_result else { continue };
+                    let tid = task.tid as u32;
+                    // Skip the main thread (TID == PID).
+                    if tid == proc_entry.pid {
+                        continue;
+                    }
+                    if let Ok(stat) = task.stat() {
+                        thread_entries.push(ProcessEntry {
+                            pid: tid,
+                            name: format!("[{}:{}]", proc_entry.name, tid),
+                            cmd: Vec::new(),
+                            user: proc_entry.user.clone(),
+                            cpu_pct: 0.0, // per-thread CPU not tracked by sysinfo
+                            mem_bytes: 0,
+                            mem_pct: 0.0,
+                            virt_bytes: 0,
+                            status: match stat.state() {
+                                Ok(procfs::process::ProcState::Running) => ProcessStatus::Running,
+                                Ok(procfs::process::ProcState::Sleeping) => ProcessStatus::Sleeping,
+                                Ok(procfs::process::ProcState::Waiting) => ProcessStatus::Sleeping,
+                                Ok(
+                                    procfs::process::ProcState::Stopped
+                                    | procfs::process::ProcState::Tracing,
+                                ) => ProcessStatus::Stopped,
+                                Ok(procfs::process::ProcState::Zombie) => ProcessStatus::Zombie,
+                                Ok(procfs::process::ProcState::Dead) => ProcessStatus::Dead,
+                                Ok(procfs::process::ProcState::Idle) => ProcessStatus::Idle,
+                                _ => ProcessStatus::Unknown,
+                            },
+                            start_time: 0,
+                            run_time: 0,
+                            nice: stat.nice as i32,
+                            threads: 0,
+                            read_bytes: 0,
+                            write_bytes: 0,
+                            parent_pid: Some(proc_entry.pid),
+                            priority: stat.priority as i32,
+                            shr_bytes: 0,
+                            cpu_time_secs: (stat.utime + stat.stime) as f64 / tps,
+                            is_thread: true,
+                        });
+                    }
+                }
+            }
+        }
+        snapshot.processes.extend(thread_entries);
     }
+
+    snapshot
 }
 
 fn map_process_status(status: sysinfo::ProcessStatus) -> ProcessStatus {
