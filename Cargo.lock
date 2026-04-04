@@ -717,6 +717,7 @@ dependencies = [
  "criterion",
  "crossterm 0.29.0",
  "dirs",
+ "dreidel",
  "futures",
  "humantime",
  "insta",

@@ -19,6 +19,7 @@ pub struct CpuSnapshot {
     pub governor: Option<String>,
 }
 
+#[cfg(any(test, feature = "test-stubs"))]
 impl CpuSnapshot {
     pub fn stub() -> Self {
         Self {
@@ -48,6 +49,7 @@ pub struct MemSnapshot {
     pub swap_out_bytes: u64,
 }
 
+#[cfg(any(test, feature = "test-stubs"))]
 impl MemSnapshot {
     pub fn stub() -> Self {
         Self {
@@ -88,6 +90,7 @@ pub struct NetSnapshot {
     pub interfaces: Vec<InterfaceSnapshot>,
 }
 
+#[cfg(any(test, feature = "test-stubs"))]
 impl NetSnapshot {
     pub fn stub() -> Self {
         Self {
@@ -155,6 +158,7 @@ pub struct DiskSnapshot {
     pub devices: Vec<DiskDeviceSnapshot>,
 }
 
+#[cfg(any(test, feature = "test-stubs"))]
 impl DiskSnapshot {
     pub fn stub() -> Self {
         Self {
@@ -185,6 +189,7 @@ pub struct SysSnapshot {
     pub timestamp: chrono::DateTime<chrono::Local>,
 }
 
+#[cfg(any(test, feature = "test-stubs"))]
 impl SysSnapshot {
     pub fn stub() -> Self {
         Self {
@@ -257,6 +262,7 @@ pub struct ProcSnapshot {
     pub processes: Vec<ProcessEntry>,
 }
 
+#[cfg(any(test, feature = "test-stubs"))]
 impl ProcSnapshot {
     pub fn stub() -> Self {
         Self {
