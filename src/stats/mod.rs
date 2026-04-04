@@ -118,7 +118,7 @@ fn build_cpu(sys: &System, components: &Components) -> CpuSnapshot {
             .iter()
             .find(|c| {
                 let l = c.label().to_lowercase();
-                l.contains("package") || l == "cpu"
+                l.contains("package") || l.ends_with(" cpu") || l == "cpu"
             })
             .and_then(|c| c.temperature()),
         #[cfg(target_os = "linux")]
@@ -177,8 +177,11 @@ fn build_per_core_temps(components: &Components, logical_count: usize) -> Vec<Op
     let mut phys_temp: std::collections::HashMap<u32, f32> = std::collections::HashMap::new();
     for c in components.iter() {
         let label = c.label();
-        // coretemp labels are "Core N" where N is the physical core id.
-        if let Some(rest) = label.strip_prefix("Core ")
+        // sysinfo labels are "<driver> <sensor_label>", e.g.
+        // "coretemp Core 0", "coretemp Package id 0".
+        // We want the "Core N" part regardless of driver prefix.
+        if let Some(pos) = label.find("Core ")
+            && let Some(rest) = label.get(pos + 5..)
             && let Ok(phys_id) = rest.trim().parse::<u32>()
             && let Some(temp) = c.temperature()
         {
