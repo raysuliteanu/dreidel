@@ -20,7 +20,8 @@
 dreidel is a terminal UI system monitor that gives you a live view
 of your machine at a glance:
 
-- **CPU** — per-core line charts with scrollable history
+- **CPU** — per-core line charts with scrollable history and
+  per-core temperatures (Linux)
 - **Network** — per-interface RX/TX rates; press `Enter` on any
   interface for a full-screen graph of just that interface
 - **Disk** — per-device read/write rates and usage percentage;

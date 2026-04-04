@@ -114,10 +114,15 @@ fn build_cpu(sys: &System, components: &Components) -> CpuSnapshot {
             .map(|c| c.brand().to_owned())
             .unwrap_or_default(),
         #[cfg(target_os = "linux")]
-        temperature: components
+        package_temp: components
             .iter()
-            .find(|c| c.label().to_lowercase().contains("cpu"))
+            .find(|c| {
+                let l = c.label().to_lowercase();
+                l.contains("package") || l == "cpu"
+            })
             .and_then(|c| c.temperature()),
+        #[cfg(target_os = "linux")]
+        per_core_temp: build_per_core_temps(components, cpus.len()),
         #[cfg(target_os = "linux")]
         physical_core_count: read_physical_core_count(),
         #[cfg(target_os = "linux")]
@@ -161,6 +166,40 @@ fn read_physical_core_count() -> Option<u32> {
     } else {
         Some(pairs.len() as u32)
     }
+}
+
+/// Build per-logical-core temperature vec by mapping physical core sensors
+/// (from `sysinfo::Components` with labels like "Core 0", "Core 4") to
+/// logical core indices via `/sys/devices/system/cpu/cpuN/topology/core_id`.
+#[cfg(target_os = "linux")]
+fn build_per_core_temps(components: &Components, logical_count: usize) -> Vec<Option<f32>> {
+    // Step 1: collect physical_core_id → temperature from hwmon sensors.
+    let mut phys_temp: std::collections::HashMap<u32, f32> = std::collections::HashMap::new();
+    for c in components.iter() {
+        let label = c.label();
+        // coretemp labels are "Core N" where N is the physical core id.
+        if let Some(rest) = label.strip_prefix("Core ")
+            && let Ok(phys_id) = rest.trim().parse::<u32>()
+            && let Some(temp) = c.temperature()
+        {
+            phys_temp.insert(phys_id, temp);
+        }
+    }
+
+    if phys_temp.is_empty() {
+        return vec![None; logical_count];
+    }
+
+    // Step 2: map logical core index → physical core id via sysfs topology.
+    (0..logical_count)
+        .map(|cpu| {
+            let path = format!("/sys/devices/system/cpu/cpu{cpu}/topology/core_id");
+            std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|s| s.trim().parse::<u32>().ok())
+                .and_then(|phys_id| phys_temp.get(&phys_id).copied())
+        })
+        .collect()
 }
 
 /// Read the scaling governor for cpu0 from sysfs.

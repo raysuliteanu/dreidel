@@ -166,7 +166,7 @@ impl CpuComponent {
         ];
         #[cfg(target_os = "linux")]
         {
-            if let Some(temp) = snap.temperature {
+            if let Some(temp) = snap.package_temp {
                 row1_spans.push(Span::styled("  Temp: ", dim));
                 row1_spans.push(Span::styled(format!("{temp:.0}°C"), val));
             }
@@ -187,16 +187,23 @@ impl CpuComponent {
         first: usize,
         last: usize,
     ) {
-        // Label column: "cpu00  100%" = 11 chars inner + 1 for Borders::LEFT = 12 total.
-        const LABEL_INNER_W: u16 = 11;
-        const LABEL_TOTAL_W: u16 = LABEL_INNER_W + 1;
+        // Label column width depends on whether per-core temps are available.
+        // Without temps: "cpu00  100%" = 11 chars.
+        // With temps:    "cpu00  100%  55°C" = 17 chars.
+        #[cfg(target_os = "linux")]
+        let has_temps = snap.per_core_temp.iter().any(|t| t.is_some());
+        #[cfg(not(target_os = "linux"))]
+        let has_temps = false;
 
-        if area.width <= LABEL_TOTAL_W + 4 {
+        let label_inner_w: u16 = if has_temps { 18 } else { 11 };
+        let label_total_w: u16 = label_inner_w + 1; // +1 for Borders::LEFT
+
+        if area.width <= label_total_w + 4 {
             return;
         }
 
         let [graph_area, label_area] =
-            Layout::horizontal([Constraint::Fill(1), Constraint::Length(LABEL_TOTAL_W)])
+            Layout::horizontal([Constraint::Fill(1), Constraint::Length(label_total_w)])
                 .areas(area);
 
         // `filtered`, `first`, and `last` are pre-computed by the caller (`draw`)
@@ -262,11 +269,18 @@ impl CpuComponent {
 
         for (row_idx, &core_idx) in filtered[first..first + actual_visible].iter().enumerate() {
             let pct = snap.per_core[core_idx];
-            let label = Span::styled(
-                // "cpu00  100%" — index padded to 2, pct right-aligned in 5, one decimal
-                format!("cpu{:<2}{:>5.1}%", core_idx, pct),
-                Style::new().fg(core_color(core_idx)),
-            );
+            let mut text = format!("cpu{:<2}{:>5.1}%", core_idx, pct);
+
+            #[cfg(target_os = "linux")]
+            if has_temps {
+                if let Some(Some(temp)) = snap.per_core_temp.get(core_idx) {
+                    text.push_str(&format!(" {:>4.0}°C", temp));
+                } else {
+                    text.push_str("       ");
+                }
+            }
+
+            let label = Span::styled(text, Style::new().fg(core_color(core_idx)));
             frame.render_widget(label, label_rows[row_idx]);
         }
     }

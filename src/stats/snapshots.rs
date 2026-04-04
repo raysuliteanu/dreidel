@@ -9,8 +9,14 @@ pub struct CpuSnapshot {
     pub frequency: Vec<u64>, // MHz per core
     /// CPU brand string, e.g. "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz"
     pub cpu_brand: String,
+    /// Package-level CPU temperature ("Package id 0" from coretemp).
     #[cfg(target_os = "linux")]
-    pub temperature: Option<f32>, // degrees C
+    pub package_temp: Option<f32>,
+    /// Per-logical-core temperature.  Indexed by logical core index (same as
+    /// `per_core`).  Hyperthreaded siblings share their physical core's sensor.
+    /// `None` entries mean no sensor was found for that core.
+    #[cfg(target_os = "linux")]
+    pub per_core_temp: Vec<Option<f32>>,
     /// Number of physical (non-hyperthreaded) cores from /proc/cpuinfo
     #[cfg(target_os = "linux")]
     pub physical_core_count: Option<u32>,
@@ -28,7 +34,9 @@ impl CpuSnapshot {
             frequency: vec![3400, 3400, 3400, 3400],
             cpu_brand: "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz".into(),
             #[cfg(target_os = "linux")]
-            temperature: Some(62.0),
+            package_temp: Some(62.0),
+            #[cfg(target_os = "linux")]
+            per_core_temp: vec![Some(55.0), Some(58.0), Some(60.0), Some(52.0)],
             #[cfg(target_os = "linux")]
             physical_core_count: Some(4),
             #[cfg(target_os = "linux")]

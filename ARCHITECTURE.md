@@ -196,7 +196,7 @@ the lowercase string representations (`"cpu"`, `"mem"`, `"net"`, `"disk"`,
 
 | File             | Component            | Key behaviour                                                    |
 | ---------------- | -------------------- | ---------------------------------------------------------------- |
-| `cpu.rs`         | `CpuComponent`       | Per-core bar chart + aggregate gauge; reports `preferred_height` |
+| `cpu.rs`         | `CpuComponent`       | Per-core line chart + aggregate gauge; per-core temps on Linux; reports `preferred_height` |
 | `net.rs`         | `NetComponent`       | Per-interface RX/TX table; uses shared `ListView` + `FilterInput` |
 | `disk.rs`        | `DiskComponent`      | Per-device read/write/usage table; uses shared `ListView` + `FilterInput` |
 | `process/mod.rs` | `ProcessComponent`   | Sortable process table with state machine (see below)            |
@@ -237,16 +237,23 @@ that runs two `tokio::time::interval` timers:
 This dual-interval design avoids thousands of `/proc` syscalls on every tick while
 still keeping thread data visible in the UI.
 
-Linux-specific metrics (`temperature`, `swap_in/out_bytes`, per-process
-`priority/nice/threads/shr_bytes`) are guarded by `#[cfg(target_os = "linux")]`
-and read from `/proc/vmstat` and `procfs` respectively.
+Linux-specific metrics (`package_temp`, `per_core_temp`, `swap_in/out_bytes`,
+per-process `priority/nice/threads/shr_bytes`) are guarded by
+`#[cfg(target_os = "linux")]` and read from hwmon sensors (via `sysinfo`),
+`/proc/vmstat`, sysfs CPU topology, and `procfs` respectively.
+
+Per-core temperatures are mapped from physical core sensors (coretemp hwmon
+labels like "Core 0") to logical core indices via
+`/sys/devices/system/cpu/cpuN/topology/core_id`. Hyperthreaded siblings share
+their physical core's temperature reading.
 
 #### `stats/snapshots.rs` — Snapshot structs
 
 Plain data structs — no logic, only fields. Each has a `.stub()` constructor used
 in tests to avoid depending on the live stats collector. The structs are:
 
-`SysSnapshot`, `CpuSnapshot`, `MemSnapshot`, `NetSnapshot` / `InterfaceSnapshot`,
+`SysSnapshot`, `CpuSnapshot` (includes `per_core_temp` and `package_temp` on
+Linux), `MemSnapshot`, `NetSnapshot` / `InterfaceSnapshot`,
 `DiskSnapshot` / `DiskDeviceSnapshot`, `ProcSnapshot` / `ProcessEntry` / `ProcessStatus`
 
 ### `src/config.rs` — `Config`

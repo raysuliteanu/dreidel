@@ -89,6 +89,6 @@ Each `*Snapshot` struct in `stats/snapshots.rs` has a `.stub()` constructor for 
 
 - Use `.context("present tense phrase")` on every `?` propagation (`anyhow`).
 - Use `expect("why this can't fail")` over `unwrap()`.
-- `#[cfg(target_os = "linux")]` guards temperature (CpuSnapshot) and swap activity (MemSnapshot, `/proc/vmstat`).
+- `#[cfg(target_os = "linux")]` guards per-core and package temperature (CpuSnapshot), swap activity (MemSnapshot, `/proc/vmstat`), and thread enumeration.
 - Logs go to `~/.local/share/dreidel/dreidel.log` (never stderr — would corrupt the TUI).
 - Config file: `~/.config/dreidel/config.toml` (TOML, all fields optional with serde defaults).
