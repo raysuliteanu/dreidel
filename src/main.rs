@@ -138,6 +138,11 @@ fn apply_cli_overrides(cfg: &mut config::Config, args: &cli::Args) -> anyhow::Re
     {
         cfg.general.refresh_rate_ms = d.as_millis() as u64;
     }
+    if let Some(r) = &args.thread_refresh
+        && let Ok(d) = humantime::parse_duration(r)
+    {
+        cfg.general.thread_refresh_ms = d.as_millis() as u64;
+    }
     if let Some(p) = &args.preset {
         cfg.layout.preset = p.clone();
     }
@@ -176,6 +181,11 @@ const DEFAULT_CONFIG_TEMPLATE: &str = r#"# dreidel default configuration
 [general]
 # Refresh interval for all components. Examples: "500ms", "1s", "2s"
 # refresh_rate = "1s"
+
+# How often to enumerate per-process threads (/proc/<pid>/task/).
+# Thread enumeration is expensive; a slower cadence avoids thousands
+# of syscalls every tick while still keeping thread data visible.
+# thread_refresh = "5s"
 
 # Color theme. "auto" detects light/dark from terminal background.
 # theme = "auto"   # "auto" | "light" | "dark"

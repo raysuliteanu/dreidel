@@ -9,27 +9,63 @@ use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
-pub fn spawn_collector(tx: Sender<Action>, token: CancellationToken, refresh_ms: u64) {
-    tokio::spawn(run_collector(tx, token, refresh_ms));
+pub fn spawn_collector(
+    tx: Sender<Action>,
+    token: CancellationToken,
+    refresh_ms: u64,
+    thread_refresh_ms: u64,
+) {
+    tokio::spawn(run_collector(tx, token, refresh_ms, thread_refresh_ms));
 }
 
-pub async fn run_collector(tx: Sender<Action>, token: CancellationToken, refresh_ms: u64) {
+pub async fn run_collector(
+    tx: Sender<Action>,
+    token: CancellationToken,
+    refresh_ms: u64,
+    thread_refresh_ms: u64,
+) {
     let mut sys = System::new_all();
     let mut nets = Networks::new_with_refreshed_list();
     let mut disks = Disks::new_with_refreshed_list();
     let mut components = Components::new_with_refreshed_list();
-    let mut interval = tokio::time::interval(std::time::Duration::from_millis(refresh_ms));
+
+    let mut fast_interval = tokio::time::interval(std::time::Duration::from_millis(refresh_ms));
+    let mut slow_interval =
+        tokio::time::interval(std::time::Duration::from_millis(thread_refresh_ms));
+
+    // Cached thread entries from the most recent slow-tick enumeration.
+    // Merged into ProcUpdate on every fast tick so the UI always has thread
+    // data, but the expensive /proc/<pid>/task/ walk only happens at the
+    // slower cadence.
+    #[allow(unused_mut)] // mut only needed on linux
+    let mut cached_threads: Vec<ProcessEntry> = Vec::new();
 
     loop {
-        tokio::select! {
+        // Wait for whichever interval fires first.  When both are ready
+        // simultaneously tokio::select! picks one — the slow tick runs its
+        // enumeration and the fast tick runs on the next iteration.
+        let slow_tick = tokio::select! {
             _ = token.cancelled() => break,
-            _ = interval.tick() => {}
-        }
+            _ = slow_interval.tick() => true,
+            _ = fast_interval.tick() => false,
+        };
 
         sys.refresh_all();
         nets.refresh(false);
         disks.refresh(false);
         components.refresh(false);
+
+        // Enumerate threads only on the slow cadence.
+        #[cfg(target_os = "linux")]
+        if slow_tick {
+            cached_threads = enumerate_threads(&sys);
+        }
+        // Suppress unused-variable warning on non-Linux.
+        #[cfg(not(target_os = "linux"))]
+        let _ = slow_tick;
+
+        let mut proc_snap = build_proc(&sys);
+        proc_snap.processes.extend(cached_threads.clone());
 
         let actions = [
             Action::SysUpdate(build_sys(&sys)),
@@ -37,7 +73,7 @@ pub async fn run_collector(tx: Sender<Action>, token: CancellationToken, refresh
             Action::MemUpdate(build_mem(&sys)),
             Action::NetUpdate(build_net(&nets)),
             Action::DiskUpdate(build_disk(&disks)),
-            Action::ProcUpdate(build_proc(&sys)),
+            Action::ProcUpdate(proc_snap),
         ];
 
         for action in actions {
@@ -240,7 +276,7 @@ fn build_disk(disks: &Disks) -> DiskSnapshot {
 }
 
 fn build_proc(sys: &System) -> ProcSnapshot {
-    let mut snapshot = ProcSnapshot {
+    ProcSnapshot {
         processes: sys
             .processes()
             .values()
@@ -295,68 +331,75 @@ fn build_proc(sys: &System) -> ProcSnapshot {
                 entry
             })
             .collect(),
-    };
+    }
+}
 
-    // Enumerate threads for each process via /proc/<pid>/task/.
-    #[cfg(target_os = "linux")]
-    {
-        let tps = procfs::ticks_per_second() as f64;
-        let mut thread_entries = Vec::new();
-        for proc_entry in &snapshot.processes {
-            let pid = proc_entry.pid as i32;
-            if let Ok(proc) = procfs::process::Process::new(pid)
-                && let Ok(tasks) = proc.tasks()
-            {
-                for task_result in tasks {
-                    let Ok(task) = task_result else { continue };
-                    let tid = task.tid as u32;
-                    // Skip the main thread (TID == PID).
-                    if tid == proc_entry.pid {
-                        continue;
-                    }
-                    if let Ok(stat) = task.stat() {
-                        thread_entries.push(ProcessEntry {
-                            pid: tid,
-                            name: format!("[{}:{}]", proc_entry.name, tid),
-                            cmd: Vec::new(),
-                            user: proc_entry.user.clone(),
-                            cpu_pct: 0.0, // per-thread CPU not tracked by sysinfo
-                            mem_bytes: 0,
-                            mem_pct: 0.0,
-                            virt_bytes: 0,
-                            status: match stat.state() {
-                                Ok(procfs::process::ProcState::Running) => ProcessStatus::Running,
-                                Ok(procfs::process::ProcState::Sleeping) => ProcessStatus::Sleeping,
-                                Ok(procfs::process::ProcState::Waiting) => ProcessStatus::Sleeping,
-                                Ok(
-                                    procfs::process::ProcState::Stopped
-                                    | procfs::process::ProcState::Tracing,
-                                ) => ProcessStatus::Stopped,
-                                Ok(procfs::process::ProcState::Zombie) => ProcessStatus::Zombie,
-                                Ok(procfs::process::ProcState::Dead) => ProcessStatus::Dead,
-                                Ok(procfs::process::ProcState::Idle) => ProcessStatus::Idle,
-                                _ => ProcessStatus::Unknown,
-                            },
-                            start_time: 0,
-                            run_time: 0,
-                            nice: stat.nice as i32,
-                            threads: 0,
-                            read_bytes: 0,
-                            write_bytes: 0,
-                            parent_pid: Some(proc_entry.pid),
-                            priority: stat.priority as i32,
-                            shr_bytes: 0,
-                            cpu_time_secs: (stat.utime + stat.stime) as f64 / tps,
-                            is_thread: true,
-                        });
-                    }
+/// Enumerate threads for every process via `/proc/<pid>/task/`.
+///
+/// This is expensive (thousands of syscalls) and is called on a slower cadence
+/// than the main stats refresh.  Returns standalone `ProcessEntry` items with
+/// `is_thread = true` that get merged into the `ProcSnapshot` by the collector.
+#[cfg(target_os = "linux")]
+fn enumerate_threads(sys: &System) -> Vec<ProcessEntry> {
+    let tps = procfs::ticks_per_second() as f64;
+    let mut thread_entries = Vec::new();
+
+    for (sysinfo_pid, p) in sys.processes() {
+        let pid = sysinfo_pid.as_u32();
+        let proc_name = p.name().to_string_lossy();
+        let proc_user = p.user_id().map(|u| u.to_string()).unwrap_or_default();
+
+        if let Ok(proc) = procfs::process::Process::new(pid as i32)
+            && let Ok(tasks) = proc.tasks()
+        {
+            for task_result in tasks {
+                let Ok(task) = task_result else { continue };
+                let tid = task.tid as u32;
+                // Skip the main thread (TID == PID).
+                if tid == pid {
+                    continue;
+                }
+                if let Ok(stat) = task.stat() {
+                    thread_entries.push(ProcessEntry {
+                        pid: tid,
+                        name: format!("[{proc_name}:{tid}]"),
+                        cmd: Vec::new(),
+                        user: proc_user.clone(),
+                        cpu_pct: 0.0,
+                        mem_bytes: 0,
+                        mem_pct: 0.0,
+                        virt_bytes: 0,
+                        status: match stat.state() {
+                            Ok(procfs::process::ProcState::Running) => ProcessStatus::Running,
+                            Ok(procfs::process::ProcState::Sleeping) => ProcessStatus::Sleeping,
+                            Ok(procfs::process::ProcState::Waiting) => ProcessStatus::Sleeping,
+                            Ok(
+                                procfs::process::ProcState::Stopped
+                                | procfs::process::ProcState::Tracing,
+                            ) => ProcessStatus::Stopped,
+                            Ok(procfs::process::ProcState::Zombie) => ProcessStatus::Zombie,
+                            Ok(procfs::process::ProcState::Dead) => ProcessStatus::Dead,
+                            Ok(procfs::process::ProcState::Idle) => ProcessStatus::Idle,
+                            _ => ProcessStatus::Unknown,
+                        },
+                        start_time: 0,
+                        run_time: 0,
+                        nice: stat.nice as i32,
+                        threads: 0,
+                        read_bytes: 0,
+                        write_bytes: 0,
+                        parent_pid: Some(pid),
+                        priority: stat.priority as i32,
+                        shr_bytes: 0,
+                        cpu_time_secs: (stat.utime + stat.stime) as f64 / tps,
+                        is_thread: true,
+                    });
                 }
             }
         }
-        snapshot.processes.extend(thread_entries);
     }
 
-    snapshot
+    thread_entries
 }
 
 fn map_process_status(status: sysinfo::ProcessStatus) -> ProcessStatus {
@@ -384,7 +427,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(32);
         let token = tokio_util::sync::CancellationToken::new();
         let child = token.child_token();
-        tokio::spawn(run_collector(tx, child, 100));
+        tokio::spawn(run_collector(tx, child, 100, 500));
 
         let mut got_cpu = false;
         for _ in 0..20 {

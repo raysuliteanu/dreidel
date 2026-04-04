@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if ! command -v jj >/dev/null 2>&1; then
+  printf 'error: jj is not installed or not on PATH\n' >&2
+  exit 1
+fi
+
+if ! jj root >/dev/null 2>&1; then
+  printf 'error: this command must be run inside a jj repository\n' >&2
+  exit 1
+fi
+
+if (( $# > 1 )); then
+  printf 'usage: %s [bookmark]\n' "$0" >&2
+  exit 1
+fi
+
+bookmark="${1:-main}"
+
+# `@` is typically the empty working-copy commit; move the bookmark to the
+# latest real commit (`@-`) and push only that bookmark.
+jj bookmark set "$bookmark" -r @-
+jj git push --bookmark "$bookmark"
