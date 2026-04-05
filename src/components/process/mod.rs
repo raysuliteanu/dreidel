@@ -5,10 +5,11 @@ pub mod sort;
 pub mod tree;
 
 use anyhow::{Context, Result};
+use chrono::TimeZone;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
-    layout::{Constraint, Rect},
+    layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Row, Table, TableState, Wrap},
@@ -704,30 +705,163 @@ impl Component for ProcessComponent {
         if let ProcessState::DetailView { pid } = &self.state {
             let pid = *pid;
             if let Some(p) = self.displayed.iter().find(|p| p.pid == pid).cloned() {
-                let lines: Vec<Line> = vec![
-                    Line::from(format!(" PID:     {}", p.pid)),
-                    Line::from(format!(" Name:    {}", p.name)),
-                    Line::from(format!(" Cmd:     {}", p.cmd.join(" "))),
-                    Line::from(format!(" User:    {}", p.user)),
-                    Line::from(format!(" Status:  {}", p.status)),
-                    Line::from(format!(" CPU:     {:.1}%", p.cpu_pct)),
-                    Line::from(format!(
-                        " MEM:     {:.1}% ({} bytes)",
-                        p.mem_pct, p.mem_bytes
-                    )),
-                    Line::from(format!(" Virt:    {} bytes", p.virt_bytes)),
-                    Line::from(format!(" Nice:    {}", p.nice)),
-                    Line::from(format!(" Threads: {}", p.threads)),
-                    Line::from(format!(" I/O R:   {} bytes", p.read_bytes)),
-                    Line::from(format!(" I/O W:   {} bytes", p.write_bytes)),
-                    Line::from(" "),
-                    Line::from(Span::styled(
-                        " [Esc/q] back",
-                        Style::new().fg(self.palette.dim),
-                    )),
+                let chunks = Layout::vertical([
+                    Constraint::Length(4),
+                    Constraint::Length(1),
+                    Constraint::Min(0),
+                    Constraint::Length(1),
+                    Constraint::Length(3),
+                ])
+                .split(inner);
+                let cols =
+                    Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+                        .split(chunks[2]);
+
+                let command = if p.cmd.is_empty() {
+                    p.name.clone()
+                } else {
+                    p.cmd.join(" ")
+                };
+                let header = vec![
+                    detail_header_kv("Name:", p.name.clone(), &self.palette),
+                    detail_header_kv("Command:", command, &self.palette),
+                    detail_header_kv("Exe:", fmt_opt_str(p.exe.as_deref()), &self.palette),
+                    detail_header_kv("CWD:", fmt_opt_str(p.cwd.as_deref()), &self.palette),
                 ];
-                let para = ratatui::widgets::Paragraph::new(lines);
-                frame.render_widget(para, inner);
+                let pairs = [
+                    (
+                        detail_kv("PID", p.pid.to_string(), &self.palette),
+                        detail_kv("PPID", fmt_opt_u32(p.parent_pid), &self.palette),
+                    ),
+                    (
+                        detail_kv("User", p.user.clone(), &self.palette),
+                        detail_kv("Status", p.status.to_string(), &self.palette),
+                    ),
+                    (
+                        detail_kv(
+                            "Type",
+                            if p.is_thread { "thread" } else { "process" },
+                            &self.palette,
+                        ),
+                        detail_kv("Session", fmt_opt_u32(p.session_id), &self.palette),
+                    ),
+                    (
+                        detail_kv("CPU", format!("{:.1}%", p.cpu_pct), &self.palette),
+                        detail_kv(
+                            "CPU time",
+                            fmt_cpu_time_long(p.cpu_time_secs),
+                            &self.palette,
+                        ),
+                    ),
+                    (
+                        detail_kv(
+                            "User CPU",
+                            fmt_cpu_time_long(p.user_cpu_time_secs),
+                            &self.palette,
+                        ),
+                        detail_kv(
+                            "Sys CPU",
+                            fmt_cpu_time_long(p.system_cpu_time_secs),
+                            &self.palette,
+                        ),
+                    ),
+                    (
+                        detail_kv(
+                            "MEM",
+                            format!("{:.1}% ({})", p.mem_pct, fmt_bytes(p.mem_bytes)),
+                            &self.palette,
+                        ),
+                        detail_kv("VIRT", fmt_bytes(p.virt_bytes), &self.palette),
+                    ),
+                    (
+                        detail_kv("SHR", fmt_bytes(p.shr_bytes), &self.palette),
+                        detail_kv("Swap", fmt_opt_bytes(p.swap_bytes), &self.palette),
+                    ),
+                    (
+                        detail_kv("Threads", p.threads.to_string(), &self.palette),
+                        detail_kv("FDs", fmt_opt_usize(p.fd_count), &self.palette),
+                    ),
+                    (
+                        detail_kv("PR", p.priority.to_string(), &self.palette),
+                        detail_kv("NI", p.nice.to_string(), &self.palette),
+                    ),
+                    (
+                        detail_kv("Started", fmt_start_time(p.start_time), &self.palette),
+                        detail_kv("Runtime", fmt_runtime(p.run_time), &self.palette),
+                    ),
+                    (
+                        detail_kv("Minflt", p.minor_faults.to_string(), &self.palette),
+                        detail_kv("Majflt", p.major_faults.to_string(), &self.palette),
+                    ),
+                    (
+                        detail_kv(
+                            "Vol CS",
+                            fmt_opt_u64(p.voluntary_ctxt_switches),
+                            &self.palette,
+                        ),
+                        detail_kv(
+                            "Invol CS",
+                            fmt_opt_u64(p.nonvoluntary_ctxt_switches),
+                            &self.palette,
+                        ),
+                    ),
+                    (
+                        detail_kv("I/O read", fmt_bytes(p.read_bytes), &self.palette),
+                        detail_kv("I/O write", fmt_bytes(p.write_bytes), &self.palette),
+                    ),
+                    (
+                        detail_kv("Read calls", fmt_opt_u64(p.io_read_calls), &self.palette),
+                        detail_kv("Write calls", fmt_opt_u64(p.io_write_calls), &self.palette),
+                    ),
+                    (
+                        detail_kv("Read chars", fmt_opt_bytes(p.io_read_chars), &self.palette),
+                        detail_kv(
+                            "Write chars",
+                            fmt_opt_bytes(p.io_write_chars),
+                            &self.palette,
+                        ),
+                    ),
+                    (
+                        detail_kv("TTY", fmt_opt_str(p.tty.as_deref()), &self.palette),
+                        detail_kv("Root", fmt_opt_str(p.root.as_deref()), &self.palette),
+                    ),
+                    (
+                        detail_kv("GID", fmt_opt_str(p.group.as_deref()), &self.palette),
+                        detail_kv(
+                            "EGID",
+                            fmt_opt_str(p.effective_group.as_deref()),
+                            &self.palette,
+                        ),
+                    ),
+                    (
+                        detail_kv(
+                            "EUID",
+                            fmt_opt_str(p.effective_user.as_deref()),
+                            &self.palette,
+                        ),
+                        detail_kv(
+                            "Cancelled W",
+                            fmt_opt_bytes(p.cancelled_write_bytes),
+                            &self.palette,
+                        ),
+                    ),
+                ];
+                let left: Vec<_> = pairs.iter().map(|(left, _)| left.clone()).collect();
+                let right: Vec<_> = pairs.iter().map(|(_, right)| right.clone()).collect();
+
+                frame.render_widget(Paragraph::new(header).wrap(Wrap { trim: false }), chunks[0]);
+                frame.render_widget(horizontal_rule(inner.width), chunks[1]);
+                frame.render_widget(Paragraph::new(left).wrap(Wrap { trim: false }), cols[0]);
+                frame.render_widget(Paragraph::new(right).wrap(Wrap { trim: false }), cols[1]);
+                frame.render_widget(horizontal_rule(inner.width), chunks[3]);
+                frame.render_widget(
+                    Paragraph::new(Line::from(Span::styled(
+                        "[Esc/q] back",
+                        Style::new().fg(self.palette.dim),
+                    )))
+                    .centered(),
+                    chunks[4],
+                );
                 return Ok(());
             }
         }
@@ -985,6 +1119,97 @@ fn fmt_cpu_time(secs: f64) -> String {
     format!("{:02}:{:02}", m, s)
 }
 
+fn fmt_cpu_time_long(secs: f64) -> String {
+    let total = secs as u64;
+    let h = total / 3600;
+    let m = (total % 3600) / 60;
+    let s = total % 60;
+    if h > 0 {
+        format!("{h}h {m:02}m {s:02}s")
+    } else {
+        format!("{m}m {s:02}s")
+    }
+}
+
+fn fmt_bytes(bytes: u64) -> String {
+    const TB: u64 = 1_000_000_000_000;
+    const GB: u64 = 1_000_000_000;
+    const MB: u64 = 1_000_000;
+    if bytes >= TB {
+        format!("{:.1} TB", bytes as f64 / TB as f64)
+    } else if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else {
+        fmt_rate_col(bytes)
+    }
+}
+
+fn fmt_runtime(secs: u64) -> String {
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    let s = secs % 60;
+    if h > 0 {
+        format!("{h}h {m:02}m {s:02}s")
+    } else {
+        format!("{m}m {s:02}s")
+    }
+}
+
+fn fmt_start_time(unix_secs: u64) -> String {
+    if unix_secs == 0 {
+        return "-".into();
+    }
+    chrono::Local
+        .timestamp_opt(unix_secs as i64, 0)
+        .single()
+        .map(|ts| ts.format("%Y-%m-%d %H:%M:%S").to_string())
+        .unwrap_or_else(|| "-".into())
+}
+
+fn fmt_opt_str(value: Option<&str>) -> String {
+    value.filter(|s| !s.is_empty()).unwrap_or("-").to_string()
+}
+
+fn fmt_opt_u32(value: Option<u32>) -> String {
+    value.map(|v| v.to_string()).unwrap_or_else(|| "-".into())
+}
+
+fn fmt_opt_u64(value: Option<u64>) -> String {
+    value.map(|v| v.to_string()).unwrap_or_else(|| "-".into())
+}
+
+fn fmt_opt_usize(value: Option<usize>) -> String {
+    value.map(|v| v.to_string()).unwrap_or_else(|| "-".into())
+}
+
+fn fmt_opt_bytes(value: Option<u64>) -> String {
+    value.map(fmt_bytes).unwrap_or_else(|| "-".into())
+}
+
+fn detail_kv(label: &str, value: impl Into<String>, palette: &ColorPalette) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(format!(" {label:<15} "), Style::new().fg(palette.dim)),
+        Span::styled(value.into(), Style::new().fg(palette.fg)),
+    ])
+}
+
+fn detail_header_kv(
+    label: &str,
+    value: impl Into<String>,
+    palette: &ColorPalette,
+) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(format!(" {label:<9} "), Style::new().fg(palette.dim)),
+        Span::styled(value.into(), Style::new().fg(palette.fg)),
+    ])
+}
+
+fn horizontal_rule(width: u16) -> Paragraph<'static> {
+    Paragraph::new("─".repeat(width.saturating_sub(1) as usize)).centered()
+}
+
 fn kill_process(pid: u32) -> Result<()> {
     nix::sys::signal::kill(
         nix::unistd::Pid::from_raw(pid as i32),
@@ -996,6 +1221,7 @@ fn kill_process(pid: u32) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
     use crossterm::event::{KeyCode, KeyModifiers};
     use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
@@ -1104,6 +1330,19 @@ mod tests {
         comp.table_state.select(Some(0));
         comp.handle_key_event(key_code(KeyCode::Enter)).unwrap();
         assert!(matches!(comp.state, ProcessState::DetailView { .. }));
+    }
+
+    #[test]
+    fn detail_view_renders_two_column_process_fields() {
+        let mut comp = ProcessComponent::default();
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+            .unwrap();
+        comp.table_state.select(Some(0));
+        comp.handle_key_event(key_code(KeyCode::Enter)).unwrap();
+
+        let mut terminal = Terminal::new(TestBackend::new(140, 30)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        assert_snapshot!(terminal.backend());
     }
 
     #[test]
@@ -1366,6 +1605,23 @@ mod tests {
         assert_eq!(fmt_cpu_time(60.0), "01:00");
         assert_eq!(fmt_cpu_time(123.4), "02:03");
         assert_eq!(fmt_cpu_time(3661.0), "61:01");
+    }
+
+    #[test]
+    fn fmt_cpu_time_long_formats_correctly() {
+        assert_eq!(fmt_cpu_time_long(0.0), "0m 00s");
+        assert_eq!(fmt_cpu_time_long(65.0), "1m 05s");
+        assert_eq!(fmt_cpu_time_long(3661.0), "1h 01m 01s");
+    }
+
+    #[test]
+    fn fmt_start_time_formats_local_timestamp() {
+        let ts = chrono::Local
+            .with_ymd_and_hms(2026, 4, 4, 12, 34, 56)
+            .single()
+            .expect("local timestamp must exist");
+        assert_eq!(fmt_start_time(ts.timestamp() as u64), "2026-04-04 12:34:56");
+        assert_eq!(fmt_start_time(0), "-");
     }
 
     #[test]

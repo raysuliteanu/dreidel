@@ -19,7 +19,7 @@ The crate is a dual lib+bin package:
 | `tokio`                          | Async runtime; powers the event loop and stats collector                            |
 | `tokio-util`                     | `CancellationToken` for clean shutdown of background tasks                          |
 | `sysinfo`                        | Cross-platform system metrics: CPU, memory, processes, networks, disks              |
-| `procfs`                         | Linux-only `/proc` access for per-process priority, nice, threads, SHR              |
+| `procfs`                         | Linux-only `/proc` access for per-process priority, nice, threads, SHR, CPU split, faults, context switches, tty, fd count, and richer I/O |
 | `clap`                           | CLI argument parsing (derive macro)                                                 |
 | `serde` / `toml`                 | Config file deserialization                                                         |
 | `humantime`                      | Parses human-readable durations (`"1s"`, `"500ms"`) in config                       |
@@ -196,7 +196,7 @@ the lowercase string representations (`"cpu"`, `"mem"`, `"net"`, `"disk"`,
 
 | File             | Component            | Key behaviour                                                    |
 | ---------------- | -------------------- | ---------------------------------------------------------------- |
-| `cpu.rs`         | `CpuComponent`       | Per-core bar chart + aggregate gauge; reports `preferred_height` |
+| `cpu.rs`         | `CpuComponent`       | Per-core line chart + aggregate gauge; per-core temps on Linux; reports `preferred_height` |
 | `net.rs`         | `NetComponent`       | Per-interface RX/TX table; uses shared `ListView` + `FilterInput` |
 | `disk.rs`        | `DiskComponent`      | Per-device read/write/usage table; uses shared `ListView` + `FilterInput` |
 | `process/mod.rs` | `ProcessComponent`   | Sortable process table with state machine (see below)            |
@@ -210,7 +210,7 @@ The process panel has an explicit `ProcessState` enum:
 
 - `NormalList` — default scrollable table
 - `FilterMode { input }` — incremental filter bar, `Esc` returns to `NormalList`
-- `DetailView { pid }` — expanded single-process view
+- `DetailView { pid }` — expanded single-process view rendered as a two-column name/value inspector
 - `KillConfirm { pid, name }` — confirmation dialog before sending `SIGKILL`
 - `KillError { message }` — error dialog if kill fails
 
@@ -237,17 +237,39 @@ that runs two `tokio::time::interval` timers:
 This dual-interval design avoids thousands of `/proc` syscalls on every tick while
 still keeping thread data visible in the UI.
 
-Linux-specific metrics (`temperature`, `swap_in/out_bytes`, per-process
-`priority/nice/threads/shr_bytes`) are guarded by `#[cfg(target_os = "linux")]`
-and read from `/proc/vmstat` and `procfs` respectively.
+Linux-specific metrics (`package_temp`, `per_core_temp`, `swap_in/out_bytes`,
+per-process `priority/nice/threads/shr_bytes`, CPU user/system split, page faults,
+context switches, tty, swap, fd count, and `/proc/<pid>/io` counters) are guarded by
+`#[cfg(target_os = "linux")]` and read from hwmon sensors (via `sysinfo`),
+`/proc/vmstat`, sysfs CPU topology, and `procfs` respectively.
+
+Process snapshots combine cross-platform `sysinfo` fields (name, cmdline, RSS,
+virtual memory, start/runtime, executable path, cwd, root, user/group IDs,
+session ID, and cumulative disk I/O bytes) with Linux-only `procfs` fields.
+The process detail modal currently surfaces the highest-value per-process fields in
+two columns: identity, CPU, memory, runtime, filesystem paths, scheduling,
+fault counters, context switches, descriptor count, and detailed I/O counters.
+
+Per-core temperatures are mapped from physical core sensors (coretemp hwmon
+labels like "Core 0") to logical core indices via
+`/sys/devices/system/cpu/cpuN/topology/core_id`. Hyperthreaded siblings share
+their physical core's temperature reading.
 
 #### `stats/snapshots.rs` — Snapshot structs
 
 Plain data structs — no logic, only fields. Each has a `.stub()` constructor used
 in tests to avoid depending on the live stats collector. The structs are:
 
-`SysSnapshot`, `CpuSnapshot`, `MemSnapshot`, `NetSnapshot` / `InterfaceSnapshot`,
-`DiskSnapshot` / `DiskDeviceSnapshot`, `ProcSnapshot` / `ProcessEntry` / `ProcessStatus`
+`SysSnapshot`, `CpuSnapshot` (includes `per_core_temp` and `package_temp` on
+Linux), `MemSnapshot`, `NetSnapshot` / `InterfaceSnapshot`,
+`DiskSnapshot` / `DiskDeviceSnapshot`, `ProcSnapshot` / `ProcessEntry` / `ProcessStatus`.
+
+`ProcessEntry` now includes both list-view fields and detail-only fields. The list
+uses a compact subset for table rendering and sorting; the detail inspector reads the
+same cached `ProcessEntry` and renders additional metadata such as `exe`, `cwd`,
+`root`, effective IDs, session ID, tty, user/system CPU time split, minor/major
+faults, context-switch counters, open file-descriptor count, swap usage, and
+`/proc/<pid>/io` syscall and character-byte counters.
 
 ### `src/config.rs` — `Config`
 

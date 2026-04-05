@@ -1,86 +1,100 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-#![allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcessStatus {
+    Running,
+    Sleeping,
+    Idle,
+    Stopped,
+    Zombie,
+    Dead,
+    Unknown,
+}
 
+impl std::fmt::Display for ProcessStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Running => "running",
+            Self::Sleeping => "sleeping",
+            Self::Idle => "idle",
+            Self::Stopped => "stopped",
+            Self::Zombie => "zombie",
+            Self::Dead => "dead",
+            Self::Unknown => "unknown",
+        };
+        f.write_str(s)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum CpuPanelState {
+    #[default]
+    Normal,
+    FilterMode {
+        input: String,
+    },
+}
+
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct CpuSnapshot {
-    pub per_core: Vec<f32>, // 0.0–100.0 per logical core
     pub aggregate: f32,
-    pub frequency: Vec<u64>, // MHz per core
-    /// CPU brand string, e.g. "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz"
-    pub cpu_brand: String,
-    #[cfg(target_os = "linux")]
-    pub temperature: Option<f32>, // degrees C
-    /// Number of physical (non-hyperthreaded) cores from /proc/cpuinfo
-    #[cfg(target_os = "linux")]
+    pub per_core: Vec<f32>,
+    pub frequency: Vec<u64>,
+    pub scroll_offset: usize,
+    pub state: CpuPanelState,
+    pub filter: String,
     pub physical_core_count: Option<u32>,
-    /// Scaling governor from /sys/.../cpufreq/scaling_governor, e.g. "powersave"
-    #[cfg(target_os = "linux")]
+    pub cpu_brand: String,
+    pub package_temp: Option<f32>,
+    pub per_core_temp: Vec<Option<f32>>,
     pub governor: Option<String>,
 }
 
+#[cfg(any(test, feature = "test-stubs"))]
+#[allow(dead_code)]
 impl CpuSnapshot {
     pub fn stub() -> Self {
         Self {
-            per_core: vec![42.0, 18.0, 75.0, 5.0],
             aggregate: 35.0,
+            per_core: vec![42.0, 18.0, 75.0, 5.0],
             frequency: vec![3400, 3400, 3400, 3400],
-            cpu_brand: "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz".into(),
-            #[cfg(target_os = "linux")]
-            temperature: Some(62.0),
-            #[cfg(target_os = "linux")]
+            scroll_offset: 0,
+            state: CpuPanelState::Normal,
+            filter: String::new(),
             physical_core_count: Some(4),
-            #[cfg(target_os = "linux")]
+            cpu_brand: "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz".into(),
+            package_temp: Some(62.0),
+            per_core_temp: vec![Some(55.0), Some(58.0), Some(60.0), Some(52.0)],
             governor: Some("powersave".into()),
         }
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct MemSnapshot {
-    pub ram_used: u64,
     pub ram_total: u64,
-    pub swap_used: u64,
+    pub ram_used: u64,
     pub swap_total: u64,
-    #[cfg(target_os = "linux")]
+    pub swap_used: u64,
     pub swap_in_bytes: u64,
-    #[cfg(target_os = "linux")]
     pub swap_out_bytes: u64,
 }
 
+#[cfg(any(test, feature = "test-stubs"))]
+#[allow(dead_code)]
 impl MemSnapshot {
     pub fn stub() -> Self {
         Self {
-            ram_used: 6_442_450_944,
             ram_total: 17_179_869_184,
-            swap_used: 0,
+            ram_used: 6_442_450_944,
             swap_total: 4_294_967_296,
-            #[cfg(target_os = "linux")]
+            swap_used: 0,
             swap_in_bytes: 0,
-            #[cfg(target_os = "linux")]
             swap_out_bytes: 0,
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct InterfaceSnapshot {
-    pub name: String,
-    pub rx_bytes: u64,       // bytes/s since last tick
-    pub tx_bytes: u64,       // bytes/s since last tick
-    pub rx_packets: u64,     // packets/s since last tick
-    pub tx_packets: u64,     // packets/s since last tick
-    pub rx_errors: u64,      // errors since last tick
-    pub tx_errors: u64,      // errors since last tick
-    pub total_rx_bytes: u64, // cumulative since boot
-    pub total_tx_bytes: u64, // cumulative since boot
-    pub mac_address: String,
-    pub ip_addresses: Vec<String>, // e.g. ["192.168.1.1/24", "fe80::1/64"]
-    pub mtu: u64,
-    #[cfg(target_os = "linux")]
-    pub rx_dropped: u64, // cumulative drops from /proc/net/dev
-    #[cfg(target_os = "linux")]
-    pub tx_dropped: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +102,26 @@ pub struct NetSnapshot {
     pub interfaces: Vec<InterfaceSnapshot>,
 }
 
+#[derive(Debug, Clone)]
+pub struct InterfaceSnapshot {
+    pub name: String,
+    pub rx_bytes: u64,
+    pub tx_bytes: u64,
+    pub rx_packets: u64,
+    pub tx_packets: u64,
+    pub rx_errors: u64,
+    pub tx_errors: u64,
+    pub total_rx_bytes: u64,
+    pub total_tx_bytes: u64,
+    pub mac_address: String,
+    pub ip_addresses: Vec<String>,
+    pub mtu: u64,
+    pub rx_dropped: u64,
+    pub tx_dropped: u64,
+}
+
+#[cfg(any(test, feature = "test-stubs"))]
+#[allow(dead_code)]
 impl NetSnapshot {
     pub fn stub() -> Self {
         Self {
@@ -104,50 +138,28 @@ impl NetSnapshot {
                 mac_address: "aa:bb:cc:dd:ee:ff".into(),
                 ip_addresses: vec!["192.168.1.100/24".into(), "fe80::1/64".into()],
                 mtu: 1500,
-                #[cfg(target_os = "linux")]
                 rx_dropped: 0,
-                #[cfg(target_os = "linux")]
                 tx_dropped: 0,
             }],
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct DiskDeviceSnapshot {
     pub name: String,
-    pub read_bytes: u64,        // bytes/s since last tick
-    pub write_bytes: u64,       // bytes/s since last tick
-    pub usage_pct: f32,         // 0.0–100.0
-    pub total_read_bytes: u64,  // cumulative since boot
-    pub total_write_bytes: u64, // cumulative since boot
-    pub kind: String,           // "SSD", "HDD", "Unknown"
-    pub file_system: String,    // e.g. "ext4", "btrfs"
-    pub mount_point: String,    // e.g. "/", "/boot"
+    pub read_bytes: u64,
+    pub write_bytes: u64,
+    pub usage_pct: f32,
+    pub total_read_bytes: u64,
+    pub total_write_bytes: u64,
+    pub mount_point: String,
+    pub file_system: String,
+    pub kind: String,
     pub is_removable: bool,
     pub is_read_only: bool,
-    pub total_space: u64,     // bytes
-    pub available_space: u64, // bytes
-}
-
-impl Default for DiskDeviceSnapshot {
-    fn default() -> Self {
-        Self {
-            name: String::new(),
-            read_bytes: 0,
-            write_bytes: 0,
-            usage_pct: 0.0,
-            total_read_bytes: 0,
-            total_write_bytes: 0,
-            kind: String::new(),
-            file_system: String::new(),
-            mount_point: String::new(),
-            is_removable: false,
-            is_read_only: false,
-            total_space: 0,
-            available_space: 0,
-        }
-    }
+    pub total_space: u64,
+    pub available_space: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -155,6 +167,8 @@ pub struct DiskSnapshot {
     pub devices: Vec<DiskDeviceSnapshot>,
 }
 
+#[cfg(any(test, feature = "test-stubs"))]
+#[allow(dead_code)]
 impl DiskSnapshot {
     pub fn stub() -> Self {
         Self {
@@ -165,9 +179,9 @@ impl DiskSnapshot {
                 usage_pct: 45.0,
                 total_read_bytes: 1_073_741_824,
                 total_write_bytes: 536_870_912,
-                kind: "SSD".into(),
-                file_system: "ext4".into(),
                 mount_point: "/".into(),
+                file_system: "ext4".into(),
+                kind: "SSD".into(),
                 is_removable: false,
                 is_read_only: false,
                 total_space: 500_107_862_016,
@@ -180,11 +194,13 @@ impl DiskSnapshot {
 #[derive(Debug, Clone)]
 pub struct SysSnapshot {
     pub hostname: String,
-    pub uptime: u64,        // seconds
-    pub load_avg: [f64; 3], // 1m, 5m, 15m
+    pub uptime: u64,
+    pub load_avg: [f64; 3],
     pub timestamp: chrono::DateTime<chrono::Local>,
 }
 
+#[cfg(any(test, feature = "test-stubs"))]
+#[allow(dead_code)]
 impl SysSnapshot {
     pub fn stub() -> Self {
         Self {
@@ -192,31 +208,6 @@ impl SysSnapshot {
             uptime: 273_600,
             load_avg: [1.24, 0.98, 0.87],
             timestamp: chrono::Local::now(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProcessStatus {
-    Running,
-    Sleeping,
-    Idle,
-    Stopped,
-    Zombie,
-    Dead,
-    Unknown,
-}
-
-impl std::fmt::Display for ProcessStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ProcessStatus::Running => write!(f, "running"),
-            ProcessStatus::Sleeping => write!(f, "sleeping"),
-            ProcessStatus::Idle => write!(f, "idle"),
-            ProcessStatus::Stopped => write!(f, "stopped"),
-            ProcessStatus::Zombie => write!(f, "zombie"),
-            ProcessStatus::Dead => write!(f, "dead"),
-            ProcessStatus::Unknown => write!(f, "unknown"),
         }
     }
 }
@@ -232,22 +223,43 @@ pub struct ProcessEntry {
     pub mem_pct: f32,
     pub virt_bytes: u64,
     pub status: ProcessStatus,
-    pub start_time: u64, // unix timestamp
-    pub run_time: u64,   // seconds
+    pub start_time: u64,
+    pub run_time: u64,
     pub nice: i32,
     pub threads: u32,
     pub read_bytes: u64,
     pub write_bytes: u64,
     pub parent_pid: Option<u32>,
     /// Kernel raw priority from /proc/<pid>/stat field 18.
-    /// For normal processes: 0–39 (20 = nice 0). Negative = RT process.
+    /// For normal processes: 0-39 (20 = nice 0). Negative = RT process.
     pub priority: i32,
-    /// Shared memory in bytes (SHR) from /proc/<pid>/statm field 3 × page_size.
+    /// Shared memory in bytes (SHR) from /proc/<pid>/statm field 3 x page_size.
     pub shr_bytes: u64,
     /// Total CPU time in seconds: (utime + stime) / ticks_per_second.
     pub cpu_time_secs: f64,
+    pub exe: Option<String>,
+    pub cwd: Option<String>,
+    pub root: Option<String>,
+    pub effective_user: Option<String>,
+    pub group: Option<String>,
+    pub effective_group: Option<String>,
+    pub session_id: Option<u32>,
+    pub tty: Option<String>,
+    pub user_cpu_time_secs: f64,
+    pub system_cpu_time_secs: f64,
+    pub minor_faults: u64,
+    pub major_faults: u64,
+    pub voluntary_ctxt_switches: Option<u64>,
+    pub nonvoluntary_ctxt_switches: Option<u64>,
+    pub fd_count: Option<usize>,
+    pub swap_bytes: Option<u64>,
+    pub io_read_calls: Option<u64>,
+    pub io_write_calls: Option<u64>,
+    pub io_read_chars: Option<u64>,
+    pub io_write_chars: Option<u64>,
+    pub cancelled_write_bytes: Option<u64>,
     /// True when this entry represents a kernel thread (task) rather than a
-    /// standalone process.  Threads share their parent's address space so
+    /// standalone process. Threads share their parent's address space so
     /// memory columns are not meaningful.
     pub is_thread: bool,
 }
@@ -257,6 +269,8 @@ pub struct ProcSnapshot {
     pub processes: Vec<ProcessEntry>,
 }
 
+#[cfg(any(test, feature = "test-stubs"))]
+#[allow(dead_code)]
 impl ProcSnapshot {
     pub fn stub() -> Self {
         Self {
@@ -272,7 +286,7 @@ impl ProcSnapshot {
                     virt_bytes: 176_160_768,
                     status: ProcessStatus::Sleeping,
                     start_time: 0,
-                    run_time: 86400,
+                    run_time: 86_400,
                     nice: 0,
                     threads: 1,
                     read_bytes: 0,
@@ -281,6 +295,27 @@ impl ProcSnapshot {
                     priority: 20,
                     shr_bytes: 8_388_608,
                     cpu_time_secs: 323.0,
+                    exe: Some("/usr/lib/systemd/systemd".into()),
+                    cwd: Some("/".into()),
+                    root: Some("/".into()),
+                    effective_user: Some("0".into()),
+                    group: Some("0".into()),
+                    effective_group: Some("0".into()),
+                    session_id: Some(1),
+                    tty: None,
+                    user_cpu_time_secs: 200.0,
+                    system_cpu_time_secs: 123.0,
+                    minor_faults: 100,
+                    major_faults: 1,
+                    voluntary_ctxt_switches: Some(12),
+                    nonvoluntary_ctxt_switches: Some(3),
+                    fd_count: Some(64),
+                    swap_bytes: Some(0),
+                    io_read_calls: Some(0),
+                    io_write_calls: Some(0),
+                    io_read_chars: Some(0),
+                    io_write_chars: Some(0),
+                    cancelled_write_bytes: Some(0),
                     is_thread: false,
                 },
                 ProcessEntry {
@@ -294,7 +329,7 @@ impl ProcSnapshot {
                     virt_bytes: 15_728_640,
                     status: ProcessStatus::Sleeping,
                     start_time: 0,
-                    run_time: 86400,
+                    run_time: 86_400,
                     nice: 0,
                     threads: 1,
                     read_bytes: 0,
@@ -303,6 +338,27 @@ impl ProcSnapshot {
                     priority: 20,
                     shr_bytes: 3_145_728,
                     cpu_time_secs: 1.0,
+                    exe: Some("/usr/sbin/sshd".into()),
+                    cwd: Some("/".into()),
+                    root: Some("/".into()),
+                    effective_user: Some("0".into()),
+                    group: Some("0".into()),
+                    effective_group: Some("0".into()),
+                    session_id: Some(500),
+                    tty: None,
+                    user_cpu_time_secs: 0.7,
+                    system_cpu_time_secs: 0.3,
+                    minor_faults: 20,
+                    major_faults: 0,
+                    voluntary_ctxt_switches: Some(2),
+                    nonvoluntary_ctxt_switches: Some(1),
+                    fd_count: Some(12),
+                    swap_bytes: Some(0),
+                    io_read_calls: Some(0),
+                    io_write_calls: Some(0),
+                    io_read_chars: Some(0),
+                    io_write_chars: Some(0),
+                    cancelled_write_bytes: Some(0),
                     is_thread: false,
                 },
                 ProcessEntry {
@@ -316,7 +372,7 @@ impl ProcSnapshot {
                     virt_bytes: 12_582_912,
                     status: ProcessStatus::Sleeping,
                     start_time: 0,
-                    run_time: 3600,
+                    run_time: 3_600,
                     nice: 0,
                     threads: 1,
                     read_bytes: 0,
@@ -325,6 +381,27 @@ impl ProcSnapshot {
                     priority: 20,
                     shr_bytes: 2_097_152,
                     cpu_time_secs: 0.5,
+                    exe: Some("/bin/bash".into()),
+                    cwd: Some("/home/ray/src/dreidel".into()),
+                    root: Some("/".into()),
+                    effective_user: Some("1000".into()),
+                    group: Some("1000".into()),
+                    effective_group: Some("1000".into()),
+                    session_id: Some(500),
+                    tty: Some("136:1".into()),
+                    user_cpu_time_secs: 0.4,
+                    system_cpu_time_secs: 0.1,
+                    minor_faults: 8,
+                    major_faults: 0,
+                    voluntary_ctxt_switches: Some(15),
+                    nonvoluntary_ctxt_switches: Some(1),
+                    fd_count: Some(9),
+                    swap_bytes: Some(0),
+                    io_read_calls: Some(12),
+                    io_write_calls: Some(4),
+                    io_read_chars: Some(1024),
+                    io_write_chars: Some(512),
+                    cancelled_write_bytes: Some(0),
                     is_thread: false,
                 },
                 ProcessEntry {
@@ -338,7 +415,7 @@ impl ProcSnapshot {
                     virt_bytes: 2_147_483_648,
                     status: ProcessStatus::Running,
                     start_time: 0,
-                    run_time: 3600,
+                    run_time: 3_600,
                     nice: -5,
                     threads: 42,
                     read_bytes: 0,
@@ -347,6 +424,27 @@ impl ProcSnapshot {
                     priority: 15,
                     shr_bytes: 134_217_728,
                     cpu_time_secs: 123.4,
+                    exe: Some("/usr/bin/firefox".into()),
+                    cwd: Some("/home/ray".into()),
+                    root: Some("/".into()),
+                    effective_user: Some("1000".into()),
+                    group: Some("1000".into()),
+                    effective_group: Some("1000".into()),
+                    session_id: Some(500),
+                    tty: Some("136:1".into()),
+                    user_cpu_time_secs: 100.0,
+                    system_cpu_time_secs: 23.4,
+                    minor_faults: 20_000,
+                    major_faults: 10,
+                    voluntary_ctxt_switches: Some(5_000),
+                    nonvoluntary_ctxt_switches: Some(250),
+                    fd_count: Some(300),
+                    swap_bytes: Some(16_777_216),
+                    io_read_calls: Some(5_000),
+                    io_write_calls: Some(2_500),
+                    io_read_chars: Some(134_217_728),
+                    io_write_chars: Some(67_108_864),
+                    cancelled_write_bytes: Some(4096),
                     is_thread: false,
                 },
             ],

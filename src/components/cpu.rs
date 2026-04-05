@@ -16,7 +16,7 @@ use ratatui::{
 use crate::{
     action::Action,
     components::{Component, FilterEvent, FilterInput, HISTORY_LEN, SERIES_COLORS, keyed_title},
-    stats::snapshots::CpuSnapshot,
+    stats::snapshots::{CpuPanelState, CpuSnapshot},
     theme::ColorPalette,
 };
 
@@ -27,7 +27,7 @@ fn core_color(idx: usize) -> Color {
 #[derive(Debug)]
 struct CpuCompactSnapshot {
     scroll_offset: usize,
-    state: CpuState,
+    state: CpuPanelState,
     filter: String,
 }
 
@@ -89,6 +89,22 @@ impl CpuComponent {
 
     fn num_cores(&self) -> usize {
         self.latest.as_ref().map(|s| s.per_core.len()).unwrap_or(0)
+    }
+
+    fn to_snapshot_state(&self) -> CpuPanelState {
+        match &self.state {
+            CpuState::Normal => CpuPanelState::Normal,
+            CpuState::FilterMode { input } => CpuPanelState::FilterMode {
+                input: input.clone(),
+            },
+        }
+    }
+
+    fn from_snapshot_state(state: CpuPanelState) -> CpuState {
+        match state {
+            CpuPanelState::Normal => CpuState::Normal,
+            CpuPanelState::FilterMode { input } => CpuState::FilterMode { input },
+        }
     }
 
     /// Returns the indices of cores whose label matches the active filter.
@@ -166,7 +182,7 @@ impl CpuComponent {
         ];
         #[cfg(target_os = "linux")]
         {
-            if let Some(temp) = snap.temperature {
+            if let Some(temp) = snap.package_temp {
                 row1_spans.push(Span::styled("  Temp: ", dim));
                 row1_spans.push(Span::styled(format!("{temp:.0}°C"), val));
             }
@@ -187,16 +203,23 @@ impl CpuComponent {
         first: usize,
         last: usize,
     ) {
-        // Label column: "cpu00  100%" = 11 chars inner + 1 for Borders::LEFT = 12 total.
-        const LABEL_INNER_W: u16 = 11;
-        const LABEL_TOTAL_W: u16 = LABEL_INNER_W + 1;
+        // Label column width depends on whether per-core temps are available.
+        // Without temps: "cpu00  100%" = 11 chars.
+        // With temps:    "cpu00  100%  55°C" = 17 chars.
+        #[cfg(target_os = "linux")]
+        let has_temps = snap.per_core_temp.iter().any(|t| t.is_some());
+        #[cfg(not(target_os = "linux"))]
+        let has_temps = false;
 
-        if area.width <= LABEL_TOTAL_W + 4 {
+        let label_inner_w: u16 = if has_temps { 18 } else { 11 };
+        let label_total_w: u16 = label_inner_w + 1; // +1 for Borders::LEFT
+
+        if area.width <= label_total_w + 4 {
             return;
         }
 
         let [graph_area, label_area] =
-            Layout::horizontal([Constraint::Fill(1), Constraint::Length(LABEL_TOTAL_W)])
+            Layout::horizontal([Constraint::Fill(1), Constraint::Length(label_total_w)])
                 .areas(area);
 
         // `filtered`, `first`, and `last` are pre-computed by the caller (`draw`)
@@ -262,11 +285,18 @@ impl CpuComponent {
 
         for (row_idx, &core_idx) in filtered[first..first + actual_visible].iter().enumerate() {
             let pct = snap.per_core[core_idx];
-            let label = Span::styled(
-                // "cpu00  100%" — index padded to 2, pct right-aligned in 5, one decimal
-                format!("cpu{:<2}{:>5.1}%", core_idx, pct),
-                Style::new().fg(core_color(core_idx)),
-            );
+            let mut text = format!("cpu{:<2}{:>5.1}%", core_idx, pct);
+
+            #[cfg(target_os = "linux")]
+            if has_temps {
+                if let Some(Some(temp)) = snap.per_core_temp.get(core_idx) {
+                    text.push_str(&format!(" {:>4.0}°C", temp));
+                } else {
+                    text.push_str("       ");
+                }
+            }
+
+            let label = Span::styled(text, Style::new().fg(core_color(core_idx)));
             frame.render_widget(label, label_rows[row_idx]);
         }
     }
@@ -274,7 +304,7 @@ impl CpuComponent {
     fn restore_compact_snapshot(&mut self) {
         if let Some(snap) = self.compact_snapshot.take() {
             self.scroll_offset = snap.scroll_offset;
-            self.state = snap.state;
+            self.state = Self::from_snapshot_state(snap.state);
             self.filter = snap.filter;
         }
         self.is_fullscreen = false;
@@ -292,7 +322,10 @@ impl CpuComponent {
         };
 
         let live_scroll = std::mem::replace(&mut self.scroll_offset, snap.scroll_offset);
-        let live_state = std::mem::replace(&mut self.state, snap.state.clone());
+        let live_state = std::mem::replace(
+            &mut self.state,
+            Self::from_snapshot_state(snap.state.clone()),
+        );
         let live_filter = std::mem::replace(&mut self.filter, snap.filter.clone());
         let live_fs = std::mem::replace(&mut self.is_fullscreen, false);
         // rendering_as_overlay is already false (consumed at top of draw()),
@@ -406,7 +439,7 @@ impl Component for CpuComponent {
                 if !self.is_fullscreen {
                     self.compact_snapshot = Some(CpuCompactSnapshot {
                         scroll_offset: self.scroll_offset,
-                        state: self.state.clone(),
+                        state: self.to_snapshot_state(),
                         filter: self.filter.clone(),
                     });
                     self.is_fullscreen = true;

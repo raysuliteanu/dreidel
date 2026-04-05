@@ -1,6 +1,8 @@
 # dreidel
 
-**A fast, keyboard-driven terminal system monitor.**
+**A fast, keyboard-driven Linux-first terminal system monitor that combines a
+clear dashboard layout with focused drill-down views for CPU, network, disk,
+and processes.**
 
 ![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-blue)
 ![Language: Rust](https://img.shields.io/badge/language-Rust-orange)
@@ -20,7 +22,8 @@
 dreidel is a terminal UI system monitor that gives you a live view
 of your machine at a glance:
 
-- **CPU** — per-core line charts with scrollable history
+- **CPU** — per-core line charts with scrollable history and
+  per-core temperatures (Linux)
 - **Network** — per-interface RX/TX rates; press `Enter` on any
   interface for a full-screen graph of just that interface
 - **Disk** — per-device read/write rates and usage percentage;
@@ -31,6 +34,22 @@ of your machine at a glance:
 
 Everything is navigable by keyboard, customisable via a config
 file or CLI flags, and designed to stay out of your way.
+
+Why use `dreidel` instead of something else?
+
+- Compared with `top`: `dreidel` is easier to scan, with dedicated CPU,
+  network, disk, and process panels instead of one dense screen.
+- Compared with `htop`: `dreidel` is more dashboard-oriented, with stronger
+  built-in network and disk views.
+- Compared with `btop`: `dreidel` is more restrained and workflow-focused,
+  prioritising fast keyboard navigation over an all-at-once visual dashboard.
+- Compared with `bottom`: `dreidel` is narrower but more opinionated, with a
+  simple multi-panel layout and focused fullscreen drill-downs.
+- Compared with `glances`: `dreidel` is local-first and intentionally simpler,
+  not a remote monitoring or export platform.
+
+In short: `dreidel` is for people who want a fast, keyboard-driven terminal
+dashboard for live system inspection, especially on Linux.
 
 For a full reference of every feature, keybinding, and
 configuration option, see the **[User Guide](USER_GUIDE.md)**.

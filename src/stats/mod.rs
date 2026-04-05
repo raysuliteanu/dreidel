@@ -109,15 +109,23 @@ fn build_cpu(sys: &System, components: &Components) -> CpuSnapshot {
         per_core: cpus.iter().map(|c| c.cpu_usage()).collect(),
         aggregate: sys.global_cpu_usage(),
         frequency: cpus.iter().map(|c| c.frequency()).collect(),
+        scroll_offset: 0,
+        state: CpuPanelState::Normal,
+        filter: String::new(),
         cpu_brand: cpus
             .first()
             .map(|c| c.brand().to_owned())
             .unwrap_or_default(),
         #[cfg(target_os = "linux")]
-        temperature: components
+        package_temp: components
             .iter()
-            .find(|c| c.label().to_lowercase().contains("cpu"))
+            .find(|c| {
+                let l = c.label().to_lowercase();
+                l.contains("package") || l.ends_with(" cpu") || l == "cpu"
+            })
             .and_then(|c| c.temperature()),
+        #[cfg(target_os = "linux")]
+        per_core_temp: build_per_core_temps(components, cpus.len()),
         #[cfg(target_os = "linux")]
         physical_core_count: read_physical_core_count(),
         #[cfg(target_os = "linux")]
@@ -161,6 +169,43 @@ fn read_physical_core_count() -> Option<u32> {
     } else {
         Some(pairs.len() as u32)
     }
+}
+
+/// Build per-logical-core temperature vec by mapping physical core sensors
+/// (from `sysinfo::Components` with labels like "Core 0", "Core 4") to
+/// logical core indices via `/sys/devices/system/cpu/cpuN/topology/core_id`.
+#[cfg(target_os = "linux")]
+fn build_per_core_temps(components: &Components, logical_count: usize) -> Vec<Option<f32>> {
+    // Step 1: collect physical_core_id → temperature from hwmon sensors.
+    let mut phys_temp: std::collections::HashMap<u32, f32> = std::collections::HashMap::new();
+    for c in components.iter() {
+        let label = c.label();
+        // sysinfo labels are "<driver> <sensor_label>", e.g.
+        // "coretemp Core 0", "coretemp Package id 0".
+        // We want the "Core N" part regardless of driver prefix.
+        if let Some(pos) = label.find("Core ")
+            && let Some(rest) = label.get(pos + 5..)
+            && let Ok(phys_id) = rest.trim().parse::<u32>()
+            && let Some(temp) = c.temperature()
+        {
+            phys_temp.insert(phys_id, temp);
+        }
+    }
+
+    if phys_temp.is_empty() {
+        return vec![None; logical_count];
+    }
+
+    // Step 2: map logical core index → physical core id via sysfs topology.
+    (0..logical_count)
+        .map(|cpu| {
+            let path = format!("/sys/devices/system/cpu/cpu{cpu}/topology/core_id");
+            std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|s| s.trim().parse::<u32>().ok())
+                .and_then(|phys_id| phys_temp.get(&phys_id).copied())
+        })
+        .collect()
 }
 
 /// Read the scaling governor for cpu0 from sysfs.
@@ -310,7 +355,28 @@ fn build_proc(sys: &System) -> ProcSnapshot {
                     parent_pid: p.parent().map(|pid| pid.as_u32()),
                     priority: 0,
                     shr_bytes: 0,
-                    cpu_time_secs: 0.0,
+                    cpu_time_secs: p.accumulated_cpu_time() as f64 / 1000.0,
+                    exe: p.exe().map(|path| path.to_string_lossy().into_owned()),
+                    cwd: p.cwd().map(|path| path.to_string_lossy().into_owned()),
+                    root: p.root().map(|path| path.to_string_lossy().into_owned()),
+                    effective_user: p.effective_user_id().map(|u| u.to_string()),
+                    group: p.group_id().map(|g| g.to_string()),
+                    effective_group: p.effective_group_id().map(|g| g.to_string()),
+                    session_id: p.session_id().map(|sid| sid.as_u32()),
+                    tty: None,
+                    user_cpu_time_secs: 0.0,
+                    system_cpu_time_secs: 0.0,
+                    minor_faults: 0,
+                    major_faults: 0,
+                    voluntary_ctxt_switches: None,
+                    nonvoluntary_ctxt_switches: None,
+                    fd_count: None,
+                    swap_bytes: None,
+                    io_read_calls: None,
+                    io_write_calls: None,
+                    io_read_chars: None,
+                    io_write_chars: None,
+                    cancelled_write_bytes: None,
                     is_thread: false,
                 };
 
@@ -320,11 +386,35 @@ fn build_proc(sys: &System) -> ProcSnapshot {
                         entry.priority = stat.priority as i32;
                         entry.nice = stat.nice as i32;
                         entry.threads = stat.num_threads as u32;
-                        entry.cpu_time_secs =
-                            (stat.utime + stat.stime) as f64 / procfs::ticks_per_second() as f64;
+                        entry.user_cpu_time_secs =
+                            stat.utime as f64 / procfs::ticks_per_second() as f64;
+                        entry.system_cpu_time_secs =
+                            stat.stime as f64 / procfs::ticks_per_second() as f64;
+                        entry.cpu_time_secs = entry.user_cpu_time_secs + entry.system_cpu_time_secs;
+                        entry.minor_faults = stat.minflt;
+                        entry.major_faults = stat.majflt;
+                        let (tty_major, tty_minor) = stat.tty_nr();
+                        if tty_major != 0 || tty_minor != 0 {
+                            entry.tty = Some(format!("{tty_major}:{tty_minor}"));
+                        }
                     }
                     if let Ok(statm) = proc.statm() {
                         entry.shr_bytes = statm.shared * procfs::page_size();
+                    }
+                    if let Ok(status) = proc.status() {
+                        entry.voluntary_ctxt_switches = status.voluntary_ctxt_switches;
+                        entry.nonvoluntary_ctxt_switches = status.nonvoluntary_ctxt_switches;
+                        entry.swap_bytes = status.vmswap.map(|kb| kb * 1024);
+                    }
+                    if let Ok(io) = proc.io() {
+                        entry.io_read_calls = Some(io.syscr);
+                        entry.io_write_calls = Some(io.syscw);
+                        entry.io_read_chars = Some(io.rchar);
+                        entry.io_write_chars = Some(io.wchar);
+                        entry.cancelled_write_bytes = Some(io.cancelled_write_bytes);
+                    }
+                    if let Ok(fd_count) = proc.fd_count() {
+                        entry.fd_count = Some(fd_count);
                     }
                 }
 
@@ -392,6 +482,27 @@ fn enumerate_threads(sys: &System) -> Vec<ProcessEntry> {
                         priority: stat.priority as i32,
                         shr_bytes: 0,
                         cpu_time_secs: (stat.utime + stat.stime) as f64 / tps,
+                        exe: None,
+                        cwd: None,
+                        root: None,
+                        effective_user: None,
+                        group: None,
+                        effective_group: None,
+                        session_id: None,
+                        tty: None,
+                        user_cpu_time_secs: stat.utime as f64 / tps,
+                        system_cpu_time_secs: stat.stime as f64 / tps,
+                        minor_faults: stat.minflt,
+                        major_faults: stat.majflt,
+                        voluntary_ctxt_switches: None,
+                        nonvoluntary_ctxt_switches: None,
+                        fd_count: None,
+                        swap_bytes: None,
+                        io_read_calls: None,
+                        io_write_calls: None,
+                        io_read_chars: None,
+                        io_write_chars: None,
+                        cancelled_write_bytes: None,
                         is_thread: true,
                     });
                 }
