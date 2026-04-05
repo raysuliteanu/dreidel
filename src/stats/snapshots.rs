@@ -26,6 +26,15 @@ impl std::fmt::Display for ProcessStatus {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum CpuPanelState {
+    #[default]
+    Normal,
+    FilterMode {
+        input: String,
+    },
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct CpuSnapshot {
@@ -47,28 +56,19 @@ pub struct CpuSnapshot {
 impl CpuSnapshot {
     pub fn stub() -> Self {
         Self {
-            aggregate: 23.5,
-            per_core: vec![12.0, 34.0, 21.0, 27.0],
-            frequency: vec![3200, 3200, 3200, 3200],
+            aggregate: 35.0,
+            per_core: vec![42.0, 18.0, 75.0, 5.0],
+            frequency: vec![3400, 3400, 3400, 3400],
             scroll_offset: 0,
             state: CpuPanelState::Normal,
             filter: String::new(),
-            physical_core_count: Some(2),
-            cpu_brand: "Stub CPU".into(),
-            package_temp: Some(56.0),
-            per_core_temp: vec![Some(54.0), Some(55.0), Some(57.0), Some(58.0)],
-            governor: Some("performance".into()),
+            physical_core_count: Some(4),
+            cpu_brand: "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz".into(),
+            package_temp: Some(62.0),
+            per_core_temp: vec![Some(55.0), Some(58.0), Some(60.0), Some(52.0)],
+            governor: Some("powersave".into()),
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum CpuPanelState {
-    #[default]
-    Normal,
-    FilterMode {
-        input: String,
-    },
 }
 
 #[allow(dead_code)]
@@ -87,10 +87,10 @@ pub struct MemSnapshot {
 impl MemSnapshot {
     pub fn stub() -> Self {
         Self {
-            ram_total: 16 * 1024 * 1024 * 1024,
-            ram_used: 7 * 1024 * 1024 * 1024,
-            swap_total: 4 * 1024 * 1024 * 1024,
-            swap_used: 512 * 1024 * 1024,
+            ram_total: 17_179_869_184,
+            ram_used: 6_442_450_944,
+            swap_total: 4_294_967_296,
+            swap_used: 0,
             swap_in_bytes: 0,
             swap_out_bytes: 0,
         }
@@ -127,16 +127,16 @@ impl NetSnapshot {
         Self {
             interfaces: vec![InterfaceSnapshot {
                 name: "eth0".into(),
-                rx_bytes: 1024,
-                tx_bytes: 2048,
-                rx_packets: 10,
-                tx_packets: 8,
+                rx_bytes: 4_800_000,
+                tx_bytes: 1_200_000,
+                rx_packets: 3_200,
+                tx_packets: 850,
                 rx_errors: 0,
                 tx_errors: 0,
-                total_rx_bytes: 4096,
-                total_tx_bytes: 8192,
-                mac_address: "00:11:22:33:44:55".into(),
-                ip_addresses: vec!["192.168.1.10/24".into()],
+                total_rx_bytes: 48_318_382_080,
+                total_tx_bytes: 12_884_901_888,
+                mac_address: "aa:bb:cc:dd:ee:ff".into(),
+                ip_addresses: vec!["192.168.1.100/24".into(), "fe80::1/64".into()],
                 mtu: 1500,
                 rx_dropped: 0,
                 tx_dropped: 0,
@@ -173,19 +173,19 @@ impl DiskSnapshot {
     pub fn stub() -> Self {
         Self {
             devices: vec![DiskDeviceSnapshot {
-                name: "nvme0n1p2".into(),
-                read_bytes: 4096,
-                write_bytes: 2048,
-                usage_pct: 41.4,
-                total_read_bytes: 1_048_576,
-                total_write_bytes: 524_288,
+                name: "sda".into(),
+                read_bytes: 0,
+                write_bytes: 102_400,
+                usage_pct: 45.0,
+                total_read_bytes: 1_073_741_824,
+                total_write_bytes: 536_870_912,
                 mount_point: "/".into(),
                 file_system: "ext4".into(),
                 kind: "SSD".into(),
                 is_removable: false,
                 is_read_only: false,
-                total_space: 512 * 1024 * 1024 * 1024,
-                available_space: 300 * 1024 * 1024 * 1024,
+                total_space: 500_107_862_016,
+                available_space: 275_059_200_000,
             }],
         }
     }
@@ -203,16 +203,11 @@ pub struct SysSnapshot {
 #[allow(dead_code)]
 impl SysSnapshot {
     pub fn stub() -> Self {
-        use chrono::TimeZone;
-
         Self {
-            hostname: "stub-host".into(),
-            uptime: 3600,
-            load_avg: [0.5, 0.4, 0.3],
-            timestamp: chrono::Local
-                .with_ymd_and_hms(2026, 4, 4, 12, 0, 0)
-                .single()
-                .expect("stub timestamp must exist"),
+            hostname: "dev-box".into(),
+            uptime: 273_600,
+            load_avg: [1.24, 0.98, 0.87],
+            timestamp: chrono::Local::now(),
         }
     }
 }

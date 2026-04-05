@@ -1188,19 +1188,15 @@ fn fmt_opt_bytes(value: Option<u64>) -> String {
     value.map(fmt_bytes).unwrap_or_else(|| "-".into())
 }
 
-fn detail_kv<'a>(
-    label: &'a str,
-    value: impl Into<String>,
-    palette: &ColorPalette,
-) -> Line<'static> {
+fn detail_kv(label: &str, value: impl Into<String>, palette: &ColorPalette) -> Line<'static> {
     Line::from(vec![
         Span::styled(format!(" {label:<15} "), Style::new().fg(palette.dim)),
         Span::styled(value.into(), Style::new().fg(palette.fg)),
     ])
 }
 
-fn detail_header_kv<'a>(
-    label: &'a str,
+fn detail_header_kv(
+    label: &str,
     value: impl Into<String>,
     palette: &ColorPalette,
 ) -> Line<'static> {
