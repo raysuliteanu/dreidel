@@ -16,7 +16,7 @@ use ratatui::{
 use crate::{
     action::Action,
     components::{Component, FilterEvent, FilterInput, HISTORY_LEN, SERIES_COLORS, keyed_title},
-    stats::snapshots::CpuSnapshot,
+    stats::snapshots::{CpuPanelState, CpuSnapshot},
     theme::ColorPalette,
 };
 
@@ -74,6 +74,24 @@ impl Default for CpuComponent {
             is_fullscreen: false,
             compact_snapshot: None,
             rendering_as_overlay: false,
+        }
+    }
+}
+
+impl From<CpuPanelState> for CpuState {
+    fn from(value: CpuPanelState) -> Self {
+        match value {
+            CpuPanelState::Normal => Self::Normal,
+            CpuPanelState::FilterMode { input } => Self::FilterMode { input },
+        }
+    }
+}
+
+impl From<CpuState> for CpuPanelState {
+    fn from(value: CpuState) -> Self {
+        match value {
+            CpuState::Normal => Self::Normal,
+            CpuState::FilterMode { input } => Self::FilterMode { input },
         }
     }
 }
@@ -288,7 +306,7 @@ impl CpuComponent {
     fn restore_compact_snapshot(&mut self) {
         if let Some(snap) = self.compact_snapshot.take() {
             self.scroll_offset = snap.scroll_offset;
-            self.state = snap.state;
+            self.state = snap.state.into();
             self.filter = snap.filter;
         }
         self.is_fullscreen = false;
@@ -306,7 +324,7 @@ impl CpuComponent {
         };
 
         let live_scroll = std::mem::replace(&mut self.scroll_offset, snap.scroll_offset);
-        let live_state = std::mem::replace(&mut self.state, snap.state.clone());
+        let live_state = std::mem::replace(&mut self.state, snap.state.clone().into());
         let live_filter = std::mem::replace(&mut self.filter, snap.filter.clone());
         let live_fs = std::mem::replace(&mut self.is_fullscreen, false);
         // rendering_as_overlay is already false (consumed at top of draw()),
@@ -420,7 +438,7 @@ impl Component for CpuComponent {
                 if !self.is_fullscreen {
                     self.compact_snapshot = Some(CpuCompactSnapshot {
                         scroll_offset: self.scroll_offset,
-                        state: self.state.clone(),
+                        state: self.state.clone().into(),
                         filter: self.filter.clone(),
                     });
                     self.is_fullscreen = true;
