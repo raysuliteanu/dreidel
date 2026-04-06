@@ -133,9 +133,12 @@ the [config file](#keybindings).
 | `Enter`         | Confirm filter and return to list                    | Filter mode  |
 | `s`             | Cycle sort column (left-to-right across visible columns) | List     |
 | `S`             | Toggle sort direction (ascending ↔ descending)       | List         |
+| `t`             | Toggle tree view (parent/child hierarchy)            | List         |
+| `Space`         | Expand/collapse tree node                            | List (tree)  |
 | `k`             | Kill selected process (prompts for confirmation)     | List         |
-| `y` / `Enter`   | Confirm kill                                         | Kill confirm |
-| `n` / `Esc`     | Cancel kill                                          | Kill confirm |
+| `Tab`           | Toggle focus between Cancel and OK buttons           | Kill confirm |
+| `Enter`         | Activate focused button (Cancel or OK)               | Kill confirm |
+| `Esc` / `q`     | Cancel kill                                          | Kill confirm |
 
 ---
 
@@ -159,7 +162,8 @@ for smooth resolution.
 ```
 
 - The label column on the right shows the current percentage for
-  each core.
+  each core. On Linux, per-core temperatures are shown alongside
+  the percentages when sensor data is available.
 - Up to 8 cores are visible in compact mode; use `↑`/`↓` or
   `PageUp`/`PageDown` to scroll.
 
@@ -292,6 +296,17 @@ display order. The active sort column shows `▼` (descending) or
 Default sort order is CPU% descending (configurable via
 `process.default_sort`).
 
+**Tree view**
+
+Press `t` to toggle between flat list and tree view. In tree
+mode, processes are arranged in a parent/child hierarchy with
+indentation showing depth. Press `Space` to collapse or expand a
+node's children. On Linux, per-process threads appear as children
+of their parent process.
+
+To start in tree mode by default, set `show_tree = true` in the
+`[process]` config section.
+
 **Filtering**
 
 Press `/` to open the filter prompt. The title bar changes to
@@ -315,35 +330,38 @@ to the list.
 
 **Detail view**
 
-Press `Enter` on any process to open a full-field detail overlay:
+Press `Enter` on any process to open a two-column detail inspector:
 
 ```
-PID:      1234
-Name:     firefox
-Cmd:      /usr/lib/firefox/firefox
-User:     alice
-Status:   S
-CPU:      42.1%
-MEM:      3.2%  (512 MB)
-Virt:     4.1 GB
-Nice:     0
-Threads:  42
-I/O R:    1.2 MB
-I/O W:    340 KB
+ Name:     firefox
+ Command:  firefox --new-window
+ Exe:      /usr/bin/firefox
+ CWD:      /home/alice
+─────────────────────────────────────────────────────────────────
+ PID             1234            PPID            1
+ User            alice           Status          running
+ Type            process         Session         500
+ CPU             42.1%           CPU time        2h 03m 12s
+ User CPU        1h 40m 00s      Sys CPU         0m 23s
+ MEM             3.2% (536.9 MB) VIRT            2.1 GB
+ SHR             134.2 MB        Swap            16.8 MB
+ Threads         42              FDs             300
+ ...
+─────────────────────────────────────────────────────────────────
+                          [Esc/q] back
 ```
 
-Press `Esc` or `q` to close.
+The left column shows identity, CPU, memory, scheduling, and fault
+data; the right column shows corresponding paired fields. Press
+`Esc` or `q` to close.
 
 **Killing a process**
 
-Press `k` to kill the selected process. A confirmation prompt
-appears:
-
-```
-Kill firefox (pid 1234)? [y/n]
-```
-
-Press `y` or `Enter` to send SIGTERM, or `n`/`Esc` to cancel. If
+Press `k` to kill the selected process. A confirmation dialog
+appears with **Cancel** (focused by default) and **OK** buttons.
+Use `Tab` to switch focus between buttons. Press `Enter` to
+activate the focused button, or `Esc`/`q` to cancel. Confirming
+sends `SIGTERM` to the process. If
 the kill fails (e.g., insufficient permissions), an error dialog
 appears; press `Enter`, `Esc`, or `Space` to dismiss.
 
@@ -475,6 +493,7 @@ Available slot names per preset:
 | `sidebar`   | `left_top`, `left_bot`, `left_extra`, `right`   |
 | `classic`   | `top_left`, `top_right_top`, `top_right_bot`, `bottom` |
 | `dashboard` | `top`, `mid_left`, `mid_right`, `bottom`        |
+| `grid`      | `grid_left_mid`, `grid_left_bot`, `grid_right_top`, `grid_right_bot` |
 
 ---
 
@@ -502,12 +521,14 @@ dreidel [OPTIONS]
 | ----------------------- | ------------------------------- | ------------------------------------------------------------------ |
 | `--theme <THEME>`       | `auto`                          | Color theme: `auto` \| `light` \| `dark`                           |
 | `--refresh-rate <RATE>` | `1s`                            | Stats refresh interval, e.g. `500ms`, `2s`                         |
+| `--thread-refresh <RATE>` | `5s`                          | Thread enumeration interval (Linux), e.g. `5s`, `10s`             |
 | `--preset <LAYOUT>`     | `sidebar`                       | Layout: `sidebar` \| `classic` \| `dashboard` \| `grid`            |
 | `--show <COMPONENTS>`   | _(all)_                         | Comma-separated list of components to show: `cpu,net,disk,process` |
 | `--hide <COMPONENTS>`   | _(none)_                        | Components to hide (takes precedence over `--show`)                |
 | `--status-bar <POS>`    | `top`                           | Status bar position: `top` \| `bottom` \| `hidden`                 |
 | `--config <PATH>`       | `~/.config/dreidel/config.toml` | Path to an alternate config file                                   |
 | `--init-config`         | —                               | Print a default config template to stdout and exit                 |
+| `--detect-theme`        | —                               | Print terminal theme detection diagnostics and exit                |
 | `-v` / `-vv`            | —                               | Increase log verbosity (INFO / DEBUG)                              |
 | `--help`                | —                               | Show usage and exit                                                |
 | `--version`             | —                               | Show version and exit                                              |
@@ -545,6 +566,11 @@ can save and edit.
 [general]
 # Stats refresh interval. Humantime format: "500ms", "1s", "2s", etc.
 refresh_rate = "1s"
+
+# How often to enumerate per-process threads (Linux only).
+# Thread enumeration is expensive; a slower cadence avoids thousands
+# of syscalls every tick.
+thread_refresh = "5s"
 
 # Color theme: "auto" | "light" | "dark"
 theme = "auto"
@@ -585,6 +611,9 @@ default_sort = "cpu"
 
 # Default sort direction: "asc" | "desc"
 default_sort_dir = "desc"
+
+# Start in tree view (parent/child hierarchy) instead of flat list.
+show_tree = false
 ```
 
 ### \[keybindings\]

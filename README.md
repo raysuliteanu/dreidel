@@ -29,7 +29,7 @@ of your machine at a glance:
 - **Disk** — per-device read/write rates and usage percentage;
   same per-device detail view
 - **Process** — sortable, filterable process table with a detail
-  overlay and kill support
+  overlay and signal support (`SIGTERM`)
 - **Status bar** — clock, uptime, load averages, and RAM/swap gauges
 
 Everything is navigable by keyboard, customisable via a config

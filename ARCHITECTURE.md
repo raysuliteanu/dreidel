@@ -7,7 +7,7 @@ a message-passing action bus to decouple data collection from rendering.
 
 The crate is a dual lib+bin package:
 
-- `src/lib.rs` — re-exports all public modules; used by integration tests and the binary
+- `src/lib.rs` — re-exports public modules; used by integration tests and benchmarks
 - `src/main.rs` — thin entry point: parses CLI args, loads config, runs `App`
 
 ## Key Third-Party Crates
@@ -46,7 +46,7 @@ tokio::mpsc channel  (bounded, capacity from config)
       ▼
 App::handle_actions()                  (main async loop)
       │  dispatches to every Component via comp.update(action)
-      │  handles UI state (focus, fullscreen, debug, quit)
+      │  handles UI state (focus, fullscreen, help, quit)
       ▼
 App::render()
       │  calls LayoutPreset::compute() to map SlotId → Rect
@@ -208,7 +208,7 @@ The process panel has an explicit `ProcessState` enum:
 - `NormalList` — default scrollable table
 - `FilterMode { input }` — incremental filter bar, `Esc` returns to `NormalList`
 - `DetailView { pid }` — expanded single-process view rendered as a two-column name/value inspector
-- `KillConfirm { pid, name }` — confirmation dialog before sending `SIGKILL`
+- `KillConfirm { pid, name }` — confirmation dialog before sending `SIGTERM`
 - `KillError { message }` — error dialog if kill fails
 
 Sorting (`process/sort.rs`) and filtering (`process/filter.rs`) are in separate
@@ -293,10 +293,15 @@ construction time; they do not query a global.
 
 - `--config <path>` — override config file location
 - `--init-config` — print the default config template and exit
+- `--detect-theme` — print terminal theme detection diagnostics and exit
+- `--theme <THEME>` — override color theme (`auto`, `light`, `dark`)
 - `--refresh-rate <RATE>` — override refresh interval (e.g. `500ms`, `2s`)
 - `--thread-refresh <RATE>` — override thread enumeration interval (e.g. `5s`, `10s`)
+- `--preset <LAYOUT>` — override layout preset (`sidebar`, `classic`, `dashboard`, `grid`)
+- `--status-bar <POS>` — override status bar position (`top`, `bottom`, `hidden`)
 - `--show` / `--hide` — override which components are visible (comma-separated
   `ComponentId` strings)
+- `-v` / `--verbose` — increase log verbosity (`-v` = info, `-vv` = debug)
 
 ## Testing
 
