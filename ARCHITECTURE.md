@@ -24,7 +24,6 @@ The crate is a dual lib+bin package:
 | `serde` / `toml`                 | Config file deserialization                                                         |
 | `humantime`                      | Parses human-readable durations (`"1s"`, `"500ms"`) in config                       |
 | `anyhow`                         | Application-level error context                                                     |
-| `thiserror`                      | Typed error definitions (errors module)                                             |
 | `strum`                          | Derive `Display`, `EnumString`, `EnumIter` on enums (`ComponentId`, `LayoutPreset`) |
 | `chrono`                         | Timestamps in `SysSnapshot`                                                         |
 | `dirs`                           | XDG config directory path resolution                                                |
@@ -89,16 +88,15 @@ handler sees them.
 The single enum that all app logic communicates through:
 
 - Infrastructure: `Render`, `Quit`, `Suspend`, `Resume`, `Resize`, `ClearScreen`
-- UI state: `FocusComponent(ComponentId)`, `ToggleFullScreen`, `ToggleDebug`, `ToggleHelp`
+- UI state: `FocusComponent(ComponentId)`, `ToggleFullScreen`, `ToggleHelp`
 - Metric payloads: `CpuUpdate(CpuSnapshot)`, `MemUpdate`, `NetUpdate`, `DiskUpdate`,
   `ProcUpdate`, `SysUpdate` — these carry the snapshot structs from the stats collector
   to every component
-- Debug: `DebugSnapshot(String)`
 
 `Action` derives `Clone` for cases where the app needs to re-queue an action (e.g.
 `Render`). It is **not** cloned to fan-out to components — `App::handle_actions` passes
-`&action` to each component's `update` method. Payload variants are `#[serde(skip)]`
-because the snapshot structs are not serializable.
+`&action` to each component's `update` method. The enum is not serializable; it uses `strum::Display`
+for debug/logging purposes only.
 
 ### `src/tui.rs` — `Tui`
 
@@ -201,7 +199,6 @@ the lowercase string representations (`"cpu"`, `"mem"`, `"net"`, `"disk"`,
 | `disk.rs`        | `DiskComponent`      | Per-device read/write/usage table; uses shared `ListView` + `FilterInput` |
 | `process/mod.rs` | `ProcessComponent`   | Sortable process table with state machine (see below)            |
 | `status_bar.rs`  | `StatusBarComponent` | Top/bottom strip: hostname, uptime, load avg, time               |
-| `debug.rs`       | `DebugComponent`     | Right-side debug sidebar; receives `DebugSnapshot` action        |
 | `help.rs`        | `HelpComponent`      | Full-screen overlay listing all keybindings                      |
 
 #### `ProcessComponent` state machine
@@ -300,10 +297,6 @@ construction time; they do not query a global.
 - `--thread-refresh <RATE>` — override thread enumeration interval (e.g. `5s`, `10s`)
 - `--show` / `--hide` — override which components are visible (comma-separated
   `ComponentId` strings)
-
-### `src/errors.rs`
-
-`thiserror`-based error types for the crate's public error surface.
 
 ## Testing
 

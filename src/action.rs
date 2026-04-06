@@ -3,10 +3,9 @@
 use crate::stats::snapshots::{
     CpuSnapshot, DiskSnapshot, MemSnapshot, NetSnapshot, ProcSnapshot, SysSnapshot,
 };
-use serde::{Deserialize, Serialize};
 use strum::Display;
 
-#[derive(Debug, Clone, Display, Serialize, Deserialize)]
+#[derive(Debug, Clone, Display)]
 pub enum Action {
     // Infrastructure
     Render,
@@ -21,21 +20,14 @@ pub enum Action {
     #[allow(dead_code)] // reserved for future error reporting to the UI layer
     Error(String),
     // Focus
-    #[serde(skip)]
     FocusComponent(crate::components::ComponentId),
     ToggleFullScreen,
     ToggleHelp,
-    // Metric updates — payloads are not serializable so skipped in serde
-    #[serde(skip)]
+    // Metric updates from the stats collector
     SysUpdate(SysSnapshot),
-    #[serde(skip)]
     CpuUpdate(CpuSnapshot),
-    #[serde(skip)]
     MemUpdate(MemSnapshot),
-    #[serde(skip)]
     NetUpdate(NetSnapshot),
-    #[serde(skip)]
     DiskUpdate(DiskSnapshot),
-    #[serde(skip)]
     ProcUpdate(ProcSnapshot),
 }
