@@ -15,7 +15,7 @@
 set -euo pipefail
 
 DRY_RUN=false
-LEVEL=patch
+LEVEL="patch"
 
 for arg in "$@"; do
     case "$arg" in
