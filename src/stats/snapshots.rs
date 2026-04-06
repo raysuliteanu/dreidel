@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! Snapshot data structs carried by [`Action`](crate::action::Action) variants.
+//!
+//! These are plain data containers with no logic. Each struct has a
+//! `.stub()` constructor (behind `#[cfg(any(test, feature = "test-stubs"))]`)
+//! for use in tests without a live stats collector.
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcessStatus {
     Running,
@@ -223,10 +229,10 @@ pub struct ProcessEntry {
     pub read_bytes: u64,
     pub write_bytes: u64,
     pub parent_pid: Option<u32>,
-    /// Kernel raw priority from /proc/<pid>/stat field 18.
+    /// Kernel raw priority from `/proc/<pid>/stat` field 18.
     /// For normal processes: 0-39 (20 = nice 0). Negative = RT process.
     pub priority: i32,
-    /// Shared memory in bytes (SHR) from /proc/<pid>/statm field 3 x page_size.
+    /// Shared memory in bytes (SHR) from `/proc/<pid>/statm` field 3 x page_size.
     pub shr_bytes: u64,
     /// Total CPU time in seconds: (utime + stime) / ticks_per_second.
     pub cpu_time_secs: f64,

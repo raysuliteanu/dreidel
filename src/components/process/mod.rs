@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! Process panel — sortable, filterable process table with detail inspector.
+//!
+//! Supports flat list and tree view modes, per-column sorting, incremental
+//! name/PID/status filtering, a two-column detail inspector (Enter), and
+//! `SIGTERM` kill with confirmation dialog (k).
+
 pub mod filter;
 pub mod sort;
 pub mod tree;

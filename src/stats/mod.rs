@@ -1,5 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! Background stats collector.
+//!
+//! [`spawn_collector`] launches a Tokio task that refreshes system metrics on
+//! two intervals: a fast cadence (default 1 s) for CPU, memory, network, disk,
+//! and process data, and a slow cadence (default 5 s) for per-process thread
+//! enumeration (Linux only). Each tick builds snapshot structs and sends them
+//! as [`Action`] variants on a bounded `mpsc` channel.
+
 pub mod snapshots;
 pub use snapshots::*;
 

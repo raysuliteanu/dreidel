@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! Help overlay — fullscreen keybinding reference.
+//!
+//! Activated by pressing `?`. Displays all keyboard shortcuts, the config
+//! file path, and the log file path. The dashboard continues updating behind
+//! the overlay.
+
 use anyhow::Result;
 use ratatui::{
     Frame,

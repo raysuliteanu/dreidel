@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! CPU panel — per-core usage line chart with scrollable history.
+//!
+//! Renders braille-character sparklines for each logical core, a label column
+//! showing current usage percentage (and per-core temperature on Linux), and
+//! an optional stats header in fullscreen mode with CPU brand, core counts,
+//! frequency, package temperature, and governor.
+
 use std::collections::VecDeque;
 
 use anyhow::Result;

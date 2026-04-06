@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! Status bar — hostname, uptime, load averages, clock, and RAM/swap gauges.
+//!
+//! Positioned at the top (default), bottom, or hidden via config. Consumes
+//! [`SysUpdate`](crate::action::Action::SysUpdate) and
+//! [`MemUpdate`](crate::action::Action::MemUpdate) actions.
+
 use anyhow::Result;
 use ratatui::{
     Frame,

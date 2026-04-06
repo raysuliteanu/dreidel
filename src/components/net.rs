@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! Network panel — per-interface TX/RX rate table with aggregate chart.
+//!
+//! In list mode shows all interfaces with live rates; in wide/fullscreen
+//! mode adds packet rates and IP addresses. Pressing Enter on an interface
+//! opens a per-interface detail graph.
+
 use std::collections::{HashMap, VecDeque};
 
 use anyhow::Result;

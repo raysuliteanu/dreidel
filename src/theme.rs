@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! Color theme definitions.
+//!
+//! [`Theme`] selects auto/light/dark; [`ColorPalette`] provides named semantic
+//! color roles (`fg`, `bg`, `border`, `accent`, `warn`, `critical`, `dim`,
+//! `highlight`) used by all components.
+
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 

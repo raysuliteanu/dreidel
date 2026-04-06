@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! Top-level application struct and event loop.
+//!
+//! [`App`] owns the action channel, all component instances, focus/fullscreen
+//! state, and the layout engine. Its [`run`](App::run) method is the main
+//! async loop: read terminal events → dispatch actions → render.
+
 use anyhow::{Context, Result};
 use crossterm::event::KeyEvent;
 use ratatui::{
