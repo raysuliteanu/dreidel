@@ -23,6 +23,21 @@ cargo test components::cpu    # filter by module/name
 INSTA_UPDATE=always cargo test  # accept updated insta snapshots
 ```
 
+## Documentation Screenshots
+
+The `USER_GUIDE.md` includes text-based screenshots rendered from real component
+output via `ratatui::backend::TestBackend`. To regenerate them after a rendering
+change:
+
+```bash
+cargo test --test doc_screenshots
+```
+
+This writes updated `.txt` files to `docs/screenshots/`. The screenshots use
+stub data (`.stub()` constructors) so they are deterministic and don't require
+a live system. Replaced sections in `USER_GUIDE.md` are marked with
+`<!-- Auto-generated: cargo test --test doc_screenshots -->` comments.
+
 ## Code Quality
 
 ```bash

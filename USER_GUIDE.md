@@ -152,13 +152,19 @@ for smooth resolution.
 
 **Compact layout** (left column of sidebar/classic presets):
 
+<!-- Auto-generated: cargo test --test doc_screenshots -->
+
 ```
-┌─ CPU ───────────────────────┐
-│⠈⠘⢸⡰⢿⡷⢿⡿⢿⣿⣿  cpu00  12%      │
-│⠁⠸⡐⣀⢰⣿⡿⡷⡿⣟⢿  cpu01   8%      │
-│⢀⡀⡀⣴⡿⣿⣾⡿⣿⡿⡿  cpu02   3%      │
-│⡐⡄⢸⢰⣿⣿⣿⣿⣿⣿⣟  cpu03   1%      │
-└─────────────────────────────┘
+┌ [C]PU ───────────────────────────────────────────────────┐
+│                                       │cpu0  42.0%   55°C│
+│                                       │cpu1  18.0%   58°C│
+│                                      ⠁│cpu2  75.0%   60°C│
+│                                       │cpu3   5.0%   52°C│
+│                                      ⠄│                  │
+│                                       │                  │
+│                                      ⠂│                  │
+│                                      ⠂│                  │
+└──────────────────────────────────────────────────────────┘
 ```
 
 - The label column on the right shows the current percentage for
@@ -197,14 +203,17 @@ enough vertical space.
 
 **List view:**
 
+<!-- Auto-generated: cargo test --test doc_screenshots -->
+
 ```
-┌─ Net ───────────────────────────────────────────────────────────────────┐
-│ (aggregate chart, if height ≥ 9 rows)                                   │
-├─────────────────────────────────────────────────────────────────────────┤
-│  Interface      TX             RX                                       │
-│▶ eth0       1.2 MB/s       3.4 MB/s                                     │
-│  lo           0 B/s          0 B/s                                      │
-└─────────────────────────────────────────────────────────────────────────┘
+┌ [N]ET ─────────────────────────────────────────────────────────────┐
+│Iface                                           TX (B/s)    RX (B/s)│
+│eth0                                              1.2 MB      4.8 MB│
+│                                                                    │
+│                                                                    │
+│                                                                    │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 When fullscreen or in a wide layout (≥ 100 columns), additional
@@ -250,12 +259,17 @@ rates and usage percentage. Usage is color-coded green → orange
 
 **List view:**
 
+<!-- Auto-generated: cargo test --test doc_screenshots -->
+
 ```
-┌─ Disk ────────────────────────────────────────────────┐
-│  Device        Read         Write    Usage            │
-│▶ sda        2.1 MB/s     512 KB/s     72%             │
-│  sdb          0 B/s        0 B/s       8%             │
-└───────────────────────────────────────────────────────┘
+┌ [D]DISK ───────────────────────────────────────────────────────────┐
+│Device                                 Read (B/s) Write (B/s)   Use%│
+│sda                                           0 B    102.4 KB  45.0%│
+│                                                                    │
+│                                                                    │
+│                                                                    │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 **Filtering** (`/` when focused):
@@ -332,23 +346,39 @@ to the list.
 
 Press `Enter` on any process to open a two-column detail inspector:
 
+<!-- Auto-generated: cargo test --test doc_screenshots -->
+
 ```
- Name:     firefox
- Command:  firefox --new-window
- Exe:      /usr/bin/firefox
- CWD:      /home/alice
-─────────────────────────────────────────────────────────────────
- PID             1234            PPID            1
- User            alice           Status          running
- Type            process         Session         500
- CPU             42.1%           CPU time        2h 03m 12s
- User CPU        1h 40m 00s      Sys CPU         0m 23s
- MEM             3.2% (536.9 MB) VIRT            2.1 GB
- SHR             134.2 MB        Swap            16.8 MB
- Threads         42              FDs             300
- ...
-─────────────────────────────────────────────────────────────────
-                          [Esc/q] back
+┌ [P]rocesses ─────────────────────────────────────────────────────────────────────────────────────┐
+│ Name:     firefox                                                                                │
+│ Command:  firefox                                                                                │
+│ Exe:      /usr/bin/firefox                                                                       │
+│ CWD:      /home/ray                                                                              │
+│ ─────────────────────────────────────────────────────────────────────────────────────────────────│
+│ PID             12345                            PPID            1                               │
+│ User            ray                              Status          running                         │
+│ Type            process                          Session         500                             │
+│ CPU             18.4%                            CPU time        2m 03s                          │
+│ User CPU        1m 40s                           Sys CPU         0m 23s                          │
+│ MEM             3.2% (536.9 MB)                  VIRT            2.1 GB                          │
+│ SHR             134.2 MB                         Swap            16.8 MB                         │
+│ Threads         42                               FDs             300                             │
+│ PR              15                               NI              -5                              │
+│ Started         -                                Runtime         1h 00m 00s                      │
+│ Minflt          20000                            Majflt          10                              │
+│ Vol CS          5000                             Invol CS        250                             │
+│ I/O read        0 B                              I/O write       0 B                             │
+│ Read calls      5000                             Write calls     2500                            │
+│ Read chars      134.2 MB                         Write chars     67.1 MB                         │
+│ TTY             136:1                            Root            /                               │
+│ GID             1000                             EGID            1000                            │
+│ EUID            1000                             Cancelled W     4.1 KB                          │
+│                                                                                                  │
+│ ─────────────────────────────────────────────────────────────────────────────────────────────────│
+│                                           [Esc/q] back                                           │
+│                                                                                                  │
+│                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 The left column shows identity, CPU, memory, scheduling, and fault
@@ -371,10 +401,13 @@ The status bar can be positioned at the `top` (default), `bottom`,
 or `hidden` via `--status-bar` or `layout.status_bar` in the
 config file.
 
+<!-- Auto-generated: cargo test --test doc_screenshots -->
+
 ```
-┌─ hostname ──────────────── 2d 4h 31m  ·  0.42 0.38 0.31  ·  14:52:07 ──────┐
-│  RAM [████████░░░░░░░░░░░░] 4.2G/16G  26%  │  SWAP [░░░░░░░░] 0B/4G  0%    │
-└────────────────────────────────────────────────────────────────────────────┘
+┌ dev-box ─────────────────────────────────────────────────────────────────────────────────────────┐
+│up 3d 4h 0m | load: 1.24 0.98 0.87 | 2026-04-06 14:52:07                                          │
+│███████            RAM  6.0 GiB/16.0 GiB  37.5%  │                  SWAP 0 B/4.0 GiB   0.0%       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 - **Top row:** system uptime, 1/5/15-minute load averages, current
