@@ -38,6 +38,22 @@ stub data (`.stub()` constructors) so they are deterministic and don't require
 a live system. Replaced sections in `USER_GUIDE.md` are marked with
 `<!-- Auto-generated: cargo test --test doc_screenshots -->` comments.
 
+## Benchmarks
+
+[Criterion](https://github.com/bheisler/criterion.rs) benchmarks live in
+`benches/`. Currently covers the process tree builder (`build_tree`) at
+various sizes, with and without threads and filters.
+
+```bash
+cargo bench                         # run all benchmarks
+cargo bench --bench tree_build      # run a specific bench file
+cargo bench -- "build_tree/all"     # filter by benchmark name
+```
+
+Results are written to `target/criterion/` with HTML reports. After running
+benchmarks, open `target/criterion/report/index.html` to view comparisons
+against the previous run.
+
 ## Code Quality
 
 ```bash
