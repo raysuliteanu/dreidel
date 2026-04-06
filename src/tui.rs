@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! Terminal UI wrapper around [`ratatui::Terminal`] and crossterm.
+//!
+//! [`Tui`] manages alternate screen, raw mode, mouse capture, and a background
+//! Tokio task that reads crossterm events and forwards them as [`Event`]
+//! variants. `App` (in `app.rs`) calls [`Tui::next_event`] to drive its
+//! event loop.
+
 use anyhow::Context;
 use crossterm::{
     cursor,

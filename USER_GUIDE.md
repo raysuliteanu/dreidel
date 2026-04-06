@@ -133,9 +133,12 @@ the [config file](#keybindings).
 | `Enter`         | Confirm filter and return to list                    | Filter mode  |
 | `s`             | Cycle sort column (left-to-right across visible columns) | List     |
 | `S`             | Toggle sort direction (ascending ↔ descending)       | List         |
+| `t`             | Toggle tree view (parent/child hierarchy)            | List         |
+| `Space`         | Expand/collapse tree node                            | List (tree)  |
 | `k`             | Kill selected process (prompts for confirmation)     | List         |
-| `y` / `Enter`   | Confirm kill                                         | Kill confirm |
-| `n` / `Esc`     | Cancel kill                                          | Kill confirm |
+| `Tab`           | Toggle focus between Cancel and OK buttons           | Kill confirm |
+| `Enter`         | Activate focused button (Cancel or OK)               | Kill confirm |
+| `Esc` / `q`     | Cancel kill                                          | Kill confirm |
 
 ---
 
@@ -149,17 +152,24 @@ for smooth resolution.
 
 **Compact layout** (left column of sidebar/classic presets):
 
+<!-- Auto-generated: cargo test --test doc_screenshots -->
+
 ```
-┌─ CPU ───────────────────────┐
-│⠈⠘⢸⡰⢿⡷⢿⡿⢿⣿⣿  cpu00  12%      │
-│⠁⠸⡐⣀⢰⣿⡿⡷⡿⣟⢿  cpu01   8%      │
-│⢀⡀⡀⣴⡿⣿⣾⡿⣿⡿⡿  cpu02   3%      │
-│⡐⡄⢸⢰⣿⣿⣿⣿⣿⣿⣟  cpu03   1%      │
-└─────────────────────────────┘
+┌ [C]PU ───────────────────────────────────────────────────┐
+│                                       │cpu0  42.0%   55°C│
+│                                       │cpu1  18.0%   58°C│
+│                                      ⠁│cpu2  75.0%   60°C│
+│                                       │cpu3   5.0%   52°C│
+│                                      ⠄│                  │
+│                                       │                  │
+│                                      ⠂│                  │
+│                                      ⠂│                  │
+└──────────────────────────────────────────────────────────┘
 ```
 
 - The label column on the right shows the current percentage for
-  each core.
+  each core. On Linux, per-core temperatures are shown alongside
+  the percentages when sensor data is available.
 - Up to 8 cores are visible in compact mode; use `↑`/`↓` or
   `PageUp`/`PageDown` to scroll.
 
@@ -193,14 +203,17 @@ enough vertical space.
 
 **List view:**
 
+<!-- Auto-generated: cargo test --test doc_screenshots -->
+
 ```
-┌─ Net ───────────────────────────────────────────────────────────────────┐
-│ (aggregate chart, if height ≥ 9 rows)                                   │
-├─────────────────────────────────────────────────────────────────────────┤
-│  Interface      TX             RX                                       │
-│▶ eth0       1.2 MB/s       3.4 MB/s                                     │
-│  lo           0 B/s          0 B/s                                      │
-└─────────────────────────────────────────────────────────────────────────┘
+┌ [N]ET ─────────────────────────────────────────────────────────────┐
+│Iface                                           TX (B/s)    RX (B/s)│
+│eth0                                              1.2 MB      4.8 MB│
+│                                                                    │
+│                                                                    │
+│                                                                    │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 When fullscreen or in a wide layout (≥ 100 columns), additional
@@ -246,12 +259,17 @@ rates and usage percentage. Usage is color-coded green → orange
 
 **List view:**
 
+<!-- Auto-generated: cargo test --test doc_screenshots -->
+
 ```
-┌─ Disk ────────────────────────────────────────────────┐
-│  Device        Read         Write    Usage            │
-│▶ sda        2.1 MB/s     512 KB/s     72%             │
-│  sdb          0 B/s        0 B/s       8%             │
-└───────────────────────────────────────────────────────┘
+┌ [D]DISK ───────────────────────────────────────────────────────────┐
+│Device                                 Read (B/s) Write (B/s)   Use%│
+│sda                                           0 B    102.4 KB  45.0%│
+│                                                                    │
+│                                                                    │
+│                                                                    │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 **Filtering** (`/` when focused):
@@ -292,6 +310,17 @@ display order. The active sort column shows `▼` (descending) or
 Default sort order is CPU% descending (configurable via
 `process.default_sort`).
 
+**Tree view**
+
+Press `t` to toggle between flat list and tree view. In tree
+mode, processes are arranged in a parent/child hierarchy with
+indentation showing depth. Press `Space` to collapse or expand a
+node's children. On Linux, per-process threads appear as children
+of their parent process.
+
+To start in tree mode by default, set `show_tree = true` in the
+`[process]` config section.
+
 **Filtering**
 
 Press `/` to open the filter prompt. The title bar changes to
@@ -315,35 +344,54 @@ to the list.
 
 **Detail view**
 
-Press `Enter` on any process to open a full-field detail overlay:
+Press `Enter` on any process to open a two-column detail inspector:
+
+<!-- Auto-generated: cargo test --test doc_screenshots -->
 
 ```
-PID:      1234
-Name:     firefox
-Cmd:      /usr/lib/firefox/firefox
-User:     alice
-Status:   S
-CPU:      42.1%
-MEM:      3.2%  (512 MB)
-Virt:     4.1 GB
-Nice:     0
-Threads:  42
-I/O R:    1.2 MB
-I/O W:    340 KB
+┌ [P]rocesses ─────────────────────────────────────────────────────────────────────────────────────┐
+│ Name:     firefox                                                                                │
+│ Command:  firefox                                                                                │
+│ Exe:      /usr/bin/firefox                                                                       │
+│ CWD:      /home/ray                                                                              │
+│ ─────────────────────────────────────────────────────────────────────────────────────────────────│
+│ PID             12345                            PPID            1                               │
+│ User            ray                              Status          running                         │
+│ Type            process                          Session         500                             │
+│ CPU             18.4%                            CPU time        2m 03s                          │
+│ User CPU        1m 40s                           Sys CPU         0m 23s                          │
+│ MEM             3.2% (536.9 MB)                  VIRT            2.1 GB                          │
+│ SHR             134.2 MB                         Swap            16.8 MB                         │
+│ Threads         42                               FDs             300                             │
+│ PR              15                               NI              -5                              │
+│ Started         -                                Runtime         1h 00m 00s                      │
+│ Minflt          20000                            Majflt          10                              │
+│ Vol CS          5000                             Invol CS        250                             │
+│ I/O read        0 B                              I/O write       0 B                             │
+│ Read calls      5000                             Write calls     2500                            │
+│ Read chars      134.2 MB                         Write chars     67.1 MB                         │
+│ TTY             136:1                            Root            /                               │
+│ GID             1000                             EGID            1000                            │
+│ EUID            1000                             Cancelled W     4.1 KB                          │
+│                                                                                                  │
+│ ─────────────────────────────────────────────────────────────────────────────────────────────────│
+│                                           [Esc/q] back                                           │
+│                                                                                                  │
+│                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Press `Esc` or `q` to close.
+The left column shows identity, CPU, memory, scheduling, and fault
+data; the right column shows corresponding paired fields. Press
+`Esc` or `q` to close.
 
 **Killing a process**
 
-Press `k` to kill the selected process. A confirmation prompt
-appears:
-
-```
-Kill firefox (pid 1234)? [y/n]
-```
-
-Press `y` or `Enter` to send SIGTERM, or `n`/`Esc` to cancel. If
+Press `k` to kill the selected process. A confirmation dialog
+appears with **Cancel** (focused by default) and **OK** buttons.
+Use `Tab` to switch focus between buttons. Press `Enter` to
+activate the focused button, or `Esc`/`q` to cancel. Confirming
+sends `SIGTERM` to the process. If
 the kill fails (e.g., insufficient permissions), an error dialog
 appears; press `Enter`, `Esc`, or `Space` to dismiss.
 
@@ -353,10 +401,13 @@ The status bar can be positioned at the `top` (default), `bottom`,
 or `hidden` via `--status-bar` or `layout.status_bar` in the
 config file.
 
+<!-- Auto-generated: cargo test --test doc_screenshots -->
+
 ```
-┌─ hostname ──────────────── 2d 4h 31m  ·  0.42 0.38 0.31  ·  14:52:07 ──────┐
-│  RAM [████████░░░░░░░░░░░░] 4.2G/16G  26%  │  SWAP [░░░░░░░░] 0B/4G  0%    │
-└────────────────────────────────────────────────────────────────────────────┘
+┌ dev-box ─────────────────────────────────────────────────────────────────────────────────────────┐
+│up 3d 4h 0m | load: 1.24 0.98 0.87 | 2026-04-06 14:52:07                                          │
+│███████            RAM  6.0 GiB/16.0 GiB  37.5%  │                  SWAP 0 B/4.0 GiB   0.0%       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 - **Top row:** system uptime, 1/5/15-minute load averages, current
@@ -475,6 +526,7 @@ Available slot names per preset:
 | `sidebar`   | `left_top`, `left_bot`, `left_extra`, `right`   |
 | `classic`   | `top_left`, `top_right_top`, `top_right_bot`, `bottom` |
 | `dashboard` | `top`, `mid_left`, `mid_right`, `bottom`        |
+| `grid`      | `grid_left_mid`, `grid_left_bot`, `grid_right_top`, `grid_right_bot` |
 
 ---
 
@@ -502,12 +554,14 @@ dreidel [OPTIONS]
 | ----------------------- | ------------------------------- | ------------------------------------------------------------------ |
 | `--theme <THEME>`       | `auto`                          | Color theme: `auto` \| `light` \| `dark`                           |
 | `--refresh-rate <RATE>` | `1s`                            | Stats refresh interval, e.g. `500ms`, `2s`                         |
+| `--thread-refresh <RATE>` | `5s`                          | Thread enumeration interval (Linux), e.g. `5s`, `10s`             |
 | `--preset <LAYOUT>`     | `sidebar`                       | Layout: `sidebar` \| `classic` \| `dashboard` \| `grid`            |
 | `--show <COMPONENTS>`   | _(all)_                         | Comma-separated list of components to show: `cpu,net,disk,process` |
 | `--hide <COMPONENTS>`   | _(none)_                        | Components to hide (takes precedence over `--show`)                |
 | `--status-bar <POS>`    | `top`                           | Status bar position: `top` \| `bottom` \| `hidden`                 |
 | `--config <PATH>`       | `~/.config/dreidel/config.toml` | Path to an alternate config file                                   |
 | `--init-config`         | —                               | Print a default config template to stdout and exit                 |
+| `--detect-theme`        | —                               | Print terminal theme detection diagnostics and exit                |
 | `-v` / `-vv`            | —                               | Increase log verbosity (INFO / DEBUG)                              |
 | `--help`                | —                               | Show usage and exit                                                |
 | `--version`             | —                               | Show version and exit                                              |
@@ -545,6 +599,11 @@ can save and edit.
 [general]
 # Stats refresh interval. Humantime format: "500ms", "1s", "2s", etc.
 refresh_rate = "1s"
+
+# How often to enumerate per-process threads (Linux only).
+# Thread enumeration is expensive; a slower cadence avoids thousands
+# of syscalls every tick.
+thread_refresh = "5s"
 
 # Color theme: "auto" | "light" | "dark"
 theme = "auto"
@@ -585,6 +644,9 @@ default_sort = "cpu"
 
 # Default sort direction: "asc" | "desc"
 default_sort_dir = "desc"
+
+# Start in tree view (parent/child hierarchy) instead of flat list.
+show_tree = false
 ```
 
 ### \[keybindings\]

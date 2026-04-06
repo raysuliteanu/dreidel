@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! The [`Component`] trait and shared utilities for all UI panels.
+//!
+//! Each panel (CPU, Network, Disk, Process, Status Bar, Help) implements
+//! [`Component`]. This module also exports shared types ([`ComponentId`],
+//! `ListView`, `FilterEvent`, `FilterInput`) and helper functions used by
+//! the Net and Disk panels.
+
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{

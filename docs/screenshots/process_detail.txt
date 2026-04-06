@@ -1,0 +1,30 @@
+┌ [P]rocesses ─────────────────────────────────────────────────────────────────────────────────────┐
+│ Name:     firefox                                                                                │
+│ Command:  firefox                                                                                │
+│ Exe:      /usr/bin/firefox                                                                       │
+│ CWD:      /home/ray                                                                              │
+│ ─────────────────────────────────────────────────────────────────────────────────────────────────│
+│ PID             12345                            PPID            1                               │
+│ User            ray                              Status          running                         │
+│ Type            process                          Session         500                             │
+│ CPU             18.4%                            CPU time        2m 03s                          │
+│ User CPU        1m 40s                           Sys CPU         0m 23s                          │
+│ MEM             3.2% (536.9 MB)                  VIRT            2.1 GB                          │
+│ SHR             134.2 MB                         Swap            16.8 MB                         │
+│ Threads         42                               FDs             300                             │
+│ PR              15                               NI              -5                              │
+│ Started         -                                Runtime         1h 00m 00s                      │
+│ Minflt          20000                            Majflt          10                              │
+│ Vol CS          5000                             Invol CS        250                             │
+│ I/O read        0 B                              I/O write       0 B                             │
+│ Read calls      5000                             Write calls     2500                            │
+│ Read chars      134.2 MB                         Write chars     67.1 MB                         │
+│ TTY             136:1                            Root            /                               │
+│ GID             1000                             EGID            1000                            │
+│ EUID            1000                             Cancelled W     4.1 KB                          │
+│                                                                                                  │
+│ ─────────────────────────────────────────────────────────────────────────────────────────────────│
+│                                           [Esc/q] back                                           │
+│                                                                                                  │
+│                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘

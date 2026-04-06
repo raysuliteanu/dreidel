@@ -728,7 +728,6 @@ dependencies = [
  "strum 0.28.0",
  "sysinfo",
  "termbg",
- "thiserror 2.0.18",
  "tokio",
  "tokio-util",
  "toml",

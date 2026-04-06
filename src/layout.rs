@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! Layout engine mapping [`SlotId`]s to screen rectangles.
+//!
+//! [`LayoutPreset`] defines the available multi-panel arrangements (sidebar,
+//! classic, dashboard, grid). [`LayoutPreset::compute`] takes the terminal
+//! area, optional slot overrides, and component height hints, and returns a
+//! [`SlotMap`] of `SlotId → (ComponentId, Rect)` pairs.
+
 use ratatui::layout::{Constraint, Layout, Rect};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

@@ -7,7 +7,7 @@ a message-passing action bus to decouple data collection from rendering.
 
 The crate is a dual lib+bin package:
 
-- `src/lib.rs` — re-exports all public modules; used by integration tests and the binary
+- `src/lib.rs` — re-exports public modules; used by integration tests and benchmarks
 - `src/main.rs` — thin entry point: parses CLI args, loads config, runs `App`
 
 ## Key Third-Party Crates
@@ -24,7 +24,6 @@ The crate is a dual lib+bin package:
 | `serde` / `toml`                 | Config file deserialization                                                         |
 | `humantime`                      | Parses human-readable durations (`"1s"`, `"500ms"`) in config                       |
 | `anyhow`                         | Application-level error context                                                     |
-| `thiserror`                      | Typed error definitions (errors module)                                             |
 | `strum`                          | Derive `Display`, `EnumString`, `EnumIter` on enums (`ComponentId`, `LayoutPreset`) |
 | `chrono`                         | Timestamps in `SysSnapshot`                                                         |
 | `dirs`                           | XDG config directory path resolution                                                |
@@ -47,7 +46,7 @@ tokio::mpsc channel  (bounded, capacity from config)
       ▼
 App::handle_actions()                  (main async loop)
       │  dispatches to every Component via comp.update(action)
-      │  handles UI state (focus, fullscreen, debug, quit)
+      │  handles UI state (focus, fullscreen, help, quit)
       ▼
 App::render()
       │  calls LayoutPreset::compute() to map SlotId → Rect
@@ -89,16 +88,15 @@ handler sees them.
 The single enum that all app logic communicates through:
 
 - Infrastructure: `Render`, `Quit`, `Suspend`, `Resume`, `Resize`, `ClearScreen`
-- UI state: `FocusComponent(ComponentId)`, `ToggleFullScreen`, `ToggleDebug`, `ToggleHelp`
+- UI state: `FocusComponent(ComponentId)`, `ToggleFullScreen`, `ToggleHelp`
 - Metric payloads: `CpuUpdate(CpuSnapshot)`, `MemUpdate`, `NetUpdate`, `DiskUpdate`,
   `ProcUpdate`, `SysUpdate` — these carry the snapshot structs from the stats collector
   to every component
-- Debug: `DebugSnapshot(String)`
 
 `Action` derives `Clone` for cases where the app needs to re-queue an action (e.g.
 `Render`). It is **not** cloned to fan-out to components — `App::handle_actions` passes
-`&action` to each component's `update` method. Payload variants are `#[serde(skip)]`
-because the snapshot structs are not serializable.
+`&action` to each component's `update` method. The enum is not serializable; it uses `strum::Display`
+for debug/logging purposes only.
 
 ### `src/tui.rs` — `Tui`
 
@@ -201,7 +199,6 @@ the lowercase string representations (`"cpu"`, `"mem"`, `"net"`, `"disk"`,
 | `disk.rs`        | `DiskComponent`      | Per-device read/write/usage table; uses shared `ListView` + `FilterInput` |
 | `process/mod.rs` | `ProcessComponent`   | Sortable process table with state machine (see below)            |
 | `status_bar.rs`  | `StatusBarComponent` | Top/bottom strip: hostname, uptime, load avg, time               |
-| `debug.rs`       | `DebugComponent`     | Right-side debug sidebar; receives `DebugSnapshot` action        |
 | `help.rs`        | `HelpComponent`      | Full-screen overlay listing all keybindings                      |
 
 #### `ProcessComponent` state machine
@@ -211,7 +208,7 @@ The process panel has an explicit `ProcessState` enum:
 - `NormalList` — default scrollable table
 - `FilterMode { input }` — incremental filter bar, `Esc` returns to `NormalList`
 - `DetailView { pid }` — expanded single-process view rendered as a two-column name/value inspector
-- `KillConfirm { pid, name }` — confirmation dialog before sending `SIGKILL`
+- `KillConfirm { pid, name }` — confirmation dialog before sending `SIGTERM`
 - `KillError { message }` — error dialog if kill fails
 
 Sorting (`process/sort.rs`) and filtering (`process/filter.rs`) are in separate
@@ -296,14 +293,15 @@ construction time; they do not query a global.
 
 - `--config <path>` — override config file location
 - `--init-config` — print the default config template and exit
+- `--detect-theme` — print terminal theme detection diagnostics and exit
+- `--theme <THEME>` — override color theme (`auto`, `light`, `dark`)
 - `--refresh-rate <RATE>` — override refresh interval (e.g. `500ms`, `2s`)
 - `--thread-refresh <RATE>` — override thread enumeration interval (e.g. `5s`, `10s`)
+- `--preset <LAYOUT>` — override layout preset (`sidebar`, `classic`, `dashboard`, `grid`)
+- `--status-bar <POS>` — override status bar position (`top`, `bottom`, `hidden`)
 - `--show` / `--hide` — override which components are visible (comma-separated
   `ComponentId` strings)
-
-### `src/errors.rs`
-
-`thiserror`-based error types for the crate's public error surface.
+- `-v` / `--verbose` — increase log verbosity (`-v` = info, `-vv` = debug)
 
 ## Testing
 
@@ -333,6 +331,21 @@ INSTA_UPDATE=always cargo test
 5. If the component needs data, add an `Action::MyWidgetUpdate(MySnapshot)` variant
    to `src/action.rs` and build the snapshot in `src/stats/mod.rs`.
 6. Add a `.stub()` constructor to the snapshot struct and write snapshot tests.
+
+## Conventions
+
+### Unit system for byte formatting
+
+All byte-formatting helpers (`fmt_rate_col`, `fmt_bytes`, and related functions)
+use **SI / decimal units** (1 KB = 1,000 bytes, 1 MB = 1,000,000 bytes, etc.)
+with conventional SI labels (`B`, `KB`, `MB`, `GB`, `TB`). This matches the
+convention used by `sysinfo` and is consistent across the entire codebase —
+network rates, disk rates, memory amounts, and process I/O all use the same
+divisors.
+
+If a future change switches to binary units (1 KiB = 1,024 bytes), it should
+be done codebase-wide and the labels should change to `KiB`/`MiB`/`GiB`/`TiB`
+to avoid ambiguity.
 
 ## Logging
 

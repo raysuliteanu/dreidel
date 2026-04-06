@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! The [`Action`] enum — the single message type on the application’s action bus.
+//!
+//! Every piece of app logic (stats updates, UI state changes, infrastructure
+//! events) is expressed as an `Action` variant and dispatched through a bounded
+//! `tokio::mpsc` channel from the stats collector to `App` (in `app.rs`),
+//! which fans it out to each [`Component`](crate::components::Component).
+
 use crate::stats::snapshots::{
     CpuSnapshot, DiskSnapshot, MemSnapshot, NetSnapshot, ProcSnapshot, SysSnapshot,
 };
-use serde::{Deserialize, Serialize};
 use strum::Display;
 
-#[derive(Debug, Clone, Display, Serialize, Deserialize)]
+#[derive(Debug, Clone, Display)]
 pub enum Action {
     // Infrastructure
     Render,
@@ -21,21 +27,14 @@ pub enum Action {
     #[allow(dead_code)] // reserved for future error reporting to the UI layer
     Error(String),
     // Focus
-    #[serde(skip)]
     FocusComponent(crate::components::ComponentId),
     ToggleFullScreen,
     ToggleHelp,
-    // Metric updates — payloads are not serializable so skipped in serde
-    #[serde(skip)]
+    // Metric updates from the stats collector
     SysUpdate(SysSnapshot),
-    #[serde(skip)]
     CpuUpdate(CpuSnapshot),
-    #[serde(skip)]
     MemUpdate(MemSnapshot),
-    #[serde(skip)]
     NetUpdate(NetSnapshot),
-    #[serde(skip)]
     DiskUpdate(DiskSnapshot),
-    #[serde(skip)]
     ProcUpdate(ProcSnapshot),
 }

@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! Binary entry point for dreidel.
+//!
+//! Parses CLI arguments, loads the config file, detects the terminal theme,
+//! and launches the [`App`] event loop on a Tokio runtime.
+
 use anyhow::Context;
 use clap::Parser;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};

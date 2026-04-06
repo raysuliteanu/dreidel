@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! Process list filtering by name substring, exact PID, or status.
+//!
+//! [`ProcessFilter`] is parsed from the user’s filter input string and
+//! applied via [`ProcessFilter::matches`] to each [`ProcessEntry`].
+
 use crate::stats::snapshots::ProcessEntry;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -25,7 +30,7 @@ impl ProcessFilter {
         }
     }
 
-    /// Parse raw filter input: pure number → Pid; "s:<text>" → State; else Name.
+    /// Parse raw filter input: pure number → Pid; `s:<text>` → State; else Name.
     pub fn parse(input: &str) -> Self {
         let s = input.trim();
         if s.is_empty() {

@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! Process list sorting by column.
+//!
+//! [`SortColumn`] identifies which field to sort on; [`sort_processes`]
+//! performs a stable sort on a `&mut [ProcessEntry]` slice in the given
+//! [`SortDir`]ection.
+
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString};
 

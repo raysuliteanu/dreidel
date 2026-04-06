@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! Application configuration loaded from `~/.config/dreidel/config.toml`.
+//!
+//! All fields have serde defaults so a missing or partial config file is fine.
+//! Sub-structs: [`GeneralConfig`], [`LayoutConfig`], [`ProcessConfig`],
+//! [`KeyBindings`].
+
 use crate::theme::Theme;
 use serde::{Deserialize, Serialize};
 

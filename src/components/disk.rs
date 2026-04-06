@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! Disk panel — per-device read/write rate table with usage percentage.
+//!
+//! Lists storage devices with live I/O rates and color-coded usage gauges
+//! (green → orange ≥ 70% → red ≥ 90%). Pressing Enter on a device opens a
+//! per-device detail graph.
+
 use std::collections::{HashMap, VecDeque};
 
 use anyhow::Result;

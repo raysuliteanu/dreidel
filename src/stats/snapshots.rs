@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! Snapshot data structs carried by [`Action`](crate::action::Action) variants.
+//!
+//! These are plain data containers with no logic. Each struct has a
+//! `.stub()` constructor (behind `#[cfg(any(test, feature = "test-stubs"))]`)
+//! for use in tests without a live stats collector.
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcessStatus {
     Running,
@@ -26,28 +32,20 @@ impl std::fmt::Display for ProcessStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum CpuPanelState {
-    #[default]
-    Normal,
-    FilterMode {
-        input: String,
-    },
-}
-
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct CpuSnapshot {
     pub aggregate: f32,
     pub per_core: Vec<f32>,
     pub frequency: Vec<u64>,
-    pub scroll_offset: usize,
-    pub state: CpuPanelState,
-    pub filter: String,
+    /// Number of physical (non-hyperthreaded) cores. Linux-only; `None` on other platforms.
     pub physical_core_count: Option<u32>,
     pub cpu_brand: String,
+    /// Package-level CPU temperature in °C. Linux-only; `None` on other platforms.
     pub package_temp: Option<f32>,
+    /// Per-logical-core temperature in °C. Linux-only; empty or all-`None` on other platforms.
     pub per_core_temp: Vec<Option<f32>>,
+    /// CPU scaling governor, e.g. "powersave". Linux-only; `None` on other platforms.
     pub governor: Option<String>,
 }
 
@@ -59,9 +57,6 @@ impl CpuSnapshot {
             aggregate: 35.0,
             per_core: vec![42.0, 18.0, 75.0, 5.0],
             frequency: vec![3400, 3400, 3400, 3400],
-            scroll_offset: 0,
-            state: CpuPanelState::Normal,
-            filter: String::new(),
             physical_core_count: Some(4),
             cpu_brand: "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz".into(),
             package_temp: Some(62.0),
@@ -78,7 +73,9 @@ pub struct MemSnapshot {
     pub ram_used: u64,
     pub swap_total: u64,
     pub swap_used: u64,
+    /// Cumulative swap-in bytes from /proc/vmstat. Linux-only; `0` on other platforms.
     pub swap_in_bytes: u64,
+    /// Cumulative swap-out bytes from /proc/vmstat. Linux-only; `0` on other platforms.
     pub swap_out_bytes: u64,
 }
 
@@ -116,7 +113,9 @@ pub struct InterfaceSnapshot {
     pub mac_address: String,
     pub ip_addresses: Vec<String>,
     pub mtu: u64,
+    /// Cumulative receive drops from /proc/net/dev. Linux-only; `0` on other platforms.
     pub rx_dropped: u64,
+    /// Cumulative transmit drops from /proc/net/dev. Linux-only; `0` on other platforms.
     pub tx_dropped: u64,
 }
 
@@ -230,10 +229,10 @@ pub struct ProcessEntry {
     pub read_bytes: u64,
     pub write_bytes: u64,
     pub parent_pid: Option<u32>,
-    /// Kernel raw priority from /proc/<pid>/stat field 18.
+    /// Kernel raw priority from `/proc/<pid>/stat` field 18.
     /// For normal processes: 0-39 (20 = nice 0). Negative = RT process.
     pub priority: i32,
-    /// Shared memory in bytes (SHR) from /proc/<pid>/statm field 3 x page_size.
+    /// Shared memory in bytes (SHR) from `/proc/<pid>/statm` field 3 x page_size.
     pub shr_bytes: u64,
     /// Total CPU time in seconds: (utime + stime) / ticks_per_second.
     pub cpu_time_secs: f64,

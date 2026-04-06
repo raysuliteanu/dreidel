@@ -23,11 +23,26 @@ cargo test components::cpu    # filter by module/name
 INSTA_UPDATE=always cargo test  # accept updated insta snapshots
 ```
 
+## Documentation Screenshots
+
+The `USER_GUIDE.md` includes text-based screenshots rendered from real component
+output via `ratatui::backend::TestBackend`. To regenerate them after a rendering
+change:
+
+```bash
+cargo test --test doc_screenshots
+```
+
+This writes updated `.txt` files to `docs/screenshots/`. The screenshots use
+stub data (`.stub()` constructors) so they are deterministic and don't require
+a live system. Replaced sections in `USER_GUIDE.md` are marked with
+`<!-- Auto-generated: cargo test --test doc_screenshots -->` comments.
+
 ## Code Quality
 
 ```bash
 cargo fmt --check             # formatting (also runs as pre-push hook)
-cargo clippy -- -D warnings   # lints (also runs after every .rs file save)
+cargo clippy --all-targets -- -D warnings   # lints (also runs after every .rs file save)
 cargo deny check              # license compliance + security advisories
 cargo audit                   # standalone CVE scan (subset of cargo deny)
 ```
@@ -66,10 +81,13 @@ cargo release patch --execute
 This will:
 
 1. Bump the version in `Cargo.toml`
-2. Regenerate `CHANGELOG.md` via `git-cliff`
-3. Commit the version bump
-4. Create a `vX.Y.Z` git tag
-5. Publish to crates.io
+2. Commit the version bump
+3. Create a `vX.Y.Z` git tag
+4. Publish to crates.io
+
+Note: the `scripts/release` wrapper regenerates `CHANGELOG.md` via `git-cliff`
+*before* running `cargo release`, so the changelog commit precedes the version
+bump commit.
 
 After `cargo release` completes, push the new commit and tag via jj:
 
@@ -106,13 +124,11 @@ GitHub Actions runs on every push and pull request to `main`:
 | Job           | What it checks                                                                   |
 | ------------- | -------------------------------------------------------------------------------- |
 | `fmt`         | `cargo fmt --check`                                                              |
-| `clippy`      | `cargo clippy --locked -- -D warnings`                                           |
+| `clippy`      | `cargo clippy --locked --all-targets -- -D warnings`                             |
 | `test`        | `cargo test --locked` on stable                                                  |
 | `msrv`        | `cargo test --locked` on Rust 1.88 (declared MSRV)                               |
 | `coverage`    | `cargo llvm-cov --locked --fail-under-lines 80`                                  |
 | `cross-check` | `cargo check --locked --target aarch64-unknown-linux-gnu`                        |
-| `audit`       | `cargo audit` via `rustsec/audit-check` — known CVEs                             |
 | `deny`        | `cargo deny check` via `EmbarkStudios/cargo-deny-action` — licenses + advisories |
-| `semver`      | `cargo semver-checks` — disabled until first crates.io publish                   |
 
 Config: `.github/workflows/ci.yml`.

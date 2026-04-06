@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+//! Command-line argument definitions (via `clap` derive).
+//!
+//! The binary’s `main()` parses [`Args`] and applies overrides to the
+//! loaded [`Config`](crate::config::Config) before launching the app.
+
 use clap::Parser;
 use std::path::PathBuf;
 
