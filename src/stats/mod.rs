@@ -109,9 +109,6 @@ fn build_cpu(sys: &System, components: &Components) -> CpuSnapshot {
         per_core: cpus.iter().map(|c| c.cpu_usage()).collect(),
         aggregate: sys.global_cpu_usage(),
         frequency: cpus.iter().map(|c| c.frequency()).collect(),
-        scroll_offset: 0,
-        state: CpuPanelState::Normal,
-        filter: String::new(),
         cpu_brand: cpus
             .first()
             .map(|c| c.brand().to_owned())
@@ -124,12 +121,20 @@ fn build_cpu(sys: &System, components: &Components) -> CpuSnapshot {
                 l.contains("package") || l.ends_with(" cpu") || l == "cpu"
             })
             .and_then(|c| c.temperature()),
+        #[cfg(not(target_os = "linux"))]
+        package_temp: None,
         #[cfg(target_os = "linux")]
         per_core_temp: build_per_core_temps(components, cpus.len()),
+        #[cfg(not(target_os = "linux"))]
+        per_core_temp: vec![None; cpus.len()],
         #[cfg(target_os = "linux")]
         physical_core_count: read_physical_core_count(),
+        #[cfg(not(target_os = "linux"))]
+        physical_core_count: None,
         #[cfg(target_os = "linux")]
         governor: read_cpu_governor(),
+        #[cfg(not(target_os = "linux"))]
+        governor: None,
     }
 }
 
@@ -224,8 +229,12 @@ fn build_mem(sys: &System) -> MemSnapshot {
         swap_total: sys.total_swap(),
         #[cfg(target_os = "linux")]
         swap_in_bytes: read_vmstat_field("pswpin").unwrap_or(0) * 4096,
+        #[cfg(not(target_os = "linux"))]
+        swap_in_bytes: 0,
         #[cfg(target_os = "linux")]
         swap_out_bytes: read_vmstat_field("pswpout").unwrap_or(0) * 4096,
+        #[cfg(not(target_os = "linux"))]
+        swap_out_bytes: 0,
     }
 }
 
@@ -272,8 +281,12 @@ fn build_net(nets: &Networks) -> NetSnapshot {
                     mtu: data.mtu(),
                     #[cfg(target_os = "linux")]
                     rx_dropped: dev_stats.get(name).map(|s| s.recv_drop).unwrap_or(0),
+                    #[cfg(not(target_os = "linux"))]
+                    rx_dropped: 0,
                     #[cfg(target_os = "linux")]
                     tx_dropped: dev_stats.get(name).map(|s| s.sent_drop).unwrap_or(0),
+                    #[cfg(not(target_os = "linux"))]
+                    tx_dropped: 0,
                 }
             })
             .collect(),

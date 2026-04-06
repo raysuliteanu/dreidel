@@ -16,7 +16,7 @@ use ratatui::{
 use crate::{
     action::Action,
     components::{Component, FilterEvent, FilterInput, HISTORY_LEN, SERIES_COLORS, keyed_title},
-    stats::snapshots::{CpuPanelState, CpuSnapshot},
+    stats::snapshots::CpuSnapshot,
     theme::ColorPalette,
 };
 
@@ -27,7 +27,7 @@ fn core_color(idx: usize) -> Color {
 #[derive(Debug)]
 struct CpuCompactSnapshot {
     scroll_offset: usize,
-    state: CpuPanelState,
+    state: CpuState,
     filter: String,
 }
 
@@ -89,22 +89,6 @@ impl CpuComponent {
 
     fn num_cores(&self) -> usize {
         self.latest.as_ref().map(|s| s.per_core.len()).unwrap_or(0)
-    }
-
-    fn to_snapshot_state(&self) -> CpuPanelState {
-        match &self.state {
-            CpuState::Normal => CpuPanelState::Normal,
-            CpuState::FilterMode { input } => CpuPanelState::FilterMode {
-                input: input.clone(),
-            },
-        }
-    }
-
-    fn from_snapshot_state(state: CpuPanelState) -> CpuState {
-        match state {
-            CpuPanelState::Normal => CpuState::Normal,
-            CpuPanelState::FilterMode { input } => CpuState::FilterMode { input },
-        }
     }
 
     /// Returns the indices of cores whose label matches the active filter.
@@ -304,7 +288,7 @@ impl CpuComponent {
     fn restore_compact_snapshot(&mut self) {
         if let Some(snap) = self.compact_snapshot.take() {
             self.scroll_offset = snap.scroll_offset;
-            self.state = Self::from_snapshot_state(snap.state);
+            self.state = snap.state;
             self.filter = snap.filter;
         }
         self.is_fullscreen = false;
@@ -322,10 +306,7 @@ impl CpuComponent {
         };
 
         let live_scroll = std::mem::replace(&mut self.scroll_offset, snap.scroll_offset);
-        let live_state = std::mem::replace(
-            &mut self.state,
-            Self::from_snapshot_state(snap.state.clone()),
-        );
+        let live_state = std::mem::replace(&mut self.state, snap.state.clone());
         let live_filter = std::mem::replace(&mut self.filter, snap.filter.clone());
         let live_fs = std::mem::replace(&mut self.is_fullscreen, false);
         // rendering_as_overlay is already false (consumed at top of draw()),
@@ -439,7 +420,7 @@ impl Component for CpuComponent {
                 if !self.is_fullscreen {
                     self.compact_snapshot = Some(CpuCompactSnapshot {
                         scroll_offset: self.scroll_offset,
-                        state: self.to_snapshot_state(),
+                        state: self.state.clone(),
                         filter: self.filter.clone(),
                     });
                     self.is_fullscreen = true;

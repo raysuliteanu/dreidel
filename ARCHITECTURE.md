@@ -334,6 +334,21 @@ INSTA_UPDATE=always cargo test
    to `src/action.rs` and build the snapshot in `src/stats/mod.rs`.
 6. Add a `.stub()` constructor to the snapshot struct and write snapshot tests.
 
+## Conventions
+
+### Unit system for byte formatting
+
+All byte-formatting helpers (`fmt_rate_col`, `fmt_bytes`, and related functions)
+use **SI / decimal units** (1 KB = 1,000 bytes, 1 MB = 1,000,000 bytes, etc.)
+with conventional SI labels (`B`, `KB`, `MB`, `GB`, `TB`). This matches the
+convention used by `sysinfo` and is consistent across the entire codebase —
+network rates, disk rates, memory amounts, and process I/O all use the same
+divisors.
+
+If a future change switches to binary units (1 KiB = 1,024 bytes), it should
+be done codebase-wide and the labels should change to `KiB`/`MiB`/`GiB`/`TiB`
+to avoid ambiguity.
+
 ## Logging
 
 All log output goes to `~/.local/share/dreidel/dreidel.log` via `tracing`. Nothing

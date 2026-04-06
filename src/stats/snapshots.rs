@@ -26,28 +26,20 @@ impl std::fmt::Display for ProcessStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum CpuPanelState {
-    #[default]
-    Normal,
-    FilterMode {
-        input: String,
-    },
-}
-
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct CpuSnapshot {
     pub aggregate: f32,
     pub per_core: Vec<f32>,
     pub frequency: Vec<u64>,
-    pub scroll_offset: usize,
-    pub state: CpuPanelState,
-    pub filter: String,
+    /// Number of physical (non-hyperthreaded) cores. Linux-only; `None` on other platforms.
     pub physical_core_count: Option<u32>,
     pub cpu_brand: String,
+    /// Package-level CPU temperature in °C. Linux-only; `None` on other platforms.
     pub package_temp: Option<f32>,
+    /// Per-logical-core temperature in °C. Linux-only; empty or all-`None` on other platforms.
     pub per_core_temp: Vec<Option<f32>>,
+    /// CPU scaling governor, e.g. "powersave". Linux-only; `None` on other platforms.
     pub governor: Option<String>,
 }
 
@@ -59,9 +51,6 @@ impl CpuSnapshot {
             aggregate: 35.0,
             per_core: vec![42.0, 18.0, 75.0, 5.0],
             frequency: vec![3400, 3400, 3400, 3400],
-            scroll_offset: 0,
-            state: CpuPanelState::Normal,
-            filter: String::new(),
             physical_core_count: Some(4),
             cpu_brand: "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz".into(),
             package_temp: Some(62.0),
@@ -78,7 +67,9 @@ pub struct MemSnapshot {
     pub ram_used: u64,
     pub swap_total: u64,
     pub swap_used: u64,
+    /// Cumulative swap-in bytes from /proc/vmstat. Linux-only; `0` on other platforms.
     pub swap_in_bytes: u64,
+    /// Cumulative swap-out bytes from /proc/vmstat. Linux-only; `0` on other platforms.
     pub swap_out_bytes: u64,
 }
 
@@ -116,7 +107,9 @@ pub struct InterfaceSnapshot {
     pub mac_address: String,
     pub ip_addresses: Vec<String>,
     pub mtu: u64,
+    /// Cumulative receive drops from /proc/net/dev. Linux-only; `0` on other platforms.
     pub rx_dropped: u64,
+    /// Cumulative transmit drops from /proc/net/dev. Linux-only; `0` on other platforms.
     pub tx_dropped: u64,
 }
 

@@ -731,7 +731,7 @@ impl Component for ProcessComponent {
                 let pairs = [
                     (
                         detail_kv("PID", p.pid.to_string(), &self.palette),
-                        detail_kv("PPID", fmt_opt_u32(p.parent_pid), &self.palette),
+                        detail_kv("PPID", fmt_opt(p.parent_pid), &self.palette),
                     ),
                     (
                         detail_kv("User", p.user.clone(), &self.palette),
@@ -743,25 +743,25 @@ impl Component for ProcessComponent {
                             if p.is_thread { "thread" } else { "process" },
                             &self.palette,
                         ),
-                        detail_kv("Session", fmt_opt_u32(p.session_id), &self.palette),
+                        detail_kv("Session", fmt_opt(p.session_id), &self.palette),
                     ),
                     (
                         detail_kv("CPU", format!("{:.1}%", p.cpu_pct), &self.palette),
                         detail_kv(
                             "CPU time",
-                            fmt_cpu_time_long(p.cpu_time_secs),
+                            fmt_duration_long(p.cpu_time_secs as u64),
                             &self.palette,
                         ),
                     ),
                     (
                         detail_kv(
                             "User CPU",
-                            fmt_cpu_time_long(p.user_cpu_time_secs),
+                            fmt_duration_long(p.user_cpu_time_secs as u64),
                             &self.palette,
                         ),
                         detail_kv(
                             "Sys CPU",
-                            fmt_cpu_time_long(p.system_cpu_time_secs),
+                            fmt_duration_long(p.system_cpu_time_secs as u64),
                             &self.palette,
                         ),
                     ),
@@ -779,7 +779,7 @@ impl Component for ProcessComponent {
                     ),
                     (
                         detail_kv("Threads", p.threads.to_string(), &self.palette),
-                        detail_kv("FDs", fmt_opt_usize(p.fd_count), &self.palette),
+                        detail_kv("FDs", fmt_opt(p.fd_count), &self.palette),
                     ),
                     (
                         detail_kv("PR", p.priority.to_string(), &self.palette),
@@ -787,21 +787,17 @@ impl Component for ProcessComponent {
                     ),
                     (
                         detail_kv("Started", fmt_start_time(p.start_time), &self.palette),
-                        detail_kv("Runtime", fmt_runtime(p.run_time), &self.palette),
+                        detail_kv("Runtime", fmt_duration_long(p.run_time), &self.palette),
                     ),
                     (
                         detail_kv("Minflt", p.minor_faults.to_string(), &self.palette),
                         detail_kv("Majflt", p.major_faults.to_string(), &self.palette),
                     ),
                     (
-                        detail_kv(
-                            "Vol CS",
-                            fmt_opt_u64(p.voluntary_ctxt_switches),
-                            &self.palette,
-                        ),
+                        detail_kv("Vol CS", fmt_opt(p.voluntary_ctxt_switches), &self.palette),
                         detail_kv(
                             "Invol CS",
-                            fmt_opt_u64(p.nonvoluntary_ctxt_switches),
+                            fmt_opt(p.nonvoluntary_ctxt_switches),
                             &self.palette,
                         ),
                     ),
@@ -810,8 +806,8 @@ impl Component for ProcessComponent {
                         detail_kv("I/O write", fmt_bytes(p.write_bytes), &self.palette),
                     ),
                     (
-                        detail_kv("Read calls", fmt_opt_u64(p.io_read_calls), &self.palette),
-                        detail_kv("Write calls", fmt_opt_u64(p.io_write_calls), &self.palette),
+                        detail_kv("Read calls", fmt_opt(p.io_read_calls), &self.palette),
+                        detail_kv("Write calls", fmt_opt(p.io_write_calls), &self.palette),
                     ),
                     (
                         detail_kv("Read chars", fmt_opt_bytes(p.io_read_chars), &self.palette),
@@ -1119,11 +1115,11 @@ fn fmt_cpu_time(secs: f64) -> String {
     format!("{:02}:{:02}", m, s)
 }
 
-fn fmt_cpu_time_long(secs: f64) -> String {
-    let total = secs as u64;
-    let h = total / 3600;
-    let m = (total % 3600) / 60;
-    let s = total % 60;
+/// Format a duration in seconds as a human-readable string like "1h 02m 03s".
+fn fmt_duration_long(secs: u64) -> String {
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    let s = secs % 60;
     if h > 0 {
         format!("{h}h {m:02}m {s:02}s")
     } else {
@@ -1146,17 +1142,6 @@ fn fmt_bytes(bytes: u64) -> String {
     }
 }
 
-fn fmt_runtime(secs: u64) -> String {
-    let h = secs / 3600;
-    let m = (secs % 3600) / 60;
-    let s = secs % 60;
-    if h > 0 {
-        format!("{h}h {m:02}m {s:02}s")
-    } else {
-        format!("{m}m {s:02}s")
-    }
-}
-
 fn fmt_start_time(unix_secs: u64) -> String {
     if unix_secs == 0 {
         return "-".into();
@@ -1172,15 +1157,7 @@ fn fmt_opt_str(value: Option<&str>) -> String {
     value.filter(|s| !s.is_empty()).unwrap_or("-").to_string()
 }
 
-fn fmt_opt_u32(value: Option<u32>) -> String {
-    value.map(|v| v.to_string()).unwrap_or_else(|| "-".into())
-}
-
-fn fmt_opt_u64(value: Option<u64>) -> String {
-    value.map(|v| v.to_string()).unwrap_or_else(|| "-".into())
-}
-
-fn fmt_opt_usize(value: Option<usize>) -> String {
+fn fmt_opt<T: std::fmt::Display>(value: Option<T>) -> String {
     value.map(|v| v.to_string()).unwrap_or_else(|| "-".into())
 }
 
@@ -1608,10 +1585,10 @@ mod tests {
     }
 
     #[test]
-    fn fmt_cpu_time_long_formats_correctly() {
-        assert_eq!(fmt_cpu_time_long(0.0), "0m 00s");
-        assert_eq!(fmt_cpu_time_long(65.0), "1m 05s");
-        assert_eq!(fmt_cpu_time_long(3661.0), "1h 01m 01s");
+    fn fmt_duration_long_formats_correctly() {
+        assert_eq!(fmt_duration_long(0), "0m 00s");
+        assert_eq!(fmt_duration_long(65), "1m 05s");
+        assert_eq!(fmt_duration_long(3661), "1h 01m 01s");
     }
 
     #[test]
