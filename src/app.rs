@@ -288,19 +288,27 @@ impl App {
         let kb = &self.config.keybindings;
         if let KeyCode::Char(c) = key.code {
             let c = c.to_ascii_lowercase();
-            if c == kb.focus_proc {
+            // Only focus a component if it is actually in the layout.  Use
+            // rendered_ids (populated after the first render) when available;
+            // fall back to visible so the very first key-press also works.
+            let focusable = if self.rendered_ids.is_empty() {
+                &self.visible
+            } else {
+                &self.rendered_ids
+            };
+            if c == kb.focus_proc && focusable.contains(&ComponentId::Process) {
                 let _ = self
                     .action_tx
                     .try_send(Action::FocusComponent(ComponentId::Process));
-            } else if c == kb.focus_cpu {
+            } else if c == kb.focus_cpu && focusable.contains(&ComponentId::Cpu) {
                 let _ = self
                     .action_tx
                     .try_send(Action::FocusComponent(ComponentId::Cpu));
-            } else if c == kb.focus_net {
+            } else if c == kb.focus_net && focusable.contains(&ComponentId::Net) {
                 let _ = self
                     .action_tx
                     .try_send(Action::FocusComponent(ComponentId::Net));
-            } else if c == kb.focus_disk {
+            } else if c == kb.focus_disk && focusable.contains(&ComponentId::Disk) {
                 let _ = self
                     .action_tx
                     .try_send(Action::FocusComponent(ComponentId::Disk));
@@ -790,6 +798,34 @@ mod tests {
         assert!(
             has_content(&buf, right_strip),
             "right half of content area should be rendered in single-component adaptive mode"
+        );
+    }
+
+    /// Focus shortcut keys for hidden components must be no-ops — pressing 'p'
+    /// when only the disk panel is shown should not steal focus from disk.
+    #[test]
+    fn focus_key_ignored_for_hidden_component() {
+        let mut cfg = Config::default();
+        cfg.layout.show = vec!["disk".into()];
+        let mut app = App::new(cfg, None).expect("app");
+
+        // Trigger a render so rendered_ids is populated.
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        app.render_to(&mut terminal).unwrap();
+        drain(&mut app); // clear any queued actions
+
+        // Press the process focus key — should produce no FocusComponent action.
+        app.handle_key_event(KeyEvent::new(
+            KeyCode::Char(app.config.keybindings.focus_proc),
+            KeyModifiers::NONE,
+        ))
+        .unwrap();
+        let actions = drain(&mut app);
+        assert!(
+            !actions
+                .iter()
+                .any(|a| matches!(a, Action::FocusComponent(_))),
+            "pressing a focus key for a hidden component must not change focus; got {actions:?}"
         );
     }
 
