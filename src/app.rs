@@ -153,8 +153,15 @@ impl App {
                 detected_theme,
                 config.general.theme,
             )),
+            // Default focus: process panel when all components are present,
+            // otherwise the first listed component so the user always starts
+            // with something focused (e.g. `--show net` focuses net).
             focus: FocusState::Normal {
-                focused: ComponentId::Process,
+                focused: if visible.len() == 4 {
+                    ComponentId::Process
+                } else {
+                    visible.first().copied().unwrap_or(ComponentId::Process)
+                },
             },
             show_help: false,
             loading: true,
@@ -798,6 +805,41 @@ mod tests {
         assert!(
             has_content(&buf, right_strip),
             "right half of content area should be rendered in single-component adaptive mode"
+        );
+    }
+
+    /// When fewer than four components are shown the first listed component
+    /// should receive initial focus so the user never starts unfocused.
+    #[test]
+    fn initial_focus_is_first_visible_component_when_not_all_shown() {
+        let mut cfg = Config::default();
+        cfg.layout.show = vec!["net".into(), "disk".into()];
+        let app = App::new(cfg, None).expect("app");
+        assert!(
+            matches!(
+                app.focus,
+                FocusState::Normal {
+                    focused: ComponentId::Net
+                }
+            ),
+            "expected Net to have initial focus, got {:?}",
+            app.focus,
+        );
+    }
+
+    /// With all four components the default initial focus must remain Process.
+    #[test]
+    fn initial_focus_is_process_when_all_components_shown() {
+        let app = make_app();
+        assert!(
+            matches!(
+                app.focus,
+                FocusState::Normal {
+                    focused: ComponentId::Process
+                }
+            ),
+            "expected Process to have initial focus, got {:?}",
+            app.focus,
         );
     }
 
