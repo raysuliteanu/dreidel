@@ -3,8 +3,8 @@ source: src/components/disk.rs
 expression: terminal.backend()
 ---
 "┌ [I]DISK ───────────────────────────────────────────────────────────┐"
-"│Device                                 Read (B/s) Write (B/s)   Use%│"
-"│sda                                           0 B    102.4 KB  45.0%│"
+"│Device Mount                            Size      Free  %Used  %Free│"
+"│sda    /                            500.1 GB  275.1 GB  45.0%  55.0%│"
 "│                                                                    │"
 "│                                                                    │"
 "│                                                                    │"

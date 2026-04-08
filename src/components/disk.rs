@@ -103,10 +103,10 @@ impl Default for DiskComponent {
     }
 }
 
-/// Width of each metric column (Read, Write) — right-aligned.
-const COL_W: u16 = 12;
-/// Width of the usage percentage column.
-const USAGE_W: u16 = 7;
+/// Width of the size / free space columns — right-aligned.
+const SIZE_W: u16 = 10;
+/// Width of each percentage column (%used, %free) — right-aligned.
+const PCT_W: u16 = 7;
 
 /// Format an absolute byte count with SI suffixes (no "/s").
 fn fmt_bytes(bytes: u64) -> String {
@@ -357,9 +357,22 @@ impl DiskComponent {
             return Ok(());
         };
 
-        // Derive name column width from available space.
-        let fixed = (COL_W * 2 + USAGE_W) as usize;
-        let name_w = (inner.width as usize).saturating_sub(fixed);
+        // Name column: only as wide as the longest visible device name.
+        let name_w = snap
+            .devices
+            .iter()
+            .filter(|d| {
+                self.filter.is_empty() || d.name.to_lowercase().contains(self.filter.as_str())
+            })
+            .map(|d| d.name.len())
+            .max()
+            .unwrap_or(0)
+            .max("Device".len());
+        // Mount column: all remaining space after name, separator, and right-fixed columns.
+        let fixed_right = (SIZE_W * 2 + PCT_W * 2) as usize;
+        let mount_w = (inner.width as usize)
+            .saturating_sub(name_w + 1 + fixed_right)
+            .max("Mount".len());
 
         // Header row + list area
         let chunks = Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).split(inner);
@@ -370,15 +383,23 @@ impl DiskComponent {
         let header = Line::from(vec![
             Span::styled(format!("{:<width$}", "Device", width = name_w), accent_bold),
             Span::styled(
-                format!("{:>width$}", "Read (B/s)", width = COL_W as usize),
+                format!(" {:<width$}", "Mount", width = mount_w),
                 accent_bold,
             ),
             Span::styled(
-                format!("{:>width$}", "Write (B/s)", width = COL_W as usize),
+                format!("{:>width$}", "Size", width = SIZE_W as usize),
                 accent_bold,
             ),
             Span::styled(
-                format!("{:>width$}", "Use%", width = USAGE_W as usize),
+                format!("{:>width$}", "Free", width = SIZE_W as usize),
+                accent_bold,
+            ),
+            Span::styled(
+                format!("{:>width$}", "%Used", width = PCT_W as usize),
+                accent_bold,
+            ),
+            Span::styled(
+                format!("{:>width$}", "%Free", width = PCT_W as usize),
                 accent_bold,
             ),
         ]);
@@ -399,6 +420,7 @@ impl DiskComponent {
                 } else {
                     palette.accent
                 };
+                let free_pct = 100.0 - dev.usage_pct;
                 let line = Line::from(vec![
                     Span::styled(
                         format!("{:<width$}", truncate(&dev.name, name_w), width = name_w),
@@ -406,23 +428,35 @@ impl DiskComponent {
                     ),
                     Span::styled(
                         format!(
-                            "{:>width$}",
-                            fmt_rate_col(dev.read_bytes),
-                            width = COL_W as usize
+                            " {:<width$}",
+                            truncate(&dev.mount_point, mount_w),
+                            width = mount_w
                         ),
-                        Style::new().fg(palette.accent),
+                        Style::new().fg(palette.dim),
                     ),
                     Span::styled(
                         format!(
                             "{:>width$}",
-                            fmt_rate_col(dev.write_bytes),
-                            width = COL_W as usize
+                            fmt_bytes(dev.total_space),
+                            width = SIZE_W as usize
                         ),
-                        Style::new().fg(palette.highlight),
+                        Style::new().fg(palette.fg),
                     ),
                     Span::styled(
-                        format!("{:>width$.1}%", dev.usage_pct, width = USAGE_W as usize - 1),
+                        format!(
+                            "{:>width$}",
+                            fmt_bytes(dev.available_space),
+                            width = SIZE_W as usize
+                        ),
+                        Style::new().fg(palette.accent),
+                    ),
+                    Span::styled(
+                        format!("{:>width$.1}%", dev.usage_pct, width = PCT_W as usize - 1),
                         Style::new().fg(usage_color),
+                    ),
+                    Span::styled(
+                        format!("{:>width$.1}%", free_pct, width = PCT_W as usize - 1),
+                        Style::new().fg(palette.dim),
                     ),
                 ]);
                 ListItem::new(line)

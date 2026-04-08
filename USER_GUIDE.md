@@ -256,18 +256,18 @@ auto-opened).
 
 ### 3.3 Disk
 
-The Disk panel lists storage devices with per-device read/write
-rates and usage percentage. Usage is color-coded green → orange
-(≥70%) → red (≥90%).
+The Disk panel lists storage devices with capacity and usage
+information. Usage is color-coded green → orange (≥70%) → red
+(≥90%). Read/write rate history is shown in the detail view.
 
 **List view:**
 
 <!-- Auto-generated: cargo test --test doc_screenshots -->
 
 ```
-┌ [D]DISK ───────────────────────────────────────────────────────────┐
-│Device                                 Read (B/s) Write (B/s)   Use%│
-│sda                                           0 B    102.4 KB  45.0%│
+┌ [I]DISK ───────────────────────────────────────────────────────────┐
+│Device             Mount                Size      Free  %Used  %Free│
+│sda                /                500.1 GB  275.1 GB  45.0%  55.0%│
 │                                                                    │
 │                                                                    │
 │                                                                    │
