@@ -138,7 +138,7 @@ the [config file](#keybindings).
 | `S`             | Toggle sort direction (ascending ↔ descending)       | List         |
 | `t`             | Toggle tree view (parent/child hierarchy)            | List         |
 | `Space`         | Expand/collapse tree node                            | List (tree)  |
-| `k`             | Kill selected process (prompts for confirmation)     | List         |
+| `k`             | Kill selected process (prompts for confirmation); if a thread row is selected in tree view, kills the owning process | List |
 | `Tab`           | Toggle focus between Cancel and OK buttons           | Kill confirm |
 | `Enter`         | Activate focused button (Cancel or OK)               | Kill confirm |
 | `Esc` / `q`     | Cancel kill                                          | Kill confirm |
@@ -319,7 +319,10 @@ Press `t` to toggle between flat list and tree view. In tree
 mode, processes are arranged in a parent/child hierarchy with
 indentation showing depth. Press `Space` to collapse or expand a
 node's children. On Linux, per-process threads appear as children
-of their parent process.
+of their owning process — they are never shown in flat list view.
+
+Pressing `k` on a thread row targets the owning process, not the
+thread TID, since threads cannot be killed independently.
 
 To start in tree mode by default, set `show_tree = true` in the
 `[process]` config section.
@@ -394,9 +397,13 @@ Press `k` to kill the selected process. A confirmation dialog
 appears with **Cancel** (focused by default) and **OK** buttons.
 Use `Tab` to switch focus between buttons. Press `Enter` to
 activate the focused button, or `Esc`/`q` to cancel. Confirming
-sends `SIGTERM` to the process. If
-the kill fails (e.g., insufficient permissions), an error dialog
-appears; press `Enter`, `Esc`, or `Space` to dismiss.
+sends `SIGTERM` to the process. If the kill fails (e.g.,
+insufficient permissions), an error dialog appears; press `Enter`,
+`Esc`, or `Space` to dismiss.
+
+If a thread row is selected in tree view, the confirmation dialog
+will name the owning process — killing a thread TID individually
+is not supported.
 
 ### 3.5 Status Bar
 

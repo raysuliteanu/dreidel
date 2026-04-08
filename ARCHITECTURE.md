@@ -202,7 +202,7 @@ the lowercase string representations (`"cpu"`, `"mem"`, `"net"`, `"disk"`,
 | `cpu.rs`         | `CpuComponent`       | Per-core line chart + aggregate gauge; per-core temps on Linux; reports `preferred_height` |
 | `net.rs`         | `NetComponent`       | Per-interface RX/TX table; uses shared `ListView` + `FilterInput` |
 | `disk.rs`        | `DiskComponent`      | Per-device capacity/usage table (mount, size, free, %used/%free); detail view shows read/write rate graph; uses shared `ListView` + `FilterInput` |
-| `process/mod.rs` | `ProcessComponent`   | Sortable process table with state machine (see below)            |
+| `process/mod.rs` | `ProcessComponent`   | Sortable, filterable process table; flat view shows processes only (threads excluded); tree view shows threads as children of their owning process; `k` on a thread row kills the owning process |
 | `status_bar.rs`  | `StatusBarComponent` | Top/bottom strip: uptime/load/time · CPU mode breakdown · task counts · RAM/SWAP gauges with free/buffer/cache/available detail |
 | `help.rs`        | `HelpComponent`      | Full-screen overlay listing all keybindings                      |
 
