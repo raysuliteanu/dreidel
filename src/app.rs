@@ -460,7 +460,9 @@ impl App {
         terminal.draw(|frame| {
             let total_area = frame.area();
 
-            let (status_rect, content_area) = split_status_bar(total_area, status_pos);
+            let status_height = self.status_bar.preferred_height().unwrap_or(6);
+            let (status_rect, content_area) =
+                split_status_bar(total_area, status_pos, status_height);
             if status_pos != StatusBarPosition::Hidden
                 && let Err(e) = self.status_bar.draw(frame, status_rect)
             {

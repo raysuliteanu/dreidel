@@ -19,7 +19,7 @@ The crate is a dual lib+bin package:
 | `tokio`                          | Async runtime; powers the event loop and stats collector                            |
 | `tokio-util`                     | `CancellationToken` for clean shutdown of background tasks                          |
 | `sysinfo`                        | Cross-platform system metrics: CPU, memory, processes, networks, disks              |
-| `procfs`                         | Linux-only `/proc` access for per-process priority, nice, threads, SHR, CPU split, faults, context switches, tty, fd count, and richer I/O |
+| `procfs`                         | Linux-only `/proc` access for per-process priority, nice, threads, SHR, CPU split, faults, context switches, tty, fd count, and richer I/O; also used for aggregate CPU mode percentages (`/proc/stat`) and memory breakdown (`/proc/meminfo`) shown in the status bar |
 | `clap`                           | CLI argument parsing (derive macro)                                                 |
 | `serde` / `toml`                 | Config file deserialization                                                         |
 | `humantime`                      | Parses human-readable durations (`"1s"`, `"500ms"`) in config                       |
@@ -119,6 +119,11 @@ The layout engine. `LayoutPreset` has four variants:
 instead of using fixed percentages. `SlotOverrides` allows individual slots to be
 reassigned to a different component via config.
 
+`split_status_bar(area, pos, height)` carves the status bar rect from the total
+terminal area. The height argument is supplied by `StatusBarComponent::preferred_height()`,
+which returns 6 (4 content rows + 2 border) when no swap is configured, or 7 when
+swap is present — so the SWAP gauge row appears only when relevant.
+
 ### `src/components/mod.rs` — `Component` trait
 
 Every panel implements:
@@ -198,7 +203,7 @@ the lowercase string representations (`"cpu"`, `"mem"`, `"net"`, `"disk"`,
 | `net.rs`         | `NetComponent`       | Per-interface RX/TX table; uses shared `ListView` + `FilterInput` |
 | `disk.rs`        | `DiskComponent`      | Per-device read/write/usage table; uses shared `ListView` + `FilterInput` |
 | `process/mod.rs` | `ProcessComponent`   | Sortable process table with state machine (see below)            |
-| `status_bar.rs`  | `StatusBarComponent` | Top/bottom strip: hostname, uptime, load avg, time               |
+| `status_bar.rs`  | `StatusBarComponent` | Top/bottom strip: uptime/load/time · CPU mode breakdown · task counts · RAM/SWAP gauges with free/buffer/cache/available detail |
 | `help.rs`        | `HelpComponent`      | Full-screen overlay listing all keybindings                      |
 
 #### `ProcessComponent` state machine
@@ -234,11 +239,16 @@ that runs two `tokio::time::interval` timers:
 This dual-interval design avoids thousands of `/proc` syscalls on every tick while
 still keeping thread data visible in the UI.
 
-Linux-specific metrics (`package_temp`, `per_core_temp`, `swap_in/out_bytes`,
-per-process `priority/nice/threads/shr_bytes`, CPU user/system split, page faults,
-context switches, tty, swap, fd count, and `/proc/<pid>/io` counters) are guarded by
-`#[cfg(target_os = "linux")]` and read from hwmon sensors (via `sysinfo`),
-`/proc/vmstat`, sysfs CPU topology, and `procfs` respectively.
+Linux-specific metrics are guarded by `#[cfg(target_os = "linux")]`:
+
+- **Status bar** — aggregate CPU mode percentages (user/sys/nice/idle/iowait/irq/softirq/steal)
+  computed from `/proc/stat` jiffy deltas stored in `prev_cpu_total` between ticks;
+  RAM free/buffers/cached/available from `/proc/meminfo` via `procfs::Meminfo`.
+- **Per-process** — priority, nice, threads, SHR, CPU user/system split, page faults,
+  context switches, tty, swap bytes, fd count, and `/proc/<pid>/io` counters from `procfs`.
+- **Sensors** — package and per-core temperatures from hwmon (via `sysinfo`), mapped to
+  logical cores through `/sys/devices/system/cpu/cpuN/topology/core_id`.
+- **Swap I/O** — cumulative swap-in/out bytes from `/proc/vmstat`.
 
 Process snapshots combine cross-platform `sysinfo` fields (name, cmdline, RSS,
 virtual memory, start/runtime, executable path, cwd, root, user/group IDs,
@@ -257,8 +267,11 @@ their physical core's temperature reading.
 Plain data structs — no logic, only fields. Each has a `.stub()` constructor used
 in tests to avoid depending on the live stats collector. The structs are:
 
-`SysSnapshot`, `CpuSnapshot` (includes `per_core_temp` and `package_temp` on
-Linux), `MemSnapshot`, `NetSnapshot` / `InterfaceSnapshot`,
+`SysSnapshot`, `CpuSnapshot` (includes `per_core_temp`, `package_temp`, and
+`cpu_modes: Option<CpuModes>` on Linux — `CpuModes` carries the eight per-mode
+percentages computed from `/proc/stat` deltas), `MemSnapshot` (includes
+`ram_free`, `ram_buffers`, `ram_cached`, `ram_available` from `/proc/meminfo` on
+Linux), `NetSnapshot` / `InterfaceSnapshot`,
 `DiskSnapshot` / `DiskDeviceSnapshot`, `ProcSnapshot` / `ProcessEntry` / `ProcessStatus`.
 
 `ProcessEntry` now includes both list-view fields and detail-only fields. The list

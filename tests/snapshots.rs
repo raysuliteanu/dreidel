@@ -3,7 +3,7 @@
 use dreidel::{
     action::Action,
     components::{Component, cpu::CpuComponent, status_bar::StatusBarComponent},
-    stats::snapshots::{CpuSnapshot, MemSnapshot, SysSnapshot},
+    stats::snapshots::{CpuSnapshot, MemSnapshot, ProcSnapshot, SysSnapshot},
     theme::ColorPalette,
 };
 use insta::assert_snapshot;
@@ -32,9 +32,13 @@ fn status_bar_snapshot() {
     };
     let mut comp = StatusBarComponent::new(ColorPalette::dark());
     comp.update(&Action::SysUpdate(sys)).unwrap();
+    comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
+        .unwrap();
     comp.update(&Action::MemUpdate(MemSnapshot::stub()))
         .unwrap();
-    let mut t = Terminal::new(TestBackend::new(120, 4)).unwrap();
+    comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        .unwrap();
+    let mut t = Terminal::new(TestBackend::new(120, 7)).unwrap();
     t.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
     assert_snapshot!(t.backend());
 }

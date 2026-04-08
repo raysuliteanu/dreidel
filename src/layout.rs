@@ -75,15 +75,17 @@ pub enum StatusBarPosition {
     Hidden,
 }
 
-pub fn split_status_bar(area: Rect, pos: StatusBarPosition) -> (Rect, Rect) {
+pub fn split_status_bar(area: Rect, pos: StatusBarPosition, height: u16) -> (Rect, Rect) {
     match pos {
         StatusBarPosition::Hidden => (Rect::default(), area),
         StatusBarPosition::Top => {
-            let chunks = Layout::vertical([Constraint::Length(4), Constraint::Fill(1)]).split(area);
+            let chunks =
+                Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).split(area);
             (chunks[0], chunks[1])
         }
         StatusBarPosition::Bottom => {
-            let chunks = Layout::vertical([Constraint::Fill(1), Constraint::Length(4)]).split(area);
+            let chunks =
+                Layout::vertical([Constraint::Fill(1), Constraint::Length(height)]).split(area);
             (chunks[1], chunks[0])
         }
     }
@@ -318,9 +320,9 @@ mod tests {
     #[test]
     fn status_bar_reduces_available_area() {
         let area = Rect::new(0, 0, 200, 50);
-        let (bar, rest) = split_status_bar(area, StatusBarPosition::Top);
-        assert_eq!(bar.height, 4);
-        assert_eq!(rest.height, 46);
+        let (bar, rest) = split_status_bar(area, StatusBarPosition::Top, 6);
+        assert_eq!(bar.height, 6);
+        assert_eq!(rest.height, 44);
     }
 
     #[test]
