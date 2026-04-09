@@ -74,10 +74,6 @@ insta = { version = "1.46.3", features = ["filters"] }
 name = "tree_build"
 harness = false
 
-[build-dependencies]
-anyhow = "1.0.102"
-vergen-gix = "9.1.0"
-
 [package.metadata.docs.rs]
 # This crate uses Linux-specific APIs; only build docs for Linux targets.
 targets = ["x86_64-unknown-linux-gnu"]

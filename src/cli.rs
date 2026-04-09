@@ -68,19 +68,16 @@ pub struct Args {
 }
 
 // clap's version attribute requires &'static str. Since we need a short SHA
-// suffix computed from a compile-time constant, we build the string once and
-// leak it to satisfy the 'static bound.
+// suffix computed at compile time, we build the string once and leak it to
+// satisfy the 'static bound.
 fn version() -> &'static str {
     static V: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
     V.get_or_init(|| {
         let pkg_version = env!("CARGO_PKG_VERSION");
-        let raw_sha = env!("VERGEN_GIT_SHA");
-        // vergen sets the env var to a placeholder like "VERGEN_GIT_SHA" when
-        // git metadata is unavailable (e.g. cargo install from crates.io).
-        if raw_sha.starts_with("VERGEN_") {
+        let sha = env!("GIT_SHA");
+        if sha == "unknown" {
             Box::leak(pkg_version.to_string().into_boxed_str())
         } else {
-            let sha = &raw_sha[..7];
             Box::leak(format!("{pkg_version} ({sha})").into_boxed_str())
         }
     })
