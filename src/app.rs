@@ -153,8 +153,15 @@ impl App {
                 detected_theme,
                 config.general.theme,
             )),
+            // Default focus: process panel when all components are present,
+            // otherwise the first listed component so the user always starts
+            // with something focused (e.g. `--show net` focuses net).
             focus: FocusState::Normal {
-                focused: ComponentId::Process,
+                focused: if visible.len() == 4 {
+                    ComponentId::Process
+                } else {
+                    visible.first().copied().unwrap_or(ComponentId::Process)
+                },
             },
             show_help: false,
             loading: true,
@@ -288,19 +295,27 @@ impl App {
         let kb = &self.config.keybindings;
         if let KeyCode::Char(c) = key.code {
             let c = c.to_ascii_lowercase();
-            if c == kb.focus_proc {
+            // Only focus a component if it is actually in the layout.  Use
+            // rendered_ids (populated after the first render) when available;
+            // fall back to visible so the very first key-press also works.
+            let focusable = if self.rendered_ids.is_empty() {
+                &self.visible
+            } else {
+                &self.rendered_ids
+            };
+            if c == kb.focus_proc && focusable.contains(&ComponentId::Process) {
                 let _ = self
                     .action_tx
                     .try_send(Action::FocusComponent(ComponentId::Process));
-            } else if c == kb.focus_cpu {
+            } else if c == kb.focus_cpu && focusable.contains(&ComponentId::Cpu) {
                 let _ = self
                     .action_tx
                     .try_send(Action::FocusComponent(ComponentId::Cpu));
-            } else if c == kb.focus_net {
+            } else if c == kb.focus_net && focusable.contains(&ComponentId::Net) {
                 let _ = self
                     .action_tx
                     .try_send(Action::FocusComponent(ComponentId::Net));
-            } else if c == kb.focus_disk {
+            } else if c == kb.focus_disk && focusable.contains(&ComponentId::Disk) {
                 let _ = self
                     .action_tx
                     .try_send(Action::FocusComponent(ComponentId::Disk));
@@ -460,7 +475,9 @@ impl App {
         terminal.draw(|frame| {
             let total_area = frame.area();
 
-            let (status_rect, content_area) = split_status_bar(total_area, status_pos);
+            let status_height = self.status_bar.preferred_height().unwrap_or(6);
+            let (status_rect, content_area) =
+                split_status_bar(total_area, status_pos, status_height);
             if status_pos != StatusBarPosition::Hidden
                 && let Err(e) = self.status_bar.draw(frame, status_rect)
             {
@@ -788,6 +805,69 @@ mod tests {
         assert!(
             has_content(&buf, right_strip),
             "right half of content area should be rendered in single-component adaptive mode"
+        );
+    }
+
+    /// When fewer than four components are shown the first listed component
+    /// should receive initial focus so the user never starts unfocused.
+    #[test]
+    fn initial_focus_is_first_visible_component_when_not_all_shown() {
+        let mut cfg = Config::default();
+        cfg.layout.show = vec!["net".into(), "disk".into()];
+        let app = App::new(cfg, None).expect("app");
+        assert!(
+            matches!(
+                app.focus,
+                FocusState::Normal {
+                    focused: ComponentId::Net
+                }
+            ),
+            "expected Net to have initial focus, got {:?}",
+            app.focus,
+        );
+    }
+
+    /// With all four components the default initial focus must remain Process.
+    #[test]
+    fn initial_focus_is_process_when_all_components_shown() {
+        let app = make_app();
+        assert!(
+            matches!(
+                app.focus,
+                FocusState::Normal {
+                    focused: ComponentId::Process
+                }
+            ),
+            "expected Process to have initial focus, got {:?}",
+            app.focus,
+        );
+    }
+
+    /// Focus shortcut keys for hidden components must be no-ops — pressing 'p'
+    /// when only the disk panel is shown should not steal focus from disk.
+    #[test]
+    fn focus_key_ignored_for_hidden_component() {
+        let mut cfg = Config::default();
+        cfg.layout.show = vec!["disk".into()];
+        let mut app = App::new(cfg, None).expect("app");
+
+        // Trigger a render so rendered_ids is populated.
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        app.render_to(&mut terminal).unwrap();
+        drain(&mut app); // clear any queued actions
+
+        // Press the process focus key — should produce no FocusComponent action.
+        app.handle_key_event(KeyEvent::new(
+            KeyCode::Char(app.config.keybindings.focus_proc),
+            KeyModifiers::NONE,
+        ))
+        .unwrap();
+        let actions = drain(&mut app);
+        assert!(
+            !actions
+                .iter()
+                .any(|a| matches!(a, Action::FocusComponent(_))),
+            "pressing a focus key for a hidden component must not change focus; got {actions:?}"
         );
     }
 

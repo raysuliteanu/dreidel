@@ -38,6 +38,22 @@ stub data (`.stub()` constructors) so they are deterministic and don't require
 a live system. Replaced sections in `USER_GUIDE.md` are marked with
 `<!-- Auto-generated: cargo test --test doc_screenshots -->` comments.
 
+## Benchmarks
+
+[Criterion](https://github.com/bheisler/criterion.rs) benchmarks live in
+`benches/`. Currently covers the process tree builder (`build_tree`) at
+various sizes, with and without threads and filters.
+
+```bash
+cargo bench                         # run all benchmarks
+cargo bench --bench tree_build      # run a specific bench file
+cargo bench -- "build_tree/all"     # filter by benchmark name
+```
+
+Results are written to `target/criterion/` with HTML reports. After running
+benchmarks, open `target/criterion/report/index.html` to view comparisons
+against the previous run.
+
 ## Code Quality
 
 ```bash
@@ -56,63 +72,59 @@ using [git-cliff](https://github.com/orhun/git-cliff). Config: `cliff.toml`.
 # Preview what the changelog would look like for a hypothetical next tag:
 git-cliff --tag v0.2.0
 
-# Regenerate CHANGELOG.md in place (cargo release does this automatically):
+# Regenerate CHANGELOG.md in place:
 git-cliff --output CHANGELOG.md
 ```
 
 ## Release Process
 
-Releases are managed with [cargo-release](https://github.com/crate-ci/cargo-release).
-Config: `release.toml`. The repo uses **jj** in co-located mode; `cargo release`
-operates on the underlying git layer.
-
-### Dry run (default — no changes made)
+Use `scripts/release` to cut a release. It handles changelog generation,
+version bumping, tagging, and pushing in one step:
 
 ```bash
-cargo release patch    # or: minor | major
+scripts/release                   # patch release (default)
+scripts/release minor             # minor release
+scripts/release major             # major release
+scripts/release -n                # dry run — preview without making changes
+scripts/release -n minor          # dry-run a minor release
 ```
 
-### Execute a release
+The script performs these steps:
+
+1. Regenerate `CHANGELOG.md` via `git-cliff` and commit it
+2. Run `cargo release` which bumps the version in `Cargo.toml`, commits,
+   creates a `vX.Y.Z` git tag, and publishes to crates.io
+3. Sync jj, advance the `main` bookmark, and push the bookmark and tag
+   to origin
+
+In dry-run mode (`-n` / `--dry-run`), changelog and push steps are echoed
+but not executed, and `cargo release` runs in its own dry-run mode.
+
+### Prerequisites
+
+The script requires `cargo-release`, `git-cliff`, and `jj`:
 
 ```bash
-cargo release patch --execute
+cargo install cargo-release --locked
+brew install git-cliff        # or: cargo install git-cliff --locked
 ```
 
-This will:
+### Underlying tools
 
-1. Bump the version in `Cargo.toml`
-2. Commit the version bump
-3. Create a `vX.Y.Z` git tag
-4. Publish to crates.io
-
-Note: the `scripts/release` wrapper regenerates `CHANGELOG.md` via `git-cliff`
-*before* running `cargo release`, so the changelog commit precedes the version
-bump commit.
-
-After `cargo release` completes, push the new commit and tag via jj:
-
-```bash
-jj git fetch
-jj bookmark set main -r @-   # ensure main points at the release commit
-jj git push --bookmark main
-git push origin vX.Y.Z        # push the tag (jj doesn't manage git tags directly)
-```
-
-Or simply run the release script which does all of the above:
-
-```bash
-scripts/release [patch|minor|major]   # default: patch
-```
+- [cargo-release](https://github.com/crate-ci/cargo-release) — config: `release.toml`
+- [git-cliff](https://github.com/orhun/git-cliff) — config: `cliff.toml`
+- The repo uses **jj** in co-located mode; `cargo release` operates on the
+  underlying git layer
 
 ### Version scheme
 
 This project follows [Semantic Versioning](https://semver.org/):
 
-| Change                             | Command               |
-| ---------------------------------- | --------------------- |
-| Bug fixes, minor improvements      | `cargo release patch` |
-| New features, backwards-compatible | `cargo release minor` |
-| Breaking changes                   | `cargo release major` |
+| Change                             | Command                  |
+| ---------------------------------- | ------------------------ |
+| Bug fixes, minor improvements      | `scripts/release`        |
+| New features, backwards-compatible | `scripts/release minor`  |
+| Breaking changes                   | `scripts/release major`  |
 
 While the version is `0.x`, minor-version bumps may include breaking changes
 per semver convention.

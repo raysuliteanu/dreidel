@@ -1,6 +1,18 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Documentation
+
+The project contains the following key documents:
+
+- **[README.md](README.md)** — general project info
+- **[User Guide](USER_GUIDE.md)** — complete reference: all components, keyboard
+  shortcuts, fullscreen behavior, layouts, themes, CLI flags, and config options
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — technical deep-dive into the data flow,
+  component model, and layout engine
+- **[BUILDING.md](BUILDING.md)** — build, test, and release instructions
+
+They should be checked after feature/fix/refactoring changes to ensure they are
+up to date with code changes.
 
 ## Source Control
 
@@ -23,13 +35,6 @@ cargo run -- --help                 # CLI flags
 cargo run -- --init-config          # print default config template
 ```
 
-## Hooks (auto-run, no action needed)
-
-- **PostToolUse on `.rs` edit**: `cargo clippy -D warnings` — blocks on any warning. Fix before moving to the next file.
-- **Pre-push**: `cargo fmt --check` — ensure code is formatted before pushing.
-
-Because clippy fires after every single file save, multi-file changes that create temporary broken states will block. Strategy: complete the full implementation chain within one file before saving, or temporarily add `#[allow(dead_code)]` / `#[allow(unused_imports)]` and remove it once the chain is wired up.
-
 ## Architecture
 
 The codebase is a dual lib+bin crate (`src/lib.rs` exports modules; `src/main.rs` is the binary entry point).
@@ -47,6 +52,7 @@ sysinfo → stats/mod.rs (spawn_collector) → Action::*Update → App::handle_a
 ### Action bus
 
 `action.rs` defines the `Action` enum. All app logic communicates via this channel. Key variants:
+
 - `*Update(Snapshot)` — metric payloads from the stats collector
 - `FocusComponent(ComponentId)`, `ToggleFullScreen`, `ToggleHelp` — UI state
 - `Render`, `Quit` — infrastructure
@@ -71,7 +77,11 @@ fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()>
 
 ### Key dispatch
 
-In `App::handle_events`, `Event::Key` goes to the *focused component* first via `handle_key_event`. If the component returns `Ok(None)`, the global handler runs (focus-switch keys `p/c/n/d`, `Tab`/`Shift-Tab`, `f` fullscreen, `?` help, `q` quit). Tab cycling uses `App::rendered_ids` — only components that have a layout slot AND are in `visible` — updated each render.
+In `App::handle_events`, `Event::Key` goes to the _focused component_ first via `handle_key_event`. If the component returns `Ok(None)`, the global handler runs (focus-switch keys `p/c/n/d`, `Tab`/`Shift-Tab`, `f` fullscreen, `?` help, `q` quit).
+
+Focus-switch keys (`p/c/n/d`) are **no-ops for hidden components** — pressing `p` when process is not in the layout does nothing. The guard checks `rendered_ids` (populated after the first render) and falls back to `visible` before the first render. Initial focus defaults to the first listed component in `visible`; when all four components are present it defaults to Process.
+
+Tab cycling uses `App::rendered_ids` — only components that have a layout slot AND are in `visible` — updated each render.
 
 ### ComponentId ↔ config string mapping
 
@@ -85,6 +95,15 @@ Component `draw()` methods are tested with `ratatui::backend::TestBackend` + `in
 
 Each `*Snapshot` struct in `stats/snapshots.rs` has a `.stub()` constructor for use in tests, so tests don't depend on the stats collector.
 
+## Development Checks
+
+These run automatically on every edit — fix any issues before moving to the next file:
+
+- **`.rs` save** → `cargo clippy -D warnings` runs immediately and blocks on any warning.
+- **Pre-push** → `cargo fmt --check` must pass before a push is accepted.
+
+Because clippy fires after every single `.rs` save, multi-file changes that create temporary broken states will block. Strategy: complete the full change within one file before saving, or temporarily add `#[allow(dead_code)]` / `#[allow(unused_imports)]` and remove it once the chain is wired up.
+
 ## Key Conventions
 
 - Use `.context("present tense phrase")` on every `?` propagation (`anyhow`).
@@ -92,3 +111,5 @@ Each `*Snapshot` struct in `stats/snapshots.rs` has a `.stub()` constructor for 
 - `#[cfg(target_os = "linux")]` guards per-core and package temperature (CpuSnapshot), swap activity (MemSnapshot, `/proc/vmstat`), and thread enumeration.
 - Logs go to `~/.local/share/dreidel/dreidel.log` (never stderr — would corrupt the TUI).
 - Config file: `~/.config/dreidel/config.toml` (TOML, all fields optional with serde defaults).
+- Process flat view shows **processes only** — threads are excluded. Threads appear as children of their owning process in tree view only. `k` on a thread row targets the owning process.
+- Disk compact view shows: device name, mount point, total size, free space, %used, %free. Read/write rate history is available in the per-device detail view.

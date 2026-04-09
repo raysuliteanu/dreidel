@@ -26,8 +26,8 @@ of your machine at a glance:
   per-core temperatures (Linux)
 - **Network** — per-interface RX/TX rates; press `Enter` on any
   interface for a full-screen graph of just that interface
-- **Disk** — per-device read/write rates and usage percentage;
-  same per-device detail view
+- **Disk** — per-device capacity info (mount point, size, free space, %used/%free);
+  press `Enter` for a per-device read/write rate graph
 - **Process** — sortable, filterable process table with a detail
   overlay and signal support (`SIGTERM`)
 - **Status bar** — clock, uptime, load averages, and RAM/swap gauges
@@ -122,7 +122,8 @@ dreidel --help        # see all CLI options
   reverse direction.
 - **Process tree view:** Press `t` to toggle tree mode — processes
   are shown in a parent/child hierarchy with expand/collapse
-  (`Space`). On Linux, threads appear as children.
+  (`Space`). On Linux, threads appear as children of their owning
+  process (flat list view shows processes only).
 - **Extended process columns:** Make the terminal ≥ 120 columns
   wide (or press `f` for fullscreen) to see the full htop-style
   column set: User, PR, NI, VIRT, RES, SHR, Time, Command.

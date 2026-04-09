@@ -1,7 +1,7 @@
 ---
-source: tests/snapshots.rs
-assertion_line: 40
-expression: t.backend()
+source: src/components/status_bar.rs
+assertion_line: 381
+expression: terminal.backend()
 ---
 "┌ dev-box ─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐"
 "│up 3d 4h 0m  load: 1.24 0.98 0.87                                                                  2026-03-25 12:00:00│"

@@ -48,6 +48,12 @@ pub async fn run_collector(
     #[allow(unused_mut)] // mut only needed on linux
     let mut cached_threads: Vec<ProcessEntry> = Vec::new();
 
+    // Previous aggregate CPU jiffies, used to compute mode-percentage deltas
+    // between ticks. Linux-only; on other platforms the state stays `None` and
+    // `CpuSnapshot::cpu_modes` is never populated.
+    #[cfg(target_os = "linux")]
+    let mut prev_cpu_total: Option<CpuTotals> = None;
+
     loop {
         // Wait for whichever interval fires first.  When both are ready
         // simultaneously tokio::select! picks one — the slow tick runs its
@@ -75,9 +81,14 @@ pub async fn run_collector(
         let mut proc_snap = build_proc(&sys);
         proc_snap.processes.extend(cached_threads.clone());
 
+        #[cfg(target_os = "linux")]
+        let cpu_snap = build_cpu(&sys, &components, &mut prev_cpu_total);
+        #[cfg(not(target_os = "linux"))]
+        let cpu_snap = build_cpu(&sys, &components);
+
         let actions = [
             Action::SysUpdate(build_sys(&sys)),
-            Action::CpuUpdate(build_cpu(&sys, &components)),
+            Action::CpuUpdate(cpu_snap),
             Action::MemUpdate(build_mem(&sys)),
             Action::NetUpdate(build_net(&nets)),
             Action::DiskUpdate(build_disk(&disks)),
@@ -111,7 +122,104 @@ fn build_sys(_sys: &System) -> SysSnapshot {
     }
 }
 
-fn build_cpu(sys: &System, components: &Components) -> CpuSnapshot {
+/// Snapshot of raw CPU jiffies from `/proc/stat`, used to compute per-mode
+/// percentage deltas between collector ticks.
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, Copy)]
+struct CpuTotals {
+    user: u64,
+    nice: u64,
+    system: u64,
+    idle: u64,
+    iowait: u64,
+    irq: u64,
+    softirq: u64,
+    steal: u64,
+}
+
+#[cfg(target_os = "linux")]
+fn read_cpu_totals() -> Option<CpuTotals> {
+    use procfs::CurrentSI;
+    let stats = procfs::KernelStats::current().ok()?;
+    let t = stats.total;
+    Some(CpuTotals {
+        user: t.user,
+        nice: t.nice,
+        system: t.system,
+        idle: t.idle,
+        iowait: t.iowait.unwrap_or(0),
+        irq: t.irq.unwrap_or(0),
+        softirq: t.softirq.unwrap_or(0),
+        steal: t.steal.unwrap_or(0),
+    })
+}
+
+/// Compute mode percentages from two CPU jiffy snapshots. Returns `None` when
+/// the delta is zero (e.g. suspended system or back-to-back reads).
+#[cfg(target_os = "linux")]
+fn compute_cpu_modes(prev: CpuTotals, curr: CpuTotals) -> Option<CpuModes> {
+    let d_user = curr.user.saturating_sub(prev.user);
+    let d_nice = curr.nice.saturating_sub(prev.nice);
+    let d_system = curr.system.saturating_sub(prev.system);
+    let d_idle = curr.idle.saturating_sub(prev.idle);
+    let d_iowait = curr.iowait.saturating_sub(prev.iowait);
+    let d_irq = curr.irq.saturating_sub(prev.irq);
+    let d_softirq = curr.softirq.saturating_sub(prev.softirq);
+    let d_steal = curr.steal.saturating_sub(prev.steal);
+
+    let total = d_user + d_nice + d_system + d_idle + d_iowait + d_irq + d_softirq + d_steal;
+    if total == 0 {
+        return None;
+    }
+    let scale = 100.0 / total as f32;
+    Some(CpuModes {
+        user: d_user as f32 * scale,
+        nice: d_nice as f32 * scale,
+        system: d_system as f32 * scale,
+        idle: d_idle as f32 * scale,
+        iowait: d_iowait as f32 * scale,
+        irq: d_irq as f32 * scale,
+        softirq: d_softirq as f32 * scale,
+        steal: d_steal as f32 * scale,
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn build_cpu(
+    sys: &System,
+    components: &Components,
+    prev_cpu_total: &mut Option<CpuTotals>,
+) -> CpuSnapshot {
+    let cpus = sys.cpus();
+    let cpu_modes = read_cpu_totals().and_then(|curr| {
+        let modes = prev_cpu_total.and_then(|prev| compute_cpu_modes(prev, curr));
+        *prev_cpu_total = Some(curr);
+        modes
+    });
+    CpuSnapshot {
+        per_core: cpus.iter().map(|c| c.cpu_usage()).collect(),
+        aggregate: sys.global_cpu_usage(),
+        frequency: cpus.iter().map(|c| c.frequency()).collect(),
+        cpu_brand: cpus
+            .first()
+            .map(|c| c.brand().to_owned())
+            .unwrap_or_default(),
+        package_temp: components
+            .iter()
+            .find(|c| {
+                let l = c.label().to_lowercase();
+                l.contains("package") || l.ends_with(" cpu") || l == "cpu"
+            })
+            .and_then(|c| c.temperature()),
+        per_core_temp: build_per_core_temps(components, cpus.len()),
+        physical_core_count: read_physical_core_count(),
+        governor: read_cpu_governor(),
+        cpu_modes,
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn build_cpu(sys: &System, _components: &Components) -> CpuSnapshot {
     let cpus = sys.cpus();
     CpuSnapshot {
         per_core: cpus.iter().map(|c| c.cpu_usage()).collect(),
@@ -121,28 +229,11 @@ fn build_cpu(sys: &System, components: &Components) -> CpuSnapshot {
             .first()
             .map(|c| c.brand().to_owned())
             .unwrap_or_default(),
-        #[cfg(target_os = "linux")]
-        package_temp: components
-            .iter()
-            .find(|c| {
-                let l = c.label().to_lowercase();
-                l.contains("package") || l.ends_with(" cpu") || l == "cpu"
-            })
-            .and_then(|c| c.temperature()),
-        #[cfg(not(target_os = "linux"))]
         package_temp: None,
-        #[cfg(target_os = "linux")]
-        per_core_temp: build_per_core_temps(components, cpus.len()),
-        #[cfg(not(target_os = "linux"))]
         per_core_temp: vec![None; cpus.len()],
-        #[cfg(target_os = "linux")]
-        physical_core_count: read_physical_core_count(),
-        #[cfg(not(target_os = "linux"))]
         physical_core_count: None,
-        #[cfg(target_os = "linux")]
-        governor: read_cpu_governor(),
-        #[cfg(not(target_os = "linux"))]
         governor: None,
+        cpu_modes: None,
     }
 }
 
@@ -230,9 +321,18 @@ fn read_cpu_governor() -> Option<String> {
 }
 
 fn build_mem(sys: &System) -> MemSnapshot {
+    #[cfg(target_os = "linux")]
+    let (ram_free, ram_buffers, ram_cached, ram_available) = read_mem_details();
+    #[cfg(not(target_os = "linux"))]
+    let (ram_free, ram_buffers, ram_cached, ram_available) = (0u64, 0u64, 0u64, 0u64);
+
     MemSnapshot {
         ram_used: sys.used_memory(),
         ram_total: sys.total_memory(),
+        ram_free,
+        ram_buffers,
+        ram_cached,
+        ram_available,
         swap_used: sys.used_swap(),
         swap_total: sys.total_swap(),
         #[cfg(target_os = "linux")]
@@ -244,6 +344,22 @@ fn build_mem(sys: &System) -> MemSnapshot {
         #[cfg(not(target_os = "linux"))]
         swap_out_bytes: 0,
     }
+}
+
+/// Read `MemFree`, `Buffers`, `Cached`, and `MemAvailable` from `/proc/meminfo`
+/// via procfs. Returns zeros on any read failure.
+#[cfg(target_os = "linux")]
+fn read_mem_details() -> (u64, u64, u64, u64) {
+    use procfs::Current;
+    let Ok(mi) = procfs::Meminfo::current() else {
+        return (0, 0, 0, 0);
+    };
+    (
+        mi.mem_free,
+        mi.buffers,
+        mi.cached,
+        mi.mem_available.unwrap_or(0),
+    )
 }
 
 /// Read a single numeric field from /proc/vmstat (Linux only).
@@ -426,6 +542,12 @@ fn build_proc(sys: &System) -> ProcSnapshot {
                         entry.voluntary_ctxt_switches = status.voluntary_ctxt_switches;
                         entry.nonvoluntary_ctxt_switches = status.nonvoluntary_ctxt_switches;
                         entry.swap_bytes = status.vmswap.map(|kb| kb * 1024);
+                        // sysinfo exposes thread TIDs as top-level /proc entries.
+                        // Tgid != pid means this entry is a thread, not a process.
+                        if status.tgid != pid as i32 {
+                            entry.is_thread = true;
+                            entry.parent_pid = Some(status.tgid as u32);
+                        }
                     }
                     if let Ok(io) = proc.io() {
                         entry.io_read_calls = Some(io.syscr);
@@ -441,6 +563,10 @@ fn build_proc(sys: &System) -> ProcSnapshot {
 
                 entry
             })
+            // Exclude thread TIDs that sysinfo exposes as top-level /proc entries.
+            // Their is_thread flag was set above via the Tgid check.  Thread data is
+            // provided by enumerate_threads instead, avoiding duplicate entries.
+            .filter(|e| !e.is_thread)
             .collect(),
     }
 }
@@ -460,9 +586,21 @@ fn enumerate_threads(sys: &System) -> Vec<ProcessEntry> {
         let proc_name = p.name().to_string_lossy();
         let proc_user = p.user_id().map(|u| u.to_string()).unwrap_or_default();
 
-        if let Ok(proc) = procfs::process::Process::new(pid as i32)
-            && let Ok(tasks) = proc.tasks()
+        let Ok(proc) = procfs::process::Process::new(pid as i32) else {
+            continue;
+        };
+
+        // sysinfo exposes thread TIDs as top-level /proc entries alongside real
+        // processes.  Reading /proc/[TID]/task/ would return all siblings of that
+        // thread group, creating spurious parent→child entries that form cycles in
+        // the tree.  Only enumerate tasks for real process group leaders (TID == TGID).
+        if let Ok(status) = proc.status()
+            && status.tgid != pid as i32
         {
+            continue;
+        }
+
+        if let Ok(tasks) = proc.tasks() {
             for task_result in tasks {
                 let Ok(task) = task_result else { continue };
                 let tid = task.tid as u32;

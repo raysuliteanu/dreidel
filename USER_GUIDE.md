@@ -29,12 +29,15 @@ configuration option in dreidel.
 
 dreidel divides the terminal into panels. Each panel hosts one
 component (CPU, Network, Disk, or Process). A status bar sits at
-the top (or bottom) with uptime, load averages, and RAM/swap
-gauges.
+the top (or bottom) summarising uptime, CPU mode breakdown, task
+counts, and RAM/swap detail.
 
 ```
-┌─ hostname ──────────────── uptime · load avg · time ──────────────────────┐
-│  RAM [████████░░░░░░░░░░░░] 4.2G/16G  26%  │  SWAP [░░░░░░░░] 0B/4G   0%  │
+┌─ hostname ─────────────────────────────────────── uptime · load avg · time ┐
+│  5.2% user  0.2% sys  0.0% nice  84.8% idle  9.8% iowait  …               │
+│  tasks  312 total  3 running  280 sleeping  0 stopped  0 zombie             │
+│  [████████░░░░░░░░░░░░] RAM 4.2G/16G  free 8.1G  buffer/cache 3.4G  …      │
+│  [░░░░░░░░░░░░░░░░░░░░] SWAP 0B/4G  free 4G                                │
 ├─────────────┬─────────────────────────────────────────────────────────────┤
 │ [CPU]       │                                                             │
 │  cpu00  12% │  PID   NAME             CPU%  MEM%   S                      │
@@ -135,7 +138,7 @@ the [config file](#keybindings).
 | `S`             | Toggle sort direction (ascending ↔ descending)       | List         |
 | `t`             | Toggle tree view (parent/child hierarchy)            | List         |
 | `Space`         | Expand/collapse tree node                            | List (tree)  |
-| `k`             | Kill selected process (prompts for confirmation)     | List         |
+| `k`             | Kill selected process (prompts for confirmation); if a thread row is selected in tree view, kills the owning process | List |
 | `Tab`           | Toggle focus between Cancel and OK buttons           | Kill confirm |
 | `Enter`         | Activate focused button (Cancel or OK)               | Kill confirm |
 | `Esc` / `q`     | Cancel kill                                          | Kill confirm |
@@ -253,18 +256,18 @@ auto-opened).
 
 ### 3.3 Disk
 
-The Disk panel lists storage devices with per-device read/write
-rates and usage percentage. Usage is color-coded green → orange
-(≥70%) → red (≥90%).
+The Disk panel lists storage devices with capacity and usage
+information. Usage is color-coded green → orange (≥70%) → red
+(≥90%). Read/write rate history is shown in the detail view.
 
 **List view:**
 
 <!-- Auto-generated: cargo test --test doc_screenshots -->
 
 ```
-┌ [D]DISK ───────────────────────────────────────────────────────────┐
-│Device                                 Read (B/s) Write (B/s)   Use%│
-│sda                                           0 B    102.4 KB  45.0%│
+┌ [I]DISK ───────────────────────────────────────────────────────────┐
+│Device             Mount                Size      Free  %Used  %Free│
+│sda                /                500.1 GB  275.1 GB  45.0%  55.0%│
 │                                                                    │
 │                                                                    │
 │                                                                    │
@@ -316,7 +319,10 @@ Press `t` to toggle between flat list and tree view. In tree
 mode, processes are arranged in a parent/child hierarchy with
 indentation showing depth. Press `Space` to collapse or expand a
 node's children. On Linux, per-process threads appear as children
-of their parent process.
+of their owning process — they are never shown in flat list view.
+
+Pressing `k` on a thread row targets the owning process, not the
+thread TID, since threads cannot be killed independently.
 
 To start in tree mode by default, set `show_tree = true` in the
 `[process]` config section.
@@ -391,9 +397,13 @@ Press `k` to kill the selected process. A confirmation dialog
 appears with **Cancel** (focused by default) and **OK** buttons.
 Use `Tab` to switch focus between buttons. Press `Enter` to
 activate the focused button, or `Esc`/`q` to cancel. Confirming
-sends `SIGTERM` to the process. If
-the kill fails (e.g., insufficient permissions), an error dialog
-appears; press `Enter`, `Esc`, or `Space` to dismiss.
+sends `SIGTERM` to the process. If the kill fails (e.g.,
+insufficient permissions), an error dialog appears; press `Enter`,
+`Esc`, or `Space` to dismiss.
+
+If a thread row is selected in tree view, the confirmation dialog
+will name the owning process — killing a thread TID individually
+is not supported.
 
 ### 3.5 Status Bar
 
@@ -401,19 +411,27 @@ The status bar can be positioned at the `top` (default), `bottom`,
 or `hidden` via `--status-bar` or `layout.status_bar` in the
 config file.
 
-<!-- Auto-generated: cargo test --test doc_screenshots -->
-
 ```
-┌ dev-box ─────────────────────────────────────────────────────────────────────────────────────────┐
-│up 3d 4h 0m | load: 1.24 0.98 0.87 | 2026-04-06 14:52:07                                          │
-│███████            RAM  6.0 GiB/16.0 GiB  37.5%  │                  SWAP 0 B/4.0 GiB   0.0%       │
-└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ dev-box ──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│up 3d 4h 0m  load: 1.24 0.98 0.87                                                                   2026-03-25 12:00:00│
+│cpu    5.2% user    0.2% sys    0.0% nice   84.8% idle    9.8% iowait   0.0% irq   0.0% softirq   0.0% steal           │
+│tasks  4 total  1 running  3 sleeping  0 stopped  0 zombie                                                             │
+│████████████████████                                  RAM 6.0G/16.0G  free 4.0G  buffer/cache 6.0G  available 10.0G    │
+│                                                      SWAP 0B/4.0G  free 4.0G                                          │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Top row:** system uptime, 1/5/15-minute load averages, current
-  time
-- **Bottom row:** RAM and (if configured) SWAP gauges; SWAP turns
-  orange when any swap is in use
+- **Row 1 — uptime:** system uptime and 1/5/15-minute load averages;
+  current time is right-aligned
+- **Row 2 — cpu:** aggregate CPU time broken down by mode — user,
+  sys, nice, idle, iowait, irq, softirq, steal; Linux-only (shows
+  `—` on other platforms until the first delta is available)
+- **Row 3 — tasks:** process counts by status — total, running,
+  sleeping, stopped, zombie; threads are excluded from the counts
+- **Row 4 — RAM:** gauge showing used/total, plus free, buffer/cache,
+  and available memory; buffer/cache and available are Linux-only
+- **Row 5 — SWAP:** shown only when swap is configured; gauge showing
+  used/total plus free; turns orange when any swap is in use
 
 ### 3.6 Help Overlay
 

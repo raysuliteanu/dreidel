@@ -32,6 +32,23 @@ impl std::fmt::Display for ProcessStatus {
     }
 }
 
+/// Aggregate CPU time breakdown by mode, as percentages summing to ~100.
+///
+/// Computed from `/proc/stat` deltas on Linux; `None` on other platforms and
+/// on the first tick before a delta is available.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CpuModes {
+    pub user: f32,
+    pub system: f32,
+    pub nice: f32,
+    pub idle: f32,
+    pub iowait: f32,
+    pub irq: f32,
+    pub softirq: f32,
+    pub steal: f32,
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct CpuSnapshot {
@@ -47,6 +64,9 @@ pub struct CpuSnapshot {
     pub per_core_temp: Vec<Option<f32>>,
     /// CPU scaling governor, e.g. "powersave". Linux-only; `None` on other platforms.
     pub governor: Option<String>,
+    /// Aggregate CPU time breakdown from `/proc/stat`. Linux-only; `None` until
+    /// two samples have been collected for delta calculation.
+    pub cpu_modes: Option<CpuModes>,
 }
 
 #[cfg(any(test, feature = "test-stubs"))]
@@ -62,6 +82,16 @@ impl CpuSnapshot {
             package_temp: Some(62.0),
             per_core_temp: vec![Some(55.0), Some(58.0), Some(60.0), Some(52.0)],
             governor: Some("powersave".into()),
+            cpu_modes: Some(CpuModes {
+                user: 5.2,
+                system: 0.2,
+                nice: 0.0,
+                idle: 84.8,
+                iowait: 9.8,
+                irq: 0.0,
+                softirq: 0.0,
+                steal: 0.0,
+            }),
         }
     }
 }
@@ -73,6 +103,15 @@ pub struct MemSnapshot {
     pub ram_used: u64,
     pub swap_total: u64,
     pub swap_used: u64,
+    /// Free RAM in bytes from `/proc/meminfo` (`MemFree`). Linux-only; `0` elsewhere.
+    pub ram_free: u64,
+    /// Buffer cache in bytes from `/proc/meminfo` (`Buffers`). Linux-only; `0` elsewhere.
+    pub ram_buffers: u64,
+    /// Page cache in bytes from `/proc/meminfo` (`Cached`). Linux-only; `0` elsewhere.
+    pub ram_cached: u64,
+    /// Memory available for new allocations without swapping, from `/proc/meminfo`
+    /// (`MemAvailable`). Linux-only; `0` elsewhere.
+    pub ram_available: u64,
     /// Cumulative swap-in bytes from /proc/vmstat. Linux-only; `0` on other platforms.
     pub swap_in_bytes: u64,
     /// Cumulative swap-out bytes from /proc/vmstat. Linux-only; `0` on other platforms.
@@ -86,6 +125,10 @@ impl MemSnapshot {
         Self {
             ram_total: 17_179_869_184,
             ram_used: 6_442_450_944,
+            ram_free: 4_294_967_296,
+            ram_buffers: 1_073_741_824,
+            ram_cached: 5_368_709_120,
+            ram_available: 10_737_418_240,
             swap_total: 4_294_967_296,
             swap_used: 0,
             swap_in_bytes: 0,

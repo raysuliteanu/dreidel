@@ -183,7 +183,7 @@ impl ProcessComponent {
                 let mut list: Vec<ProcessEntry> = self
                     .raw
                     .iter()
-                    .filter(|p| self.filter.matches(p))
+                    .filter(|p| !p.is_thread && self.filter.matches(p))
                     .cloned()
                     .collect();
                 sort_processes(&mut list, self.sort_col, self.sort_dir);
@@ -456,9 +456,22 @@ impl Component for ProcessComponent {
                     if let Some(sel) = self.table_state.selected()
                         && let Some(p) = self.displayed.get(sel)
                     {
+                        // Threads cannot be killed directly; target the owning
+                        // process instead.  Threads only appear in tree view, so
+                        // `parent_pid` is the process PID (flat view filters them out).
+                        let (kill_pid, kill_name) = if p.is_thread {
+                            let owner_pid = p.parent_pid.unwrap_or(p.pid);
+                            self.raw
+                                .iter()
+                                .find(|e| e.pid == owner_pid)
+                                .map(|o| (o.pid, o.name.clone()))
+                                .unwrap_or((p.pid, p.name.clone()))
+                        } else {
+                            (p.pid, p.name.clone())
+                        };
                         self.state = ProcessState::KillConfirm {
-                            pid: p.pid,
-                            name: p.name.clone(),
+                            pid: kill_pid,
+                            name: kill_name,
                             ok_focused: false,
                         };
                         return Ok(Some(Action::Render));
@@ -2055,5 +2068,77 @@ mod tests {
         };
         let comp = ProcessComponent::new(ColorPalette::dark(), 'p', &config);
         assert_eq!(comp.view_mode, ProcessViewMode::Tree);
+    }
+
+    /// Threads must not appear in the flat list view — only processes.
+    #[test]
+    fn flat_view_excludes_threads() {
+        let mut snap = ProcSnapshot::stub();
+        let base = snap.processes[0].clone();
+        // Add a thread entry whose parent is one of the stub processes.
+        snap.processes.push(ProcessEntry {
+            pid: 9999,
+            name: "worker-thread".into(),
+            parent_pid: Some(base.pid),
+            is_thread: true,
+            ..base
+        });
+
+        let mut comp = ProcessComponent::default();
+        comp.update(&Action::ProcUpdate(snap)).unwrap();
+
+        assert!(
+            comp.displayed.iter().all(|p| !p.is_thread),
+            "flat view must not contain any thread entries; got: {:?}",
+            comp.displayed
+                .iter()
+                .filter(|p| p.is_thread)
+                .map(|p| &p.name)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// Pressing 'k' on a thread row in tree view must target the owning
+    /// process, not the thread TID.
+    #[test]
+    fn kill_on_thread_targets_parent_process() {
+        let mut snap = ProcSnapshot::stub();
+        let base = snap.processes[0].clone();
+        let parent_pid = base.pid;
+        let parent_name = base.name.clone();
+        snap.processes.push(ProcessEntry {
+            pid: 8888,
+            name: "worker-thread".into(),
+            parent_pid: Some(parent_pid),
+            is_thread: true,
+            ..base
+        });
+
+        let config = ProcessConfig {
+            show_tree: true,
+            ..Default::default()
+        };
+        let mut comp = ProcessComponent::new(ColorPalette::dark(), 'p', &config);
+        comp.update(&Action::ProcUpdate(snap)).unwrap();
+
+        // Navigate to the thread row (it will be a child of the parent process).
+        let thread_idx = comp
+            .displayed
+            .iter()
+            .position(|p| p.is_thread)
+            .expect("thread must appear as a child in tree view");
+        comp.table_state.select(Some(thread_idx));
+
+        comp.handle_key_event(key('k')).unwrap();
+
+        assert_eq!(
+            comp.state,
+            ProcessState::KillConfirm {
+                pid: parent_pid,
+                name: parent_name,
+                ok_focused: false,
+            },
+            "kill confirm must reference the parent process, not the thread TID"
+        );
     }
 }
