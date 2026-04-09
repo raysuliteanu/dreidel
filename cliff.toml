@@ -40,7 +40,7 @@ commit_parsers = [
     { message = "^test",     group = "Testing" },
     { message = "^build",    group = "Build System" },
     { message = "^ci",       group = "CI" },
-    { message = "^chore",    group = "Miscellaneous", default_scope = "other" },
+    { message = "^chore",    skip = true },
     { body = ".*security",   group = "Security" },
     # Skip empty or merge commits
     { message = "^Merge",    skip = true },
