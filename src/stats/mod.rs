@@ -542,6 +542,12 @@ fn build_proc(sys: &System) -> ProcSnapshot {
                         entry.voluntary_ctxt_switches = status.voluntary_ctxt_switches;
                         entry.nonvoluntary_ctxt_switches = status.nonvoluntary_ctxt_switches;
                         entry.swap_bytes = status.vmswap.map(|kb| kb * 1024);
+                        // sysinfo exposes thread TIDs as top-level /proc entries.
+                        // Tgid != pid means this entry is a thread, not a process.
+                        if status.tgid != pid as i32 {
+                            entry.is_thread = true;
+                            entry.parent_pid = Some(status.tgid as u32);
+                        }
                     }
                     if let Ok(io) = proc.io() {
                         entry.io_read_calls = Some(io.syscr);
@@ -557,6 +563,10 @@ fn build_proc(sys: &System) -> ProcSnapshot {
 
                 entry
             })
+            // Exclude thread TIDs that sysinfo exposes as top-level /proc entries.
+            // Their is_thread flag was set above via the Tgid check.  Thread data is
+            // provided by enumerate_threads instead, avoiding duplicate entries.
+            .filter(|e| !e.is_thread)
             .collect(),
     }
 }
@@ -576,9 +586,21 @@ fn enumerate_threads(sys: &System) -> Vec<ProcessEntry> {
         let proc_name = p.name().to_string_lossy();
         let proc_user = p.user_id().map(|u| u.to_string()).unwrap_or_default();
 
-        if let Ok(proc) = procfs::process::Process::new(pid as i32)
-            && let Ok(tasks) = proc.tasks()
+        let Ok(proc) = procfs::process::Process::new(pid as i32) else {
+            continue;
+        };
+
+        // sysinfo exposes thread TIDs as top-level /proc entries alongside real
+        // processes.  Reading /proc/[TID]/task/ would return all siblings of that
+        // thread group, creating spurious parent→child entries that form cycles in
+        // the tree.  Only enumerate tasks for real process group leaders (TID == TGID).
+        if let Ok(status) = proc.status()
+            && status.tgid != pid as i32
         {
+            continue;
+        }
+
+        if let Ok(tasks) = proc.tasks() {
             for task_result in tasks {
                 let Ok(task) = task_result else { continue };
                 let tid = task.tid as u32;

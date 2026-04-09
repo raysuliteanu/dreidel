@@ -186,8 +186,17 @@ fn dfs_build(
         }
     }
 
+    // Track visited PIDs to break any cycles in the parent-child graph.
+    // Cycles can arise when corrupted data makes a process appear as its own
+    // ancestor (e.g., a thread TID listed as a child of one of its siblings).
+    let mut visited: HashSet<u32> = HashSet::new();
+
     while let Some((entry, depth, is_last, guide_rails)) = stack.pop() {
         let pid = entry.pid;
+        if !visited.insert(pid) {
+            continue; // already rendered — skip to break the cycle
+        }
+
         let children = children_map.get(&Some(pid));
         let has_children = children.is_some_and(|c| !c.is_empty());
         let is_expanded = expanded.contains(&pid);
@@ -503,6 +512,44 @@ mod tests {
         );
         assert_eq!(rows[1].entry.name, "alpha");
         assert_eq!(rows[2].entry.name, "zebra");
+    }
+
+    /// Regression: sysinfo on Linux exposes thread TIDs as top-level /proc
+    /// entries.  If enumerate_threads processed one of those TID entries it
+    /// would read /proc/[TID]/task/, which lists ALL sibling thread TIDs
+    /// including the main PID, and create a spurious entry for the main
+    /// process as a "child" of its own thread — a cycle.  build_tree must
+    /// produce a finite result even when the input contains such cycles.
+    #[test]
+    fn cyclic_parent_references_do_not_hang() {
+        // Simulate the corrupted data: main process (100) has a thread (101),
+        // and there is a spurious entry making 100 a "child" of 101.
+        let proc_main = make_process(100, "myapp", Some(1));
+        let thread_101 = make_thread(101, "[myapp:101]", 100);
+        let spurious = ProcessEntry {
+            // 100 listed as a child of 101 — the bug scenario
+            parent_pid: Some(101),
+            ..make_process(100, "myapp", Some(101))
+        };
+        let procs = vec![
+            make_process(1, "init", None),
+            proc_main,
+            thread_101,
+            spurious,
+        ];
+        let expanded = all_expanded(&procs);
+        // Must terminate in finite time and return a non-empty result.
+        let rows = build_tree(
+            &procs,
+            SortColumn::Pid,
+            SortDir::Asc,
+            &ProcessFilter::None,
+            &expanded,
+        );
+        assert!(
+            !rows.is_empty(),
+            "tree must produce output even with cyclic input"
+        );
     }
 
     #[test]
