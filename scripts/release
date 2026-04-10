@@ -5,7 +5,8 @@
 #
 # Regenerates CHANGELOG.md via git-cliff, commits it, then runs cargo-release
 # to bump the version, commit, and tag, then syncs jj and pushes the bookmark
-# and tag to origin.
+# and tag to origin. The tag push triggers the cargo-dist CI workflow, which
+# builds release artifacts and creates the GitHub release automatically.
 #
 # Dry-run mode (-n / --dry-run):
 #   - git-cliff/jj commit steps are echoed but not run
@@ -44,11 +45,6 @@ if ! command -v jj >/dev/null 2>&1; then
     exit 1
 fi
 
-if ! command -v gh >/dev/null 2>&1; then
-    printf 'error: gh not found; install from https://cli.github.com or run: gh auth login\n' >&2
-    exit 1
-fi
-
 if ! jj root >/dev/null 2>&1; then
     printf 'error: must be run inside a jj repository\n' >&2
     exit 1
@@ -79,7 +75,7 @@ if "$DRY_RUN"; then
     printf '  jj bookmark set main -r @-\n'
     printf '  jj git push --bookmark main\n'
     printf '  git push origin %s\n' "$TAG"
-    printf '  gh release create %s --title "%s" --notes-file <(git-cliff --current --strip all)\n' "$TAG" "$TAG"
+    printf '  # cargo-dist CI workflow triggers on the tag push and creates the GitHub release\n'
 else
     # Regenerate CHANGELOG and commit it before the cargo-release version-bump
     # commit. Done here (not in a cargo-release pre-release-hook) so we can use
@@ -99,15 +95,9 @@ else
 
     # Push the git tag that cargo-release created (jj doesn't manage git tags
     # directly; use git in the co-located repo).
+    # This tag push triggers the cargo-dist CI workflow, which builds the release
+    # artifacts and creates the GitHub release automatically.
     git push origin "$TAG"
 
-    # Create a GitHub release with notes extracted from the just-generated changelog.
-    # --current picks the most recently tagged version; --strip all drops the preamble
-    # and footer so the release body contains only the version's commit entries.
-    notes_file=$(mktemp)
-    trap 'rm -f "$notes_file"' EXIT
-    git-cliff --current --strip all > "$notes_file"
-    gh release create "$TAG" --title "$TAG" --notes-file "$notes_file"
-
-    printf '\nReleased %s successfully.\n' "$TAG"
+    printf '\nPushed %s — cargo-dist CI will build artifacts and create the GitHub release.\n' "$TAG"
 fi
