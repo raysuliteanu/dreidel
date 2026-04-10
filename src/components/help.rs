@@ -24,7 +24,7 @@ use crate::{
 
 // Popup dimensions; inner area is (width-2) × (height-2) after the border.
 const POPUP_WIDTH: u16 = 62;
-const POPUP_HEIGHT: u16 = 35;
+const POPUP_HEIGHT: u16 = 34;
 
 #[derive(Debug)]
 pub struct HelpComponent {
@@ -187,12 +187,11 @@ impl Component for HelpComponent {
                 Span::styled(log_path, fg),
             ]),
             Line::from(vec![
-                Span::styled(" detected: ", dim),
-                Span::styled(detected_str, fg),
-            ]),
-            Line::from(vec![
                 Span::styled("    theme: ", dim),
                 Span::styled(active_str, fg),
+                Span::styled(" (detected: ", dim),
+                Span::styled(detected_str, fg),
+                Span::styled(")", dim),
             ]),
         ];
         if !repository.is_empty() || !commit_id.is_empty() {
@@ -294,8 +293,8 @@ mod tests {
         // Config and log paths vary per system; redact them for snapshot stability.
         settings.add_filter(r"config: \S+", "config: [CONFIG_PATH]");
         settings.add_filter(r"log: \S+", "log: [LOG_PATH]");
-        settings.add_filter(r"detected: \S+", "detected: [DETECTED]");
         settings.add_filter(r"theme: \S+", "theme: [THEME]");
+        settings.add_filter(r"\(detected: \S+\)", "(detected: [DETECTED])");
         settings.bind(|| {
             let mut comp = HelpComponent::new(
                 ColorPalette::dark(),
