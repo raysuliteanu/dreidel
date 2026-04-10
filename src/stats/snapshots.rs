@@ -154,7 +154,10 @@ pub struct InterfaceSnapshot {
     pub total_rx_bytes: u64,
     pub total_tx_bytes: u64,
     pub mac_address: String,
-    pub ip_addresses: Vec<String>,
+    /// IPv4 addresses with prefix length (e.g. `"192.168.1.1/24"`), sorted.
+    pub ipv4_addresses: Vec<String>,
+    /// IPv6 addresses with prefix length (e.g. `"fe80::1/64"`), sorted.
+    pub ipv6_addresses: Vec<String>,
     pub mtu: u64,
     /// Cumulative receive drops from /proc/net/dev. Linux-only; `0` on other platforms.
     pub rx_dropped: u64,
@@ -178,7 +181,8 @@ impl NetSnapshot {
                 total_rx_bytes: 48_318_382_080,
                 total_tx_bytes: 12_884_901_888,
                 mac_address: "aa:bb:cc:dd:ee:ff".into(),
-                ip_addresses: vec!["192.168.1.100/24".into(), "fe80::1/64".into()],
+                ipv4_addresses: vec!["192.168.1.100/24".into()],
+                ipv6_addresses: vec!["fe80::1/64".into()],
                 mtu: 1500,
                 rx_dropped: 0,
                 tx_dropped: 0,

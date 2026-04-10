@@ -384,11 +384,19 @@ fn build_net(nets: &Networks) -> NetSnapshot {
         interfaces: nets
             .iter()
             .map(|(name, data)| {
-                let ip_addresses = data
-                    .ip_networks()
-                    .iter()
-                    .map(|n| format!("{}/{}", n.addr, n.prefix))
-                    .collect();
+                let mut ipv4_addresses: Vec<String> = Vec::new();
+                let mut ipv6_addresses: Vec<String> = Vec::new();
+                for n in data.ip_networks() {
+                    let s = format!("{}/{}", n.addr, n.prefix);
+                    if n.addr.is_ipv4() {
+                        ipv4_addresses.push(s);
+                    } else {
+                        ipv6_addresses.push(s);
+                    }
+                }
+                // Sort each family for stable, predictable display order.
+                ipv4_addresses.sort_unstable();
+                ipv6_addresses.sort_unstable();
 
                 InterfaceSnapshot {
                     name: name.clone(),
@@ -401,7 +409,8 @@ fn build_net(nets: &Networks) -> NetSnapshot {
                     total_rx_bytes: data.total_received(),
                     total_tx_bytes: data.total_transmitted(),
                     mac_address: data.mac_address().to_string(),
-                    ip_addresses,
+                    ipv4_addresses,
+                    ipv6_addresses,
                     mtu: data.mtu(),
                     #[cfg(target_os = "linux")]
                     rx_dropped: dev_stats.get(name).map(|s| s.recv_drop).unwrap_or(0),

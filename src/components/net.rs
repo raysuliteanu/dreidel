@@ -117,6 +117,26 @@ const LEGEND_INNER_W: u16 = 12;
 /// Total legend column width including the Borders::LEFT separator.
 const LEGEND_TOTAL_W: u16 = LEGEND_INNER_W + 1;
 
+/// Formats addresses for the list-view IP column: IPv4 first, then IPv6, space-separated.
+/// Returns `"-"` when both slices are empty.
+fn fmt_ip_addresses(v4: &[String], v6: &[String]) -> String {
+    match (v4.is_empty(), v6.is_empty()) {
+        (true, true) => "-".to_string(),
+        (false, true) => v4.join("  "),
+        (true, false) => v6.join("  "),
+        (false, false) => format!("{}  {}", v4.join("  "), v6.join("  ")),
+    }
+}
+
+/// Formats a single address family for detail-view rows. Returns `"-"` when empty.
+fn fmt_addr_list(addrs: &[String]) -> String {
+    if addrs.is_empty() {
+        "-".to_string()
+    } else {
+        addrs.join("  ")
+    }
+}
+
 /// Format a packet count for the packet-rate column (no "/s" — header provides context).
 fn fmt_packets(pkts: u64) -> String {
     const K: u64 = 1_000;
@@ -440,7 +460,7 @@ impl NetComponent {
             // The 2-char gap is baked into ip_w; embed it in the span so it is inseparable.
             let ip_content_w = ip_w.saturating_sub(2);
             header_spans.push(Span::styled(
-                format!("  {:<width$}", "IP", width = ip_content_w),
+                format!("  {:<width$}", "IPv4 / IPv6", width = ip_content_w),
                 accent_bold,
             ));
         }
@@ -492,11 +512,7 @@ impl NetComponent {
                         ),
                         Style::new().fg(palette.highlight),
                     ));
-                    let ips = if iface.ip_addresses.is_empty() {
-                        "-".to_string()
-                    } else {
-                        iface.ip_addresses.join("  ")
-                    };
+                    let ips = fmt_ip_addresses(&iface.ipv4_addresses, &iface.ipv6_addresses);
                     let ip_content_w = ip_w.saturating_sub(2);
                     spans.push(Span::styled(
                         format!(
@@ -619,8 +635,9 @@ impl NetComponent {
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
-        // How many stats header rows to show (need at least 6 rows for a useful graph).
-        let stats_rows: u16 = if inner.height >= 10 { 2 } else { 0 };
+        // 3 stats rows: IPv4, IPv6, traffic counters. Need at least 10 inner rows for a
+        // useful graph (3 + 1 sep + 4 graph + 1 sep + 1 summary = 10 minimum).
+        let stats_rows: u16 = if inner.height >= 10 { 3 } else { 0 };
         let sep_h: u16 = if stats_rows > 0 { 1 } else { 0 };
 
         let sections = Layout::vertical([
@@ -646,33 +663,50 @@ impl NetComponent {
             const LW: usize = 10; // label column: "Total TX:" is longest at 9
             const VW: usize = 14; // value column: byte counts fit comfortably in 14
 
-            // IP column is truncated to leave room for MAC and MTU on the same line.
-            const IP_VW: usize = 30;
+            // Two-column table layout:
+            //   Row 0:  IPv4: <addr>    IPv6: <addr>
+            //   Row 1:  MAC:  <mac>     MTU:  <mtu>
+            //
+            // LEFT_VW is wide enough for IPv4 with prefix (~18 chars) and a MAC
+            // address (17 chars), keeping the right column start consistent.
+            const LEFT_VW: usize = 22; // left value column; right col gets the rest
+            // IPv6 address with prefix can be up to 43 chars.
+            const IPV6_VW: usize = 46;
             const ERR_VW: usize = 8; // error/drop counts are small numbers
 
-            let ips = if iface.ip_addresses.is_empty() {
-                "-".to_string()
-            } else {
-                iface.ip_addresses.join("  ")
-            };
+            let v4 = fmt_addr_list(&iface.ipv4_addresses);
+            let v6 = fmt_addr_list(&iface.ipv6_addresses);
 
-            let stat_lines =
-                Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).split(sections[0]);
+            let stat_lines = Layout::vertical([
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+            ])
+            .split(sections[0]);
 
-            // Row 0: IP · MAC · MTU
+            // Row 0: IPv4 | IPv6
             frame.render_widget(
                 Line::from(vec![
-                    Span::styled(format!("{:<LW$}", "IP:"), dim),
-                    Span::styled(format!("{:<IP_VW$}", truncate(&ips, IP_VW)), val),
-                    Span::styled(format!("{:<LW$}", "MAC:"), dim),
-                    Span::styled(format!("{:<20}", iface.mac_address.clone()), val),
-                    Span::styled(format!("{:<LW$}", "MTU:"), dim),
-                    Span::styled(iface.mtu.to_string(), val),
+                    Span::styled(format!("{:<LW$}", "IPv4:"), dim),
+                    Span::styled(format!("{:<LEFT_VW$}", truncate(&v4, LEFT_VW)), val),
+                    Span::styled(format!("{:<LW$}", "IPv6:"), dim),
+                    Span::styled(truncate(&v6, IPV6_VW).to_string(), val),
                 ]),
                 stat_lines[0],
             );
 
-            // Row 1: Total TX · Total RX · Err TX · Err RX (+ Linux: Drop TX · Drop RX)
+            // Row 1: MAC | MTU  (columns aligned with row 0)
+            frame.render_widget(
+                Line::from(vec![
+                    Span::styled(format!("{:<LW$}", "MAC:"), dim),
+                    Span::styled(format!("{:<LEFT_VW$}", iface.mac_address.clone()), val),
+                    Span::styled(format!("{:<LW$}", "MTU:"), dim),
+                    Span::styled(iface.mtu.to_string(), val),
+                ]),
+                stat_lines[1],
+            );
+
+            // Row 2: Total TX · Total RX · Err TX · Err RX (+ Linux: Drop TX · Drop RX)
             #[cfg(not(target_os = "linux"))]
             let traffic_line = Line::from(vec![
                 Span::styled(format!("{:<LW$}", "Total TX:"), dim),
@@ -699,7 +733,7 @@ impl NetComponent {
                 Span::styled(format!("{:<LW$}", "Drop RX:"), dim),
                 Span::styled(iface.rx_dropped.to_string(), val),
             ]);
-            frame.render_widget(traffic_line, stat_lines[1]);
+            frame.render_widget(traffic_line, stat_lines[2]);
         }
 
         // --- Separator ---
@@ -878,7 +912,8 @@ mod tests {
             total_rx_bytes: 0,
             total_tx_bytes: 0,
             mac_address: String::new(),
-            ip_addresses: vec![],
+            ipv4_addresses: vec![],
+            ipv6_addresses: vec![],
             mtu: 1500,
             #[cfg(target_os = "linux")]
             rx_dropped: 0,
@@ -1294,7 +1329,7 @@ mod tests {
         );
     }
 
-    /// Detail view shows MAC, IP, and error/drop stats.
+    /// Detail view shows MAC, IPv4, IPv6, and error/drop stats.
     #[test]
     fn detail_view_shows_interface_stats() {
         let mut comp = NetComponent::default();
@@ -1312,8 +1347,13 @@ mod tests {
             rendered.contains("aa:bb:cc:dd:ee:ff"),
             "detail must show MAC value"
         );
-        assert!(rendered.contains("IP:"), "detail must show IP label");
-        assert!(rendered.contains("192.168"), "detail must show IP address");
+        assert!(rendered.contains("IPv4:"), "detail must show IPv4 label");
+        assert!(
+            rendered.contains("192.168"),
+            "detail must show IPv4 address"
+        );
+        assert!(rendered.contains("IPv6:"), "detail must show IPv6 label");
+        assert!(rendered.contains("fe80::"), "detail must show IPv6 address");
         assert!(rendered.contains("MTU:"), "detail must show MTU label");
         assert!(
             rendered.contains("TX Pkt/s:"),
