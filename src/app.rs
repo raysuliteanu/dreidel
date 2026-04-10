@@ -523,7 +523,7 @@ impl App {
                 && let Some((component_id, comp)) =
                     self.components.iter_mut().find(|(cid, _)| cid == id)
             {
-                let modal = centered_pct(main_area, 90, 90);
+                let modal = centered_pct(main_area, 95, 95);
                 // Signal to the component that the next draw() call is the overlay
                 // pass, not the compact background pass.  The component uses this
                 // one-shot flag to render live state rather than frozen snapshot.
@@ -639,7 +639,8 @@ mod tests {
     /// on the left side of the screen.  With the sidebar preset, CPU occupies
     /// the left column, so this area is always rendered in every mode.
     fn outside_modal_strip(terminal_area: Rect) -> Rect {
-        // centered_pct at 90% leaves 5% on each side; use the leftmost 3 cols.
+        // centered_pct at 95% leaves 2.5% on each side; on a 200-col terminal
+        // that is a 5-col margin, so the leftmost 3 cols are always outside.
         Rect::new(
             terminal_area.x,
             terminal_area.y + 1,
@@ -725,7 +726,7 @@ mod tests {
 
     /// In fullscreen mode the modal overlay is drawn on top of the normal
     /// layout.  The background components must still be visible — cells outside
-    /// the 90% modal rect must contain content from the normal layout.
+    /// the 95% modal rect must contain content from the normal layout.
     #[test]
     fn fullscreen_renders_normal_layout_behind_modal() {
         let mut app = make_app();

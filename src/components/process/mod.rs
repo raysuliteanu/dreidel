@@ -883,7 +883,7 @@ impl Component for ProcessComponent {
 
         // Use extended columns only when the area is wide enough.  The compact
         // sidebar slot is typically <120 cols, so draw_normal runs there.  The
-        // fullscreen modal (90% of terminal) exceeds 120 cols on any ≥134-col
+        // fullscreen modal (95% of terminal) exceeds 120 cols on any ≥127-col
         // terminal, so draw_fullscreen runs there.  Basing this solely on
         // area.width (not is_fullscreen) prevents the extended layout from
         // bleeding into the compact sidebar pass that runs before the overlay.
