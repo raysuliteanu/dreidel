@@ -22,8 +22,8 @@ use ratatui::{
 use crate::{
     action::Action,
     components::{
-        Component, FilterEvent, FilterInput, HISTORY_LEN, ListView, fmt_rate, fmt_rate_col,
-        handle_detail_key, list_border_block, truncate,
+        Component, FilterEvent, FilterInput, HISTORY_LEN, ListView, MIN_CHART_FLOOR, PAGE_SCROLL,
+        fmt_rate, fmt_rate_col, handle_detail_key, list_border_block, truncate,
     },
     stats::snapshots::NetSnapshot,
     theme::ColorPalette,
@@ -210,7 +210,6 @@ impl Component for NetComponent {
                 if len == 0 {
                     return Ok(None);
                 }
-                const PAGE: usize = 10;
                 match key.code {
                     KeyCode::Up => {
                         let i = self.list_state.selected().unwrap_or(0);
@@ -226,13 +225,13 @@ impl Component for NetComponent {
                     }
                     KeyCode::PageUp => {
                         let i = self.list_state.selected().unwrap_or(0);
-                        self.list_state.select(Some(i.saturating_sub(PAGE)));
+                        self.list_state.select(Some(i.saturating_sub(PAGE_SCROLL)));
                         return Ok(Some(Action::Render));
                     }
                     KeyCode::PageDown => {
                         let i = self.list_state.selected().unwrap_or(0);
                         self.list_state
-                            .select(Some((i + PAGE).min(len.saturating_sub(1))));
+                            .select(Some((i + PAGE_SCROLL).min(len.saturating_sub(1))));
                         return Ok(Some(Action::Render));
                     }
                     KeyCode::Enter => {
@@ -564,7 +563,7 @@ impl NetComponent {
             .copied()
             .max()
             .unwrap_or(0)
-            .max(1024) as f64;
+            .max(MIN_CHART_FLOOR) as f64;
 
         let datasets = vec![
             Dataset::default()
@@ -771,7 +770,7 @@ impl NetComponent {
             .copied()
             .max()
             .unwrap_or(0)
-            .max(1024) as f64; // floor at 1 KB/s so the axis is never zero-height
+            .max(MIN_CHART_FLOOR) as f64; // floor at 1 KB/s so the axis is never zero-height
 
         let datasets = vec![
             Dataset::default()
@@ -1131,7 +1130,7 @@ mod tests {
     fn page_up_down_clamp_to_list_bounds() {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-        // Build a snapshot with 5 interfaces — fewer than PAGE (10).
+        // Build a snapshot with 5 interfaces — fewer than PAGE_SCROLL (10).
         let mut snap = NetSnapshot::stub();
         snap.interfaces = (0..5).map(|i| interface(&format!("eth{i}"))).collect();
 

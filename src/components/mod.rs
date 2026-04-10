@@ -161,10 +161,20 @@ pub(crate) fn truncate(s: &str, max: usize) -> String {
 /// History ring-buffer length shared by all sparkline/chart components.
 pub(crate) const HISTORY_LEN: usize = 100;
 
+/// SI byte-unit thresholds shared across all formatting helpers.
+const MB: u64 = 1_000_000;
+const KB: u64 = 1_000;
+const GB: u64 = 1_000_000_000;
+const TB: u64 = 1_000_000_000_000;
+
+/// Floor applied to chart y-axes so they are never zero-height when idle.
+pub(crate) const MIN_CHART_FLOOR: u64 = 1_024;
+
+/// Rows scrolled per PageUp / PageDown keypress in list and table components.
+pub(crate) const PAGE_SCROLL: usize = 10;
+
 /// Format a byte rate with the "/s" suffix, for axis labels and sparkline annotations.
 pub(crate) fn fmt_rate(bytes_per_sec: u64) -> String {
-    const MB: u64 = 1_000_000;
-    const KB: u64 = 1_000;
     if bytes_per_sec >= MB {
         format!("{:.1} MB/s", bytes_per_sec as f64 / MB as f64)
     } else if bytes_per_sec >= KB {
@@ -178,14 +188,26 @@ pub(crate) fn fmt_rate(bytes_per_sec: u64) -> String {
 /// The column header carries the "(B/s)" unit context, so individual cells
 /// can omit it to save horizontal space.
 pub(crate) fn fmt_rate_col(bytes_per_sec: u64) -> String {
-    const MB: u64 = 1_000_000;
-    const KB: u64 = 1_000;
     if bytes_per_sec >= MB {
         format!("{:.1} MB", bytes_per_sec as f64 / MB as f64)
     } else if bytes_per_sec >= KB {
         format!("{:.1} KB", bytes_per_sec as f64 / KB as f64)
     } else {
         format!("{} B", bytes_per_sec)
+    }
+}
+
+/// Format an absolute byte count with decimal SI suffixes (TB/GB/MB/KB/B).
+/// Falls back to `fmt_rate_col` for sub-MB values to reuse its KB/B logic.
+pub(crate) fn fmt_bytes(bytes: u64) -> String {
+    if bytes >= TB {
+        format!("{:.1} TB", bytes as f64 / TB as f64)
+    } else if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else {
+        fmt_rate_col(bytes)
     }
 }
 

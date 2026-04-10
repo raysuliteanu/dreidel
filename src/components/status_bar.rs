@@ -327,10 +327,14 @@ fn fmt_bytes(bytes: u64) -> String {
     }
 }
 
+const SECS_PER_DAY: u64 = 86_400;
+const SECS_PER_HOUR: u64 = 3_600;
+const SECS_PER_MIN: u64 = 60;
+
 fn format_uptime(secs: u64) -> String {
-    let d = secs / 86400;
-    let h = (secs % 86400) / 3600;
-    let m = (secs % 3600) / 60;
+    let d = secs / SECS_PER_DAY;
+    let h = (secs % SECS_PER_DAY) / SECS_PER_HOUR;
+    let m = (secs % SECS_PER_HOUR) / SECS_PER_MIN;
     if d > 0 {
         format!("{d}d {h}h {m}m")
     } else if h > 0 {

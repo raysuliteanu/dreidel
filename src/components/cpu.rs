@@ -27,6 +27,10 @@ use crate::{
     theme::ColorPalette,
 };
 
+/// Max cores shown in the compact sidebar slot; also the page-scroll step so
+/// one PageDown always advances by exactly one visible window.
+const COMPACT_MAX_CORES: usize = 8;
+
 fn core_color(idx: usize) -> Color {
     SERIES_COLORS[idx % SERIES_COLORS.len()]
 }
@@ -344,9 +348,9 @@ impl Component for CpuComponent {
     }
 
     fn preferred_height(&self) -> Option<u16> {
-        // 2 borders + one row per visible (filtered) core, capped at 8.
+        // 2 borders + one row per visible (filtered) core, capped at COMPACT_MAX_CORES.
         // Use filtered_cores_len() to avoid allocating a Vec on every layout pass.
-        let cores = self.filtered_cores_len().min(8);
+        let cores = self.filtered_cores_len().min(COMPACT_MAX_CORES);
         Some(2 + cores as u16)
     }
 
@@ -389,11 +393,11 @@ impl Component for CpuComponent {
                 }
             }
             KeyCode::PageUp => {
-                self.scroll_offset = self.scroll_offset.saturating_sub(8);
+                self.scroll_offset = self.scroll_offset.saturating_sub(COMPACT_MAX_CORES);
             }
             KeyCode::PageDown => {
                 if n > 0 {
-                    self.scroll_offset = (self.scroll_offset + 8).min(n - 1);
+                    self.scroll_offset = (self.scroll_offset + COMPACT_MAX_CORES).min(n - 1);
                 }
             }
             KeyCode::Char('/') => {

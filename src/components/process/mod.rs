@@ -23,7 +23,7 @@ use ratatui::{
 
 use crate::{
     action::Action,
-    components::{Component, fmt_rate_col, keyed_title},
+    components::{Component, PAGE_SCROLL, fmt_bytes, fmt_rate_col, keyed_title},
     config::ProcessConfig,
     stats::snapshots::ProcessEntry,
     theme::ColorPalette,
@@ -39,12 +39,15 @@ pub enum ProcessViewMode {
     Tree,
 }
 
+const CPU_CRITICAL_PCT: f32 = 95.0;
+const CPU_WARN_PCT: f32 = 80.0;
+
 /// Returns a color from the palette based on CPU usage percentage.
-/// >95% → critical (red), >80% → warn (orange), else → fg (normal).
+/// ≥CPU_CRITICAL_PCT → critical (red), ≥CPU_WARN_PCT → warn (orange), else → fg.
 fn cpu_color(pct: f32, palette: &ColorPalette) -> Color {
-    if pct >= 95.0 {
+    if pct >= CPU_CRITICAL_PCT {
         palette.critical
-    } else if pct >= 80.0 {
+    } else if pct >= CPU_WARN_PCT {
         palette.warn
     } else {
         palette.fg
@@ -398,7 +401,6 @@ impl Component for ProcessComponent {
 
         // NormalList
         {
-            const PAGE: usize = 10;
             match key.code {
                 KeyCode::Down => {
                     let next = self
@@ -423,7 +425,7 @@ impl Component for ProcessComponent {
                     let next = self
                         .table_state
                         .selected()
-                        .map(|i| i + PAGE)
+                        .map(|i| i + PAGE_SCROLL)
                         .unwrap_or(0)
                         .min(self.displayed.len().saturating_sub(1));
                     self.table_state.select(Some(next));
@@ -433,7 +435,7 @@ impl Component for ProcessComponent {
                     let prev = self
                         .table_state
                         .selected()
-                        .map(|i| i.saturating_sub(PAGE))
+                        .map(|i| i.saturating_sub(PAGE_SCROLL))
                         .unwrap_or(0);
                     self.table_state.select(Some(prev));
                     return Ok(Some(Action::Render));
@@ -1146,21 +1148,6 @@ fn fmt_duration_long(secs: u64) -> String {
     }
 }
 
-fn fmt_bytes(bytes: u64) -> String {
-    const TB: u64 = 1_000_000_000_000;
-    const GB: u64 = 1_000_000_000;
-    const MB: u64 = 1_000_000;
-    if bytes >= TB {
-        format!("{:.1} TB", bytes as f64 / TB as f64)
-    } else if bytes >= GB {
-        format!("{:.1} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.1} MB", bytes as f64 / MB as f64)
-    } else {
-        fmt_rate_col(bytes)
-    }
-}
-
 fn fmt_start_time(unix_secs: u64) -> String {
     if unix_secs == 0 {
         return "-".into();
@@ -1283,7 +1270,7 @@ mod tests {
 
     #[test]
     fn page_up_down_clamp_to_list_bounds() {
-        // Build a snapshot with 5 processes — fewer than PAGE (10).
+        // Build a snapshot with 5 processes — fewer than PAGE_SCROLL (10).
         let mut snap = ProcSnapshot::stub();
         let base = snap.processes[0].clone();
         snap.processes = (0..5)

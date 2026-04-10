@@ -22,8 +22,8 @@ use ratatui::{
 use crate::{
     action::Action,
     components::{
-        Component, FilterEvent, FilterInput, HISTORY_LEN, ListView, fmt_rate, fmt_rate_col,
-        handle_detail_key, list_border_block, truncate,
+        Component, FilterEvent, FilterInput, HISTORY_LEN, ListView, MIN_CHART_FLOOR, PAGE_SCROLL,
+        fmt_bytes, fmt_rate, handle_detail_key, list_border_block, truncate,
     },
     stats::snapshots::DiskSnapshot,
     theme::ColorPalette,
@@ -108,22 +108,6 @@ const SIZE_W: u16 = 10;
 /// Width of each percentage column (%used, %free) — right-aligned.
 const PCT_W: u16 = 7;
 
-/// Format an absolute byte count with SI suffixes (no "/s").
-fn fmt_bytes(bytes: u64) -> String {
-    const TB: u64 = 1_000_000_000_000;
-    const GB: u64 = 1_000_000_000;
-    const MB: u64 = 1_000_000;
-    if bytes >= TB {
-        format!("{:.1} TB", bytes as f64 / TB as f64)
-    } else if bytes >= GB {
-        format!("{:.1} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.1} MB", bytes as f64 / MB as f64)
-    } else {
-        fmt_rate_col(bytes)
-    }
-}
-
 /// Format a byte rate with "/s" suffix — used for graph axis labels.
 impl Component for DiskComponent {
     fn set_focused(&mut self, focused: bool) {
@@ -187,7 +171,6 @@ impl Component for DiskComponent {
                 if len == 0 {
                     return Ok(None);
                 }
-                const PAGE: usize = 10;
                 match key.code {
                     KeyCode::Up => {
                         let i = self.list_state.selected().unwrap_or(0);
@@ -203,13 +186,13 @@ impl Component for DiskComponent {
                     }
                     KeyCode::PageUp => {
                         let i = self.list_state.selected().unwrap_or(0);
-                        self.list_state.select(Some(i.saturating_sub(PAGE)));
+                        self.list_state.select(Some(i.saturating_sub(PAGE_SCROLL)));
                         return Ok(Some(Action::Render));
                     }
                     KeyCode::PageDown => {
                         let i = self.list_state.selected().unwrap_or(0);
                         self.list_state
-                            .select(Some((i + PAGE).min(len.saturating_sub(1))));
+                            .select(Some((i + PAGE_SCROLL).min(len.saturating_sub(1))));
                         return Ok(Some(Action::Render));
                     }
                     KeyCode::Enter => {
@@ -594,7 +577,7 @@ impl DiskComponent {
             .copied()
             .max()
             .unwrap_or(0)
-            .max(1024) as f64; // floor at 1 KB/s so the axis is never zero-height
+            .max(MIN_CHART_FLOOR) as f64;
 
         let datasets = vec![
             Dataset::default()
@@ -812,7 +795,7 @@ mod tests {
 
     #[test]
     fn page_up_down_clamp_to_list_bounds() {
-        // 5 devices — fewer than PAGE (10) so clamping is exercised.
+        // 5 devices — fewer than PAGE_SCROLL (10) so clamping is exercised.
         let snap = DiskSnapshot {
             devices: (0..5).map(|i| device(&format!("sd{i}"))).collect(),
         };

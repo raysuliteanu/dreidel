@@ -78,9 +78,10 @@ impl Component for HelpComponent {
 
         let version = env!("CARGO_PKG_VERSION");
         let repository = env!("CARGO_PKG_REPOSITORY");
+        const SHORT_SHA_LEN: usize = 7;
         let commit_sha = option_env!("GIT_SHA").unwrap_or("unknown");
-        let commit_id = if commit_sha.len() >= 7 && commit_sha != "unknown" {
-            &commit_sha[..7]
+        let commit_id = if commit_sha.len() >= SHORT_SHA_LEN && commit_sha != "unknown" {
+            &commit_sha[..SHORT_SHA_LEN]
         } else {
             commit_sha
         };
