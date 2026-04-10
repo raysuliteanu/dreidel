@@ -93,12 +93,22 @@ The script performs these steps:
 
 1. Regenerate `CHANGELOG.md` via `git-cliff` and commit it
 2. Run `cargo release` which bumps the version in `Cargo.toml`, commits,
-   creates a `vX.Y.Z` git tag, and publishes to crates.io
+   and creates a `vX.Y.Z` git tag
 3. Sync jj, advance the `main` bookmark, and push the bookmark and tag
    to origin
+4. The tag push triggers the [cargo-dist](https://opensource.axo.dev/cargo-dist/)
+   CI workflow (`.github/workflows/release.yml`), which builds binaries for all
+   target platforms, creates the GitHub Release, and attaches the archives
+   automatically — no manual `gh release create` needed
 
 In dry-run mode (`-n` / `--dry-run`), changelog and push steps are echoed
 but not executed, and `cargo release` runs in its own dry-run mode.
+
+To preview what artifacts cargo-dist would produce without triggering a release:
+
+```bash
+dist plan
+```
 
 ### Prerequisites
 
@@ -113,6 +123,7 @@ brew install git-cliff        # or: cargo install git-cliff --locked
 
 - [cargo-release](https://github.com/crate-ci/cargo-release) — config: `release.toml`
 - [git-cliff](https://github.com/orhun/git-cliff) — config: `cliff.toml`
+- [cargo-dist](https://opensource.axo.dev/cargo-dist/) — config: `dist-workspace.toml`
 - The repo uses **jj** in co-located mode; `cargo release` operates on the
   underlying git layer
 
@@ -144,3 +155,7 @@ GitHub Actions runs on every push and pull request to `main`:
 | `deny`        | `cargo deny check` via `EmbarkStudios/cargo-deny-action` — licenses + advisories |
 
 Config: `.github/workflows/ci.yml`.
+
+A separate release workflow (`.github/workflows/release.yml`) triggers on version
+tags (`v*.*.*`) and builds release artifacts via cargo-dist for all target platforms,
+then creates the GitHub Release automatically.
