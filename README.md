@@ -78,8 +78,9 @@ cargo install dreidel
 
 ### cargo binstall
 
-_`cargo binstall` support coming once pre-built release binaries
-are available._
+```sh
+cargo binstall dreidel
+```
 
 ---
 
