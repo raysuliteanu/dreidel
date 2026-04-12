@@ -15,13 +15,13 @@ use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
     style::{Color, Style},
-    symbols,
     text::{Line, Span},
-    widgets::{Axis, Block, Borders, Chart, Dataset, GraphType},
+    widgets::{Block, Borders},
 };
 
 use crate::{
     action::Action,
+    components::chart::{HistoryChart, LegendEntry},
     components::{Component, FilterEvent, FilterInput, HISTORY_LEN, SERIES_COLORS, keyed_title},
     stats::snapshots::CpuSnapshot,
     theme::ColorPalette,
@@ -198,87 +198,37 @@ impl CpuComponent {
         first: usize,
         last: usize,
     ) {
-        // Label column width depends on whether per-core temps are available.
-        // Without temps: "cpu00  100%" = 11 chars.
-        // With temps:    "cpu00  100%  55°C" = 17 chars.
         #[cfg(target_os = "linux")]
         let has_temps = snap.per_core_temp.iter().any(|t| t.is_some());
         #[cfg(not(target_os = "linux"))]
         let has_temps = false;
 
         let label_inner_w: u16 = if has_temps { 18 } else { 11 };
-        let label_total_w: u16 = label_inner_w + 1; // +1 for Borders::LEFT
+        let label_total_w: u16 = label_inner_w + 1;
 
         if area.width <= label_total_w + 4 {
             return;
         }
 
-        let [graph_area, label_area] =
-            Layout::horizontal([Constraint::Fill(1), Constraint::Length(label_total_w)])
-                .areas(area);
-
-        // `filtered`, `first`, and `last` are pre-computed by the caller (`draw`)
-        // which performs the mutable clamp_scroll before borrowing the snapshot.
-
-        // Build data vecs before constructing datasets; datasets borrow them.
-        let hist_len = HISTORY_LEN as f64;
-        let core_data: Vec<Vec<(f64, f64)>> = filtered[first..last]
-            .iter()
-            .map(|&core_idx| {
-                let hist = &self.per_core_history[core_idx];
-                let n = hist.len();
-                // Right-align: newest sample sits at x = HISTORY_LEN - 1.
-                hist.iter()
-                    .enumerate()
-                    .map(|(j, &v)| (hist_len - n as f64 + j as f64, v))
-                    .collect()
-            })
-            .collect();
-
-        let datasets: Vec<Dataset> = filtered[first..last]
-            .iter()
-            .zip(core_data.iter())
-            .map(|(&core_idx, data)| {
-                Dataset::default()
-                    .marker(symbols::Marker::Braille)
-                    .graph_type(GraphType::Line)
-                    .style(Style::new().fg(core_color(core_idx)))
-                    .data(data)
-            })
-            .collect();
-
-        let chart = Chart::new(datasets)
-            .x_axis(
-                Axis::default()
-                    .bounds([0.0, hist_len])
-                    .style(Style::new().fg(self.palette.dim)),
-            )
-            .y_axis(
-                Axis::default()
-                    .bounds([0.0, 100.0])
-                    .style(Style::new().fg(self.palette.dim)),
-            );
-        frame.render_widget(chart, graph_area);
-
-        // Left border of the label block acts as the y-axis separator.
-        let label_block = Block::default()
-            .borders(Borders::LEFT)
-            .border_style(Style::new().fg(self.palette.border));
-        let label_inner = label_block.inner(label_area);
-        frame.render_widget(label_block, label_area);
-
-        let actual_visible = (last - first).min(label_inner.height as usize);
+        let actual_visible = (last - first).min(area.height as usize);
         if actual_visible == 0 {
             return;
         }
-        let label_rows = Layout::vertical(
-            (0..actual_visible)
-                .map(|_| Constraint::Length(1))
-                .collect::<Vec<_>>(),
-        )
-        .split(label_inner);
 
-        for (row_idx, &core_idx) in filtered[first..first + actual_visible].iter().enumerate() {
+        let mut chart = HistoryChart::new(HISTORY_LEN)
+            .y_bounds(0.0, 100.0)
+            .legend_width(label_total_w)
+            .border_style(Style::new().fg(self.palette.border))
+            .axis_style(Style::new().fg(self.palette.dim));
+
+        for &core_idx in &filtered[first..last] {
+            chart = chart.series(
+                self.per_core_history[core_idx].iter().copied(),
+                Style::new().fg(core_color(core_idx)),
+            );
+        }
+
+        for &core_idx in &filtered[first..first + actual_visible] {
             let pct = snap.per_core[core_idx];
             let mut text = format!("cpu{:<2}{:>5.1}%", core_idx, pct);
 
@@ -291,9 +241,13 @@ impl CpuComponent {
                 }
             }
 
-            let label = Span::styled(text, Style::new().fg(core_color(core_idx)));
-            frame.render_widget(label, label_rows[row_idx]);
+            chart = chart.legend(LegendEntry::top(Span::styled(
+                text,
+                Style::new().fg(core_color(core_idx)),
+            )));
         }
+
+        frame.render_widget(chart, area);
     }
 
     fn restore_compact_snapshot(&mut self) {
