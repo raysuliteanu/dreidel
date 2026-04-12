@@ -105,6 +105,10 @@ impl Default for DiskComponent {
 
 /// Width of the size / free space columns — right-aligned.
 const SIZE_W: u16 = 10;
+/// Width of the y-axis label text in the detail graph legend (e.g. "102.4 KB/s" = 10 chars).
+const LEGEND_INNER_W: u16 = 10;
+/// Total legend column width including the Borders::LEFT separator.
+const LEGEND_TOTAL_W: u16 = LEGEND_INNER_W + 1;
 /// Width of each percentage column (%used, %free) — right-aligned.
 const PCT_W: u16 = 7;
 
@@ -560,15 +564,18 @@ impl DiskComponent {
             None => return Ok(()),
         };
 
+        let x_max = HISTORY_LEN as f64;
+        let n = read_hist.len();
+        // Right-align: newest sample sits at x = HISTORY_LEN - 1, matching CPU/Net behavior.
         let read_data: Vec<(f64, f64)> = read_hist
             .iter()
             .enumerate()
-            .map(|(i, &v)| (i as f64, v as f64))
+            .map(|(j, &v)| (x_max - n as f64 + j as f64, v as f64))
             .collect();
         let write_data: Vec<(f64, f64)> = write_hist
             .iter()
             .enumerate()
-            .map(|(i, &v)| (i as f64, v as f64))
+            .map(|(j, &v)| (x_max - n as f64 + j as f64, v as f64))
             .collect();
 
         let y_max = read_hist
@@ -594,7 +601,6 @@ impl DiskComponent {
                 .data(&write_data),
         ];
 
-        let x_max = HISTORY_LEN as f64;
         let chart = Chart::new(datasets)
             .x_axis(
                 Axis::default()
@@ -604,17 +610,42 @@ impl DiskComponent {
             .y_axis(
                 Axis::default()
                     .bounds([0.0, y_max])
-                    .labels([
-                        Span::styled("0", Style::new().fg(self.palette.dim)),
-                        Span::styled(
-                            fmt_rate(y_max as u64 / 2),
-                            Style::new().fg(self.palette.dim),
-                        ),
-                        Span::styled(fmt_rate(y_max as u64), Style::new().fg(self.palette.dim)),
-                    ])
                     .style(Style::new().fg(self.palette.dim)),
             );
-        frame.render_widget(chart, sections[2]);
+
+        let [graph_area, legend_area] =
+            Layout::horizontal([Constraint::Fill(1), Constraint::Length(LEGEND_TOTAL_W)])
+                .areas(sections[2]);
+
+        frame.render_widget(chart, graph_area);
+
+        // Left border of the legend block acts as the y-axis separator.
+        let legend_block = Block::default()
+            .borders(Borders::LEFT)
+            .border_style(Style::new().fg(self.palette.border));
+        let legend_inner = legend_block.inner(legend_area);
+        frame.render_widget(legend_block, legend_area);
+
+        // Render y-axis scale labels: max at top, mid in centre, 0 at bottom.
+        let h = legend_inner.height;
+        if h >= 1 {
+            let label_style = Style::new().fg(self.palette.dim);
+            let mid_row = h / 2;
+            for (row, text) in [
+                (0, fmt_rate(y_max as u64)),
+                (mid_row, fmt_rate(y_max as u64 / 2)),
+                (h.saturating_sub(1), "0".to_string()),
+            ] {
+                frame.render_widget(
+                    Span::styled(text, label_style),
+                    Rect {
+                        y: legend_inner.y + row,
+                        height: 1,
+                        ..legend_inner
+                    },
+                );
+            }
+        }
 
         // --- Bottom summary line ---
         if let Some(snap) = &self.latest
