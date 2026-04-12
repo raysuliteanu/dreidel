@@ -2,6 +2,40 @@
 
 //! [`HistoryChart`] — a reusable right-aligned braille line chart with a
 //! right-side legend, shared by the CPU, Net, and Disk panels.
+//!
+//! # Overview
+//!
+//! Each system-monitor panel (CPU, Net, Disk) draws a scrolling time-series
+//! graph where "now" is at the right edge, with a legend column separated by a
+//! vertical border.  `HistoryChart` extracts that shared pattern into a single
+//! `Widget` so all three panels stay visually consistent.
+//!
+//! # Usage
+//!
+//! Build a chart with the builder API, then pass it to
+//! `frame.render_widget(chart, area)`:
+//!
+//! ```rust,ignore
+//! use crate::components::chart::{HistoryChart, LegendEntry};
+//!
+//! let chart = HistoryChart::new(100)        // 100-sample history window
+//!     .series(cpu_history.iter().copied(), Style::new().fg(Color::Cyan))
+//!     .y_bounds(0.0, 100.0)
+//!     .legend_width(12)                     // 11 inner chars + 1 border
+//!     .legend(LegendEntry::top(Span::styled("cpu0  50.0%", style)))
+//!     .border_style(Style::new().fg(Color::Gray))
+//!     .axis_style(Style::new().fg(Color::DarkGray));
+//!
+//! frame.render_widget(chart, area);
+//! ```
+//!
+//! # Legend anchoring
+//!
+//! Legend entries are positioned via [`LegendAnchor`]:
+//!
+//! - **`Top`** — stacks downward from row 0 (used by CPU per-core labels, Net TX/RX)
+//! - **`Center`** — placed at the vertical midpoint (used by Disk mid-scale label)
+//! - **`Bottom`** — stacks upward from the last row (used by Disk zero label)
 
 use ratatui::{
     buffer::Buffer,
@@ -89,6 +123,7 @@ impl<'a> HistoryChart<'a> {
         self
     }
 
+    /// Set the Y-axis bounds. Defaults to `[0.0, 100.0]`.
     pub(crate) fn y_bounds(mut self, min: f64, max: f64) -> Self {
         self.y_bounds = [min, max];
         self
@@ -101,16 +136,19 @@ impl<'a> HistoryChart<'a> {
         self
     }
 
+    /// Append a legend entry to the right-side label column.
     pub(crate) fn legend(mut self, entry: LegendEntry<'a>) -> Self {
         self.legend_entries.push(entry);
         self
     }
 
+    /// Style for the `Borders::LEFT` separator between graph and legend.
     pub(crate) fn border_style(mut self, style: Style) -> Self {
         self.border_style = style;
         self
     }
 
+    /// Style for both X and Y axis lines of the inner `Chart`.
     pub(crate) fn axis_style(mut self, style: Style) -> Self {
         self.axis_style = style;
         self
