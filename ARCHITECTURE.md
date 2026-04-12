@@ -195,6 +195,29 @@ the lowercase string representations (`"cpu"`, `"mem"`, `"net"`, `"disk"`,
 - **`list_border_block(focus_key, rest, palette, focused)`** — shared border/title builder
   for the Net and Disk list panels
 
+### `src/components/chart.rs` — `HistoryChart` widget
+
+A reusable right-aligned braille line chart with a right-side legend column,
+shared by the CPU, Net, and Disk panels. Implements `ratatui::widgets::Widget`
+so it can be used with `frame.render_widget()`.
+
+The widget handles:
+
+1. **Right-alignment** — series data is shifted so the newest sample sits at the
+   right edge of the graph (`x = history_len - 1`).
+2. **Braille rendering** — each series is drawn as a `GraphType::Line` with
+   `Marker::Braille` for high-density sparklines.
+3. **Area splitting** — the widget splits its area into graph + legend using
+   `Layout::horizontal` with `Constraint::Fill(1)` + `Constraint::Length(legend_width)`.
+4. **Legend separator** — a `Borders::LEFT` block between graph and legend acts as
+   the y-axis line.
+5. **Anchored legend entries** — `LegendEntry` items are placed at `Top` (stacks
+   downward), `Center` (vertical midpoint), or `Bottom` (stacks upward) positions
+   using direct `buf.set_span()` calls.
+
+Builder API: `HistoryChart::new(history_len)` followed by `.series()`, `.y_bounds()`,
+`.legend_width()`, `.legend()`, `.border_style()`, `.axis_style()`.
+
 ### `src/components/` — Panels
 
 | File             | Component            | Key behaviour                                                    |

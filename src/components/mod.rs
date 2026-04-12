@@ -20,6 +20,7 @@ use strum::{Display, EnumIter};
 
 use crate::{action::Action, theme::ColorPalette};
 
+pub(crate) mod chart;
 pub mod cpu;
 pub mod disk;
 pub mod help;

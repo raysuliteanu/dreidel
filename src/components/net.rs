@@ -14,15 +14,15 @@ use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
-    symbols,
     text::{Line, Span},
-    widgets::{Axis, Block, Borders, Chart, Dataset, GraphType, List, ListItem, ListState},
+    widgets::{Block, Borders, List, ListItem, ListState},
 };
 
 use crate::{
     action::Action,
     components::{
         Component, FilterEvent, FilterInput, HISTORY_LEN, ListView, MIN_CHART_FLOOR, PAGE_SCROLL,
+        chart::{HistoryChart, LegendEntry},
         fmt_rate, fmt_rate_col, handle_detail_key, list_border_block, truncate,
     },
     stats::snapshots::NetSnapshot,
@@ -112,10 +112,8 @@ const PKT_W: u16 = 10;
 /// Width of the TX and RX metric columns (right-aligned).
 const COL_W: u16 = 12;
 
-/// Width of the graph legend column inner area: "TX  1.2 MB/s" = 12 chars.
-const LEGEND_INNER_W: u16 = 12;
-/// Total legend column width including the Borders::LEFT separator.
-const LEGEND_TOTAL_W: u16 = LEGEND_INNER_W + 1;
+/// Legend column: "TX " (3) + rate (9) = 12 inner + 1 border = 13 total.
+const NET_LEGEND_W: u16 = 13;
 
 /// Formats addresses for the list-view IP column: IPv4 first, then IPv6, space-separated.
 /// Returns `"-"` when both slices are empty.
@@ -536,26 +534,9 @@ impl NetComponent {
     /// Draws the compact aggregate TX/RX chart used in the list view header.
     fn draw_compact_chart(&self, frame: &mut Frame, area: Rect) {
         let (tx_hist, rx_hist) = &self.agg_history;
-        if tx_hist.is_empty() || area.width <= LEGEND_TOTAL_W + 4 {
+        if tx_hist.is_empty() || area.width <= NET_LEGEND_W + 4 {
             return;
         }
-
-        let [graph_area, legend_area] =
-            Layout::horizontal([Constraint::Fill(1), Constraint::Length(LEGEND_TOTAL_W)])
-                .areas(area);
-
-        let hist_len = HISTORY_LEN as f64;
-        let n = tx_hist.len();
-        let tx_data: Vec<(f64, f64)> = tx_hist
-            .iter()
-            .enumerate()
-            .map(|(j, &v)| (hist_len - n as f64 + j as f64, v as f64))
-            .collect();
-        let rx_data: Vec<(f64, f64)> = rx_hist
-            .iter()
-            .enumerate()
-            .map(|(j, &v)| (hist_len - n as f64 + j as f64, v as f64))
-            .collect();
 
         let y_max = tx_hist
             .iter()
@@ -565,67 +546,33 @@ impl NetComponent {
             .unwrap_or(0)
             .max(MIN_CHART_FLOOR) as f64;
 
-        let datasets = vec![
-            Dataset::default()
-                .marker(symbols::Marker::Braille)
-                .graph_type(GraphType::Line)
-                .style(Style::new().fg(self.palette.accent))
-                .data(&tx_data),
-            Dataset::default()
-                .marker(symbols::Marker::Braille)
-                .graph_type(GraphType::Line)
-                .style(Style::new().fg(self.palette.highlight))
-                .data(&rx_data),
-        ];
-
-        let chart = Chart::new(datasets)
-            .x_axis(
-                Axis::default()
-                    .bounds([0.0, hist_len])
-                    .style(Style::new().fg(self.palette.dim)),
-            )
-            .y_axis(
-                Axis::default()
-                    .bounds([0.0, y_max])
-                    .style(Style::new().fg(self.palette.dim)),
-            );
-        frame.render_widget(chart, graph_area);
-
-        // Left border of the legend block acts as the y-axis separator.
-        let legend_block = Block::default()
-            .borders(Borders::LEFT)
-            .border_style(Style::new().fg(self.palette.border));
-        let legend_inner = legend_block.inner(legend_area);
-        frame.render_widget(legend_block, legend_area);
-
         let tx_cur = tx_hist.back().copied().unwrap_or(0);
         let rx_cur = rx_hist.back().copied().unwrap_or(0);
-        let rows = (legend_inner.height as usize).min(2);
-        if rows == 0 {
-            return;
-        }
+        let rate_w = (NET_LEGEND_W - 1) as usize - 3; // inner width minus "TX " prefix
 
-        let label_rows =
-            Layout::vertical((0..rows).map(|_| Constraint::Length(1)).collect::<Vec<_>>())
-                .split(legend_inner);
-
-        let rate_w = LEGEND_INNER_W as usize - 3; // "TX " prefix is 3 chars
-        frame.render_widget(
-            Span::styled(
+        let chart = HistoryChart::new(HISTORY_LEN)
+            .series(
+                tx_hist.iter().map(|&v| v as f64),
+                Style::new().fg(self.palette.accent),
+            )
+            .series(
+                rx_hist.iter().map(|&v| v as f64),
+                Style::new().fg(self.palette.highlight),
+            )
+            .y_bounds(0.0, y_max)
+            .legend_width(NET_LEGEND_W)
+            .legend(LegendEntry::top(Span::styled(
                 format!("TX {:>rate_w$}", fmt_rate(tx_cur)),
                 Style::new().fg(self.palette.accent),
-            ),
-            label_rows[0],
-        );
-        if rows >= 2 {
-            frame.render_widget(
-                Span::styled(
-                    format!("RX {:>rate_w$}", fmt_rate(rx_cur)),
-                    Style::new().fg(self.palette.highlight),
-                ),
-                label_rows[1],
-            );
-        }
+            )))
+            .legend(LegendEntry::top(Span::styled(
+                format!("RX {:>rate_w$}", fmt_rate(rx_cur)),
+                Style::new().fg(self.palette.highlight),
+            )))
+            .border_style(Style::new().fg(self.palette.border))
+            .axis_style(Style::new().fg(self.palette.dim));
+
+        frame.render_widget(chart, area);
     }
 
     fn draw_detail(&mut self, frame: &mut Frame, area: Rect, name: &str) -> Result<()> {
@@ -751,91 +698,41 @@ impl NetComponent {
             None => return Ok(()),
         };
 
-        let hist_len = HISTORY_LEN as f64;
-        let n = tx_hist.len();
-        let tx_data: Vec<(f64, f64)> = tx_hist
-            .iter()
-            .enumerate()
-            .map(|(j, &v)| (hist_len - n as f64 + j as f64, v as f64))
-            .collect();
-        let rx_data: Vec<(f64, f64)> = rx_hist
-            .iter()
-            .enumerate()
-            .map(|(j, &v)| (hist_len - n as f64 + j as f64, v as f64))
-            .collect();
-
         let y_max = tx_hist
             .iter()
             .chain(rx_hist.iter())
             .copied()
             .max()
             .unwrap_or(0)
-            .max(MIN_CHART_FLOOR) as f64; // floor at 1 KB/s so the axis is never zero-height
-
-        let datasets = vec![
-            Dataset::default()
-                .marker(symbols::Marker::Braille)
-                .graph_type(GraphType::Line)
-                .style(Style::new().fg(self.palette.accent))
-                .data(&tx_data),
-            Dataset::default()
-                .marker(symbols::Marker::Braille)
-                .graph_type(GraphType::Line)
-                .style(Style::new().fg(self.palette.highlight))
-                .data(&rx_data),
-        ];
-
-        let chart = Chart::new(datasets)
-            .x_axis(
-                Axis::default()
-                    .bounds([0.0, hist_len])
-                    .style(Style::new().fg(self.palette.dim)),
-            )
-            .y_axis(
-                Axis::default()
-                    .bounds([0.0, y_max])
-                    .style(Style::new().fg(self.palette.dim)),
-            );
-
-        let [graph_area, legend_area] =
-            Layout::horizontal([Constraint::Fill(1), Constraint::Length(LEGEND_TOTAL_W)])
-                .areas(sections[2]);
-
-        frame.render_widget(chart, graph_area);
-
-        // Left border of the legend block acts as the y-axis separator.
-        let legend_block = Block::default()
-            .borders(Borders::LEFT)
-            .border_style(Style::new().fg(self.palette.border));
-        let legend_inner = legend_block.inner(legend_area);
-        frame.render_widget(legend_block, legend_area);
+            .max(MIN_CHART_FLOOR) as f64;
 
         let tx_cur = tx_hist.back().copied().unwrap_or(0);
         let rx_cur = rx_hist.back().copied().unwrap_or(0);
-        let rows = (legend_inner.height as usize).min(2);
-        if rows > 0 {
-            let label_rows =
-                Layout::vertical((0..rows).map(|_| Constraint::Length(1)).collect::<Vec<_>>())
-                    .split(legend_inner);
+        let rate_w = (NET_LEGEND_W - 1) as usize - 3;
 
-            let rate_w = LEGEND_INNER_W as usize - 3; // "TX " prefix is 3 chars
-            frame.render_widget(
-                Span::styled(
-                    format!("TX {:>rate_w$}", fmt_rate(tx_cur)),
-                    Style::new().fg(self.palette.accent),
-                ),
-                label_rows[0],
-            );
-            if rows >= 2 {
-                frame.render_widget(
-                    Span::styled(
-                        format!("RX {:>rate_w$}", fmt_rate(rx_cur)),
-                        Style::new().fg(self.palette.highlight),
-                    ),
-                    label_rows[1],
-                );
-            }
-        }
+        let chart = HistoryChart::new(HISTORY_LEN)
+            .series(
+                tx_hist.iter().map(|&v| v as f64),
+                Style::new().fg(self.palette.accent),
+            )
+            .series(
+                rx_hist.iter().map(|&v| v as f64),
+                Style::new().fg(self.palette.highlight),
+            )
+            .y_bounds(0.0, y_max)
+            .legend_width(NET_LEGEND_W)
+            .legend(LegendEntry::top(Span::styled(
+                format!("TX {:>rate_w$}", fmt_rate(tx_cur)),
+                Style::new().fg(self.palette.accent),
+            )))
+            .legend(LegendEntry::top(Span::styled(
+                format!("RX {:>rate_w$}", fmt_rate(rx_cur)),
+                Style::new().fg(self.palette.highlight),
+            )))
+            .border_style(Style::new().fg(self.palette.border))
+            .axis_style(Style::new().fg(self.palette.dim));
+
+        frame.render_widget(chart, sections[2]);
 
         // --- Separator above summary ---
         frame.render_widget(

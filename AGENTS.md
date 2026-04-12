@@ -87,6 +87,10 @@ Tab cycling uses `App::rendered_ids` — only components that have a layout slot
 
 `ComponentId` uses `#[strum(serialize_all = "lowercase")]`. The strings used in `config.layout.show` and `--show`/`--hide` CLI flags must match exactly: `"cpu"`, `"net"`, `"disk"`, `"process"`. (`"mem"` and `"proc"` will silently fail to match.)
 
+### HistoryChart widget
+
+`src/components/chart.rs` defines `HistoryChart`, a custom `ratatui::widgets::Widget` used by CPU, Net, and Disk for their time-series graphs. It handles right-aligning series data, rendering braille `Chart` datasets, splitting graph/legend areas, drawing the `Borders::LEFT` y-axis separator, and placing legend entries at anchored positions (Top/Center/Bottom). Builder API: `HistoryChart::new(history_len).series(...).y_bounds(...).legend_width(...).legend(...).border_style(...).axis_style(...)`.
+
 ### Snapshot testing
 
 Component `draw()` methods are tested with `ratatui::backend::TestBackend` + `insta::assert_snapshot!`. Snapshots live in `src/components/snapshots/`. When rendering changes intentionally, run `INSTA_UPDATE=always cargo test` to accept new snapshots, then verify the diff looks correct.
