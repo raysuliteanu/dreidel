@@ -14,7 +14,6 @@ use ratatui::{
 
 /// Vertical anchor for a legend entry inside the right-side label column.
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)] // consumers added in upcoming migration commits
 pub(crate) enum LegendAnchor {
     /// Stacks downward from row 0. Multiple `Top` entries fill rows 0, 1, 2, …
     Top,
@@ -26,13 +25,11 @@ pub(crate) enum LegendAnchor {
 
 /// A single label rendered in the right-side legend column.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // consumers added in upcoming migration commits
 pub(crate) struct LegendEntry<'a> {
     span: Span<'a>,
     anchor: LegendAnchor,
 }
 
-#[allow(dead_code)] // consumers added in upcoming migration commits
 impl<'a> LegendEntry<'a> {
     pub(crate) fn top(span: Span<'a>) -> Self {
         Self {
@@ -63,7 +60,6 @@ impl<'a> LegendEntry<'a> {
 /// 2. Renders a braille `Chart` with no axis labels.
 /// 3. Splits the area into graph + legend separated by a `Borders::LEFT` line.
 /// 4. Places legend entries at anchored vertical positions (top / center / bottom).
-#[allow(dead_code)] // consumers added in upcoming migration commits
 pub(crate) struct HistoryChart<'a> {
     history_len: usize,
     series: Vec<(Vec<f64>, Style)>,
@@ -74,7 +70,6 @@ pub(crate) struct HistoryChart<'a> {
     axis_style: Style,
 }
 
-#[allow(dead_code)] // consumers added in upcoming migration commits
 impl<'a> HistoryChart<'a> {
     pub(crate) fn new(history_len: usize) -> Self {
         Self {
