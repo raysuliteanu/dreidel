@@ -1,0 +1,10 @@
+---
+source: src/components/chart.rs
+expression: terminal.backend()
+---
+"                   │          "
+"                   │          "
+"                   │          "
+"                   │          "
+"                   │          "
+"                   │          "

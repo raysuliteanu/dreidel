@@ -1,0 +1,12 @@
+---
+source: src/components/chart.rs
+expression: terminal.backend()
+---
+"                             │cpu0  50.0"
+"                             │          "
+"                             │          "
+"                             │          "
+"                       ⠉⠉⠉⠉⠉⠁│          "
+"                             │          "
+"                             │          "
+"                             │          "
