@@ -173,8 +173,8 @@ A minimal example:
 
 ```toml
 [general]
-refresh_rate = "500ms"
-thread_refresh = "5s"   # how often to enumerate threads (Linux)
+refresh_rate_ms = "500ms"
+thread_refresh_ms = "5s"   # how often to enumerate threads (Linux)
 theme = "dark"
 
 [layout]

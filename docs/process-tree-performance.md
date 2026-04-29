@@ -85,7 +85,7 @@ Only build subtrees for expanded nodes. Skip `children_map` insertion entirely f
 Dual-interval collector: fast interval (`refresh_rate_ms`, default 1s) for all
 metrics; slow interval (`thread_refresh_ms`, default 5s) for thread enumeration
 via `/proc/<pid>/task/`. Thread entries are cached and merged into every
-`ProcUpdate`. Configurable via `general.thread_refresh` in config or
+`ProcUpdate`. Configurable via `general.thread_refresh_ms` in config or
 `--thread-refresh` CLI flag.
 
 | Pros                                              | Cons                                                  |

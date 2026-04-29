@@ -616,12 +616,12 @@ can save and edit.
 ```toml
 [general]
 # Stats refresh interval. Humantime format: "500ms", "1s", "2s", etc.
-refresh_rate = "1s"
+refresh_rate_ms = "1s"
 
 # How often to enumerate per-process threads (Linux only).
 # Thread enumeration is expensive; a slower cadence avoids thousands
 # of syscalls every tick.
-thread_refresh = "5s"
+thread_refresh_ms = "5s"
 
 # Color theme: "auto" | "light" | "dark"
 theme = "auto"
