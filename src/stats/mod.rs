@@ -474,6 +474,7 @@ fn build_proc(sys: &System) -> ProcSnapshot {
             .map(|p| {
                 let disk = p.disk_usage();
                 let pid = p.pid().as_u32();
+                #[allow(unused_mut)] // fields set via procfs only on linux
                 let mut entry = ProcessEntry {
                     pid,
                     name: p.name().to_string_lossy().into_owned(),

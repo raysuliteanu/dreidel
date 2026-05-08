@@ -160,8 +160,10 @@ pub struct InterfaceSnapshot {
     pub ipv6_addresses: Vec<String>,
     pub mtu: u64,
     /// Cumulative receive drops from /proc/net/dev. Linux-only; `0` on other platforms.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub rx_dropped: u64,
     /// Cumulative transmit drops from /proc/net/dev. Linux-only; `0` on other platforms.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub tx_dropped: u64,
 }
 

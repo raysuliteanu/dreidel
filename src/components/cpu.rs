@@ -150,6 +150,7 @@ impl CpuComponent {
 
         // Row 0: aggregate %, brand, logical core count (+ physical on Linux)
         let logical = snap.per_core.len();
+        #[allow(unused_mut)] // push only on linux
         let mut row0_spans = vec![
             Span::styled("CPU: ", dim),
             Span::styled(format!("{:.1}%", snap.aggregate), ac),
@@ -171,6 +172,7 @@ impl CpuComponent {
         } else {
             snap.frequency.iter().sum::<u64>() / snap.frequency.len() as u64
         };
+        #[allow(unused_mut)] // push only on linux
         let mut row1_spans = vec![
             Span::styled("Freq: ", dim),
             Span::styled(format!("{avg_freq} MHz"), val),
@@ -230,6 +232,7 @@ impl CpuComponent {
 
         for &core_idx in &filtered[first..first + actual_visible] {
             let pct = snap.per_core[core_idx];
+            #[allow(unused_mut)] // push_str only on linux
             let mut text = format!("cpu{:<2}{:>5.1}%", core_idx, pct);
 
             #[cfg(target_os = "linux")]

@@ -811,9 +811,7 @@ mod tests {
             ipv4_addresses: vec![],
             ipv6_addresses: vec![],
             mtu: 1500,
-            #[cfg(target_os = "linux")]
             rx_dropped: 0,
-            #[cfg(target_os = "linux")]
             tx_dropped: 0,
         }
     }
