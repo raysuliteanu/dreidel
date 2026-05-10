@@ -344,18 +344,14 @@ impl Component for CpuComponent {
             KeyCode::Up => {
                 self.scroll_offset = self.scroll_offset.saturating_sub(1);
             }
-            KeyCode::Down => {
-                if n > 0 {
-                    self.scroll_offset = (self.scroll_offset + 1).min(n - 1);
-                }
+            KeyCode::Down if n > 0 => {
+                self.scroll_offset = (self.scroll_offset + 1).min(n - 1);
             }
             KeyCode::PageUp => {
                 self.scroll_offset = self.scroll_offset.saturating_sub(COMPACT_MAX_CORES);
             }
-            KeyCode::PageDown => {
-                if n > 0 {
-                    self.scroll_offset = (self.scroll_offset + COMPACT_MAX_CORES).min(n - 1);
-                }
+            KeyCode::PageDown if n > 0 => {
+                self.scroll_offset = (self.scroll_offset + COMPACT_MAX_CORES).min(n - 1);
             }
             KeyCode::Char('/') => {
                 self.state = CpuState::FilterMode {
@@ -492,20 +488,22 @@ mod tests {
         assert_snapshot!("cpu_no_data", terminal.backend());
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn renders_with_cpu_data() {
         let mut comp = CpuComponent::default();
-        comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
+        comp.update(&Action::CpuUpdate(CpuSnapshot::stub_linux()))
             .unwrap();
         let mut terminal = Terminal::new(TestBackend::new(60, 10)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
         assert_snapshot!("cpu_with_data", terminal.backend());
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn renders_fullscreen_header() {
         let mut comp = CpuComponent::default();
-        comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
+        comp.update(&Action::CpuUpdate(CpuSnapshot::stub_linux()))
             .unwrap();
         comp.update(&Action::ToggleFullScreen).unwrap();
         // Simulate the App's overlay render pass: App calls begin_overlay_render()

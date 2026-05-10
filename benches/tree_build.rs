@@ -39,11 +39,7 @@ fn make_processes(n: usize) -> Vec<ProcessEntry> {
 
     // Distribute remaining processes as children/grandchildren
     let mut pid = (root_count + 1) as u32;
-    let children_per_root = if root_count > 0 {
-        (n - root_count) / root_count
-    } else {
-        0
-    };
+    let children_per_root = (n - root_count).checked_div(root_count).unwrap_or(0);
 
     for root_idx in 0..root_count {
         let parent_pid = (root_idx + 1) as u32;

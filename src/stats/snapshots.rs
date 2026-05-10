@@ -72,13 +72,27 @@ pub struct CpuSnapshot {
 #[cfg(any(test, feature = "test-stubs"))]
 #[allow(dead_code)]
 impl CpuSnapshot {
+    /// Cross-platform baseline: no Linux-only optional data.
+    /// Use `stub_linux()` in tests that exercise temperature/governor rendering.
     pub fn stub() -> Self {
         Self {
             aggregate: 35.0,
             per_core: vec![42.0, 18.0, 75.0, 5.0],
             frequency: vec![3400, 3400, 3400, 3400],
-            physical_core_count: Some(4),
+            physical_core_count: None,
             cpu_brand: "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz".into(),
+            package_temp: None,
+            per_core_temp: vec![None; 4],
+            governor: None,
+            cpu_modes: None,
+        }
+    }
+
+    /// Linux-specific stub: includes temperatures, governor, and cpu_modes.
+    /// Use in tests that explicitly exercise Linux rendering paths.
+    pub fn stub_linux() -> Self {
+        Self {
+            physical_core_count: Some(4),
             package_temp: Some(62.0),
             per_core_temp: vec![Some(55.0), Some(58.0), Some(60.0), Some(52.0)],
             governor: Some("powersave".into()),
@@ -92,6 +106,7 @@ impl CpuSnapshot {
                 softirq: 0.0,
                 steal: 0.0,
             }),
+            ..Self::stub()
         }
     }
 }
@@ -134,6 +149,10 @@ impl MemSnapshot {
             swap_in_bytes: 0,
             swap_out_bytes: 0,
         }
+    }
+
+    pub fn stub_linux() -> Self {
+        Self::stub()
     }
 }
 
