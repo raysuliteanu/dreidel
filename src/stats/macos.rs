@@ -15,9 +15,10 @@ use libc::{
 
 use libproc::libproc::file_info::ListFDs;
 use libproc::libproc::task_info::TaskAllInfo;
-use libproc::proc_pid::{listpidinfo, pidinfo};
+use libproc::libproc::thread_info::ThreadInfo;
+use libproc::proc_pid::{ListThreads, listpidinfo, pidinfo};
 
-use crate::stats::snapshots::{CpuModes, CpuSnapshot, ProcessEntry};
+use crate::stats::snapshots::{CpuModes, CpuSnapshot, ProcessEntry, ProcessStatus};
 use sysinfo::System;
 
 /// Per-CPU tick counts from `host_processor_info(PROCESSOR_CPU_LOAD_INFO)`.
@@ -306,6 +307,85 @@ pub fn enrich_process_entry(entry: &mut ProcessEntry, pid: u32) {
     }
 }
 
-pub fn enumerate_threads(_sys: &System) -> Vec<ProcessEntry> {
-    Vec::new()
+pub fn enumerate_threads(sys: &System) -> Vec<ProcessEntry> {
+    let mut thread_entries = Vec::new();
+
+    for (sysinfo_pid, p) in sys.processes() {
+        let pid = sysinfo_pid.as_u32();
+        let pid_i = pid as i32;
+        let proc_name = p.name().to_string_lossy();
+        let proc_user = p.user_id().map(|u| u.to_string()).unwrap_or_default();
+
+        // Use the thread count from TaskAllInfo as the capacity hint; fall back to a
+        // small default so we still attempt enumeration even without task info.
+        let hint = pidinfo::<TaskAllInfo>(pid_i, 0)
+            .map(|info| info.ptinfo.pti_threadnum as usize)
+            .unwrap_or(4);
+
+        let Ok(tids) = listpidinfo::<ListThreads>(pid_i, hint) else {
+            continue;
+        };
+
+        for tid in tids {
+            // On macOS the main thread's TID is not the same as PID (unlike Linux).
+            // Skip the first TID only if it happens to equal the PID — this is a
+            // conservative heuristic; macOS does not guarantee TID == PID.
+            if tid as u32 == pid {
+                continue;
+            }
+
+            let cpu_time_secs = if let Ok(info) = pidinfo::<ThreadInfo>(pid_i, tid) {
+                // pth_user_time and pth_system_time are in microseconds
+                (info.pth_user_time + info.pth_system_time) as f64 / 1_000_000.0
+            } else {
+                0.0
+            };
+
+            thread_entries.push(ProcessEntry {
+                pid: tid as u32,
+                name: format!("[{proc_name}:{tid}]"),
+                cmd: Vec::new(),
+                user: proc_user.clone(),
+                cpu_pct: 0.0,
+                mem_bytes: 0,
+                mem_pct: 0.0,
+                virt_bytes: 0,
+                status: ProcessStatus::Unknown,
+                start_time: 0,
+                run_time: 0,
+                nice: 0,
+                threads: 0,
+                read_bytes: 0,
+                write_bytes: 0,
+                parent_pid: Some(pid),
+                priority: 0,
+                shr_bytes: 0,
+                cpu_time_secs,
+                exe: None,
+                cwd: None,
+                root: None,
+                effective_user: None,
+                group: None,
+                effective_group: None,
+                session_id: None,
+                tty: None,
+                user_cpu_time_secs: 0.0,
+                system_cpu_time_secs: 0.0,
+                minor_faults: 0,
+                major_faults: 0,
+                voluntary_ctxt_switches: None,
+                nonvoluntary_ctxt_switches: None,
+                fd_count: None,
+                swap_bytes: None,
+                io_read_calls: None,
+                io_write_calls: None,
+                io_read_chars: None,
+                io_write_chars: None,
+                cancelled_write_bytes: None,
+                is_thread: true,
+            });
+        }
+    }
+
+    thread_entries
 }
