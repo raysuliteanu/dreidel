@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
+// Doc screenshots are generated from Linux-specific stub data (MEM_LABEL_WIDTH,
+// buffer/cache fields). Gate the whole suite so macOS runs never overwrite
+// USER_GUIDE.md with platform-different output.
+#![cfg(target_os = "linux")]
 
 //! Render key component views to text files for use in documentation.
 //!

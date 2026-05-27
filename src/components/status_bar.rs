@@ -391,7 +391,37 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn renders_cpu_modes_row() {
+        let mut comp = StatusBarComponent::new(ColorPalette::dark());
+        comp.update(&Action::SysUpdate(fixed_sys())).unwrap();
+        let snap = CpuSnapshot {
+            cpu_modes: Some(CpuModes {
+                user: 5.2,
+                system: 0.2,
+                nice: 0.0,
+                idle: 84.8,
+                iowait: 9.8,
+                irq: 0.0,
+                softirq: 0.0,
+                steal: 0.0,
+            }),
+            ..CpuSnapshot::stub()
+        };
+        comp.update(&Action::CpuUpdate(snap)).unwrap();
+        comp.update(&Action::MemUpdate(MemSnapshot::stub()))
+            .unwrap();
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+            .unwrap();
+
+        let mut terminal = Terminal::new(TestBackend::new(120, 7)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn renders_cpu_modes_row_macos() {
         let mut comp = StatusBarComponent::new(ColorPalette::dark());
         comp.update(&Action::SysUpdate(fixed_sys())).unwrap();
         let snap = CpuSnapshot {
