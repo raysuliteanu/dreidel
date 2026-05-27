@@ -11,6 +11,9 @@
 pub mod snapshots;
 pub use snapshots::*;
 
+#[cfg(target_os = "macos")]
+mod macos;
+
 use crate::action::Action;
 use sysinfo::{Components, DiskKind, Disks, Networks, System};
 use tokio::sync::mpsc::Sender;
@@ -45,7 +48,7 @@ pub async fn run_collector(
     // Merged into ProcUpdate on every fast tick so the UI always has thread
     // data, but the expensive /proc/<pid>/task/ walk only happens at the
     // slower cadence.
-    #[allow(unused_mut)] // mut only needed on linux
+    #[allow(unused_mut)] // mut only needed on linux and macos
     let mut cached_threads: Vec<ProcessEntry> = Vec::new();
 
     // Previous aggregate CPU jiffies, used to compute mode-percentage deltas
@@ -53,6 +56,9 @@ pub async fn run_collector(
     // `CpuSnapshot::cpu_modes` is never populated.
     #[cfg(target_os = "linux")]
     let mut prev_cpu_total: Option<CpuTotals> = None;
+
+    #[cfg(target_os = "macos")]
+    let mut prev_cpu_ticks: Option<macos::MacosCpuTicks> = None;
 
     loop {
         // Wait for whichever interval fires first.  When both are ready
@@ -74,8 +80,11 @@ pub async fn run_collector(
         if slow_tick {
             cached_threads = enumerate_threads(&sys);
         }
-        // Suppress unused-variable warning on non-Linux.
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "macos")]
+        if slow_tick {
+            cached_threads = macos::enumerate_threads(&sys);
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         let _ = slow_tick;
 
         let mut proc_snap = build_proc(&sys);
@@ -83,8 +92,10 @@ pub async fn run_collector(
 
         #[cfg(target_os = "linux")]
         let cpu_snap = build_cpu(&sys, &components, &mut prev_cpu_total);
-        #[cfg(not(target_os = "linux"))]
-        let cpu_snap = build_cpu(&sys, &components);
+        #[cfg(target_os = "macos")]
+        let cpu_snap = macos::build_cpu_macos(&sys, &mut prev_cpu_ticks);
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        let cpu_snap = build_cpu_stub(&sys, &components);
 
         let actions = [
             Action::SysUpdate(build_sys(&sys)),
@@ -218,8 +229,8 @@ fn build_cpu(
     }
 }
 
-#[cfg(not(target_os = "linux"))]
-fn build_cpu(sys: &System, _components: &Components) -> CpuSnapshot {
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn build_cpu_stub(sys: &System, _components: &Components) -> CpuSnapshot {
     let cpus = sys.cpus();
     CpuSnapshot {
         per_core: cpus.iter().map(|c| c.cpu_usage()).collect(),
