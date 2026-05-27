@@ -251,7 +251,7 @@ impl StatusBarComponent {
         );
 
         #[cfg(target_os = "macos")]
-        let label = if mem.ram_active > 0 || mem.ram_free > 0 {
+        let label = if mem.ram_active > 0 {
             format!(
                 "RAM {}/{}  free {}  active {}  inactive {}  wired {}  compressed {}",
                 fmt_bytes(mem.ram_used),
