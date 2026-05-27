@@ -72,14 +72,11 @@ pub fn read_cpu_modes(prev: Option<&MacosCpuTicks>) -> (Option<CpuModes>, Option
             nice[i] = cpu.cpu_ticks[CPU_STATE_NICE as usize] as u64;
         }
         // Deallocate the Mach memory returned by host_processor_info.
-        let page_size = libc::sysconf(libc::_SC_PAGESIZE) as usize;
-        let byte_count = info_count as usize * std::mem::size_of::<u32>();
-        let rounded = byte_count.div_ceil(page_size) * page_size;
         #[allow(deprecated)]
         libc::vm_deallocate(
             libc::mach_task_self(),
             cpu_info as libc::vm_address_t,
-            rounded,
+            info_count as usize * std::mem::size_of::<u32>(),
         );
     }
 
