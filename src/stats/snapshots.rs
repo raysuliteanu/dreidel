@@ -131,6 +131,14 @@ pub struct MemSnapshot {
     pub swap_in_bytes: u64,
     /// Cumulative swap-out bytes from /proc/vmstat. Linux-only; `0` on other platforms.
     pub swap_out_bytes: u64,
+    /// macOS: recently-used (active) memory in bytes. 0 on other platforms.
+    pub ram_active: u64,
+    /// macOS: reclaimable (inactive) memory in bytes. 0 on other platforms.
+    pub ram_inactive: u64,
+    /// macOS: non-pageable kernel (wired) memory in bytes. 0 on other platforms.
+    pub ram_wired: u64,
+    /// macOS: memory held in the compressor in bytes. 0 on other platforms.
+    pub ram_compressed: u64,
 }
 
 #[cfg(any(test, feature = "test-stubs"))]
@@ -148,11 +156,29 @@ impl MemSnapshot {
             swap_used: 0,
             swap_in_bytes: 0,
             swap_out_bytes: 0,
+            ram_active: 0,
+            ram_inactive: 0,
+            ram_wired: 0,
+            ram_compressed: 0,
         }
     }
 
     pub fn stub_linux() -> Self {
         Self::stub()
+    }
+
+    pub fn stub_macos() -> Self {
+        Self {
+            ram_free: 2_252_341_248,
+            ram_active: 6_232_252_416,
+            ram_inactive: 2_469_396_480,
+            ram_wired: 1_717_986_918,
+            ram_compressed: 1_503_238_554,
+            ram_available: 2_252_341_248 + 2_469_396_480,
+            swap_in_bytes: 0,
+            swap_out_bytes: 0,
+            ..Self::stub()
+        }
     }
 }
 

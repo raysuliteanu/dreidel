@@ -334,8 +334,22 @@ fn read_cpu_governor() -> Option<String> {
 fn build_mem(sys: &System) -> MemSnapshot {
     #[cfg(target_os = "linux")]
     let (ram_free, ram_buffers, ram_cached, ram_available) = read_mem_details();
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    let (
+        macos_ram_free,
+        macos_ram_active,
+        macos_ram_inactive,
+        macos_ram_wired,
+        macos_ram_compressed,
+        macos_ram_available,
+        macos_swap_in,
+        macos_swap_out,
+    ) = macos::read_mem_details();
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     let (ram_free, ram_buffers, ram_cached, ram_available) = (0u64, 0u64, 0u64, 0u64);
+    #[cfg(target_os = "macos")]
+    let (ram_free, ram_buffers, ram_cached, ram_available) =
+        (macos_ram_free, 0u64, 0u64, macos_ram_available);
 
     MemSnapshot {
         ram_used: sys.used_memory(),
@@ -348,12 +362,32 @@ fn build_mem(sys: &System) -> MemSnapshot {
         swap_total: sys.total_swap(),
         #[cfg(target_os = "linux")]
         swap_in_bytes: read_vmstat_field("pswpin").unwrap_or(0) * 4096,
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "macos")]
+        swap_in_bytes: macos_swap_in,
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         swap_in_bytes: 0,
         #[cfg(target_os = "linux")]
         swap_out_bytes: read_vmstat_field("pswpout").unwrap_or(0) * 4096,
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "macos")]
+        swap_out_bytes: macos_swap_out,
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         swap_out_bytes: 0,
+        #[cfg(target_os = "macos")]
+        ram_active: macos_ram_active,
+        #[cfg(not(target_os = "macos"))]
+        ram_active: 0,
+        #[cfg(target_os = "macos")]
+        ram_inactive: macos_ram_inactive,
+        #[cfg(not(target_os = "macos"))]
+        ram_inactive: 0,
+        #[cfg(target_os = "macos")]
+        ram_wired: macos_ram_wired,
+        #[cfg(not(target_os = "macos"))]
+        ram_wired: 0,
+        #[cfg(target_os = "macos")]
+        ram_compressed: macos_ram_compressed,
+        #[cfg(not(target_os = "macos"))]
+        ram_compressed: 0,
     }
 }
 

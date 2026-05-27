@@ -7,9 +7,10 @@
 //! the rest of the snapshot is unaffected.
 
 use libc::{
-    CPU_STATE_IDLE, CPU_STATE_NICE, CPU_STATE_SYSTEM, CPU_STATE_USER, PROCESSOR_CPU_LOAD_INFO,
-    host_processor_info, mach_msg_type_number_t, natural_t, processor_cpu_load_info_data_t,
-    processor_cpu_load_info_t,
+    CPU_STATE_IDLE, CPU_STATE_NICE, CPU_STATE_SYSTEM, CPU_STATE_USER, HOST_VM_INFO64,
+    HOST_VM_INFO64_COUNT, PROCESSOR_CPU_LOAD_INFO, host_processor_info, host_statistics64,
+    mach_msg_type_number_t, natural_t, processor_cpu_load_info_data_t, processor_cpu_load_info_t,
+    vm_statistics64_data_t,
 };
 
 use crate::stats::snapshots::{CpuModes, CpuSnapshot, ProcessEntry};
@@ -142,9 +143,47 @@ pub fn build_cpu_macos(sys: &System, prev_ticks: &mut Option<MacosCpuTicks>) -> 
 }
 
 /// Returns (free, active, inactive, wired, compressed, available, swap_in_bytes, swap_out_bytes).
-#[allow(dead_code)] // used in Task 5: macOS memory details
 pub fn read_mem_details() -> (u64, u64, u64, u64, u64, u64, u64, u64) {
-    (0, 0, 0, 0, 0, 0, 0, 0)
+    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as u64;
+    if page_size == 0 {
+        return (0, 0, 0, 0, 0, 0, 0, 0);
+    }
+
+    let mut vm_info = std::mem::MaybeUninit::<vm_statistics64_data_t>::zeroed();
+    let mut count: libc::mach_msg_type_number_t = HOST_VM_INFO64_COUNT;
+
+    // SAFETY: host_statistics64 fills vm_info with exactly HOST_VM_INFO64_COUNT words
+    // when KERN_SUCCESS is returned.
+    #[allow(deprecated)]
+    let ret = unsafe {
+        host_statistics64(
+            libc::mach_host_self(),
+            HOST_VM_INFO64,
+            vm_info.as_mut_ptr() as *mut _,
+            &mut count,
+        )
+    };
+
+    if ret != libc::KERN_SUCCESS {
+        tracing::debug!("host_statistics64(HOST_VM_INFO64) failed: {ret}");
+        return (0, 0, 0, 0, 0, 0, 0, 0);
+    }
+
+    // SAFETY: KERN_SUCCESS guarantees the struct is fully initialised.
+    let vm = unsafe { vm_info.assume_init() };
+
+    let free = vm.free_count as u64 * page_size;
+    let active = vm.active_count as u64 * page_size;
+    let inactive = vm.inactive_count as u64 * page_size;
+    let wired = vm.wire_count as u64 * page_size;
+    let compressed = vm.compressor_page_count as u64 * page_size;
+    let available = free + inactive;
+    let swap_in = vm.pageins * page_size;
+    let swap_out = vm.pageouts * page_size;
+
+    (
+        free, active, inactive, wired, compressed, available, swap_in, swap_out,
+    )
 }
 
 /// Returns (rx_dropped, tx_dropped) for the named interface.

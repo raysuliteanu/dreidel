@@ -6,6 +6,6 @@ expression: terminal.backend()
 "│up 3d 4h 0m  load: 1.24 0.98 0.87                                                                  2026-03-25 12:00:00│"
 "│cpu  —                                                                                                                │"
 "│tasks  4 total  1 running  3 sleeping  0 stopped  0 zombie                                                            │"
-"│████████████████████                                  RAM 6.0G/16.0G  free 4.0G  buffer/cache 6.0G  available 10.0G   │"
-"│                                                      SWAP 0B/4.0G  free 4.0G                                         │"
+"│███████████                 RAM 6.0G/16.0G  free 4.0G  active 0B  inactive 0B  wired 0B  compressed 0B                │"
+"│                            SWAP 0B/4.0G  free 4.0G                                                                   │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"

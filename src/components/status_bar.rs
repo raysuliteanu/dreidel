@@ -32,7 +32,10 @@ use crate::{
 };
 
 // Width reserved for the right-aligned label on each mem gauge row. Sized to
-// fit the RAM row's "used/total  free  buffer/cache  available" labels.
+// fit the RAM row's label content (wider on macOS due to active/inactive/wired/compressed fields).
+#[cfg(target_os = "macos")]
+const MEM_LABEL_WIDTH: u16 = 90;
+#[cfg(not(target_os = "macos"))]
 const MEM_LABEL_WIDTH: u16 = 64;
 
 #[derive(Debug)]
@@ -247,9 +250,30 @@ impl StatusBarComponent {
             cols[0],
         );
 
+        #[cfg(target_os = "macos")]
+        let label = if mem.ram_active > 0 || mem.ram_free > 0 {
+            format!(
+                "RAM {}/{}  free {}  active {}  inactive {}  wired {}  compressed {}",
+                fmt_bytes(mem.ram_used),
+                fmt_bytes(mem.ram_total),
+                fmt_bytes(mem.ram_free),
+                fmt_bytes(mem.ram_active),
+                fmt_bytes(mem.ram_inactive),
+                fmt_bytes(mem.ram_wired),
+                fmt_bytes(mem.ram_compressed),
+            )
+        } else {
+            format!(
+                "RAM {}/{}  {:>5.1}%",
+                fmt_bytes(mem.ram_used),
+                fmt_bytes(mem.ram_total),
+                ratio * 100.0,
+            )
+        };
         // `ram_free`/`ram_buffers`/`ram_cached`/`ram_available` are only populated
         // on Linux; on other platforms they are zero and we render just the
         // used/total totals to avoid showing misleading "free 0" labels.
+        #[cfg(not(target_os = "macos"))]
         let label = if mem.ram_available > 0 || mem.ram_free > 0 {
             format!(
                 "RAM {}/{}  free {}  buffer/cache {}  available {}",
