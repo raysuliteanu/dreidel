@@ -579,6 +579,9 @@ fn build_proc(sys: &System) -> ProcSnapshot {
                     is_thread: false,
                 };
 
+                #[cfg(target_os = "macos")]
+                macos::enrich_process_entry(&mut entry, pid);
+
                 #[cfg(target_os = "linux")]
                 if let Ok(proc) = procfs::process::Process::new(pid as i32) {
                     if let Ok(stat) = proc.stat() {

@@ -13,6 +13,10 @@ use libc::{
     vm_statistics64_data_t,
 };
 
+use libproc::libproc::file_info::ListFDs;
+use libproc::libproc::task_info::TaskAllInfo;
+use libproc::proc_pid::{listpidinfo, pidinfo};
+
 use crate::stats::snapshots::{CpuModes, CpuSnapshot, ProcessEntry};
 use sysinfo::System;
 
@@ -264,8 +268,43 @@ pub fn read_net_drops(iface_name: &str) -> (u64, u64) {
     (0, 0)
 }
 
-#[allow(dead_code)] // used in Task 7: process enrichment via libproc
-pub fn enrich_process_entry(_entry: &mut ProcessEntry, _pid: u32) {}
+pub fn enrich_process_entry(entry: &mut ProcessEntry, pid: u32) {
+    let pid_i = pid as i32;
+
+    // Task all info: nice, priority, tty from pbsd; threads, cpu times, faults,
+    // context switches from ptinfo. One call gets everything.
+    if let Ok(info) = pidinfo::<TaskAllInfo>(pid_i, 0) {
+        let bsd = info.pbsd;
+        let ti = info.ptinfo;
+
+        entry.nice = bsd.pbi_nice;
+        entry.priority = ti.pti_priority;
+
+        let tty_dev = bsd.e_tdev;
+        if tty_dev != u32::MAX && tty_dev != 0 {
+            let major = (tty_dev >> 24) & 0xFF;
+            let minor = tty_dev & 0x00FF_FFFF;
+            entry.tty = Some(format!("{major}:{minor}"));
+        }
+
+        // pti_total_user / pti_total_system are nanoseconds
+        entry.user_cpu_time_secs = ti.pti_total_user as f64 / 1_000_000_000.0;
+        entry.system_cpu_time_secs = ti.pti_total_system as f64 / 1_000_000_000.0;
+        entry.cpu_time_secs = entry.user_cpu_time_secs + entry.system_cpu_time_secs;
+
+        entry.threads = ti.pti_threadnum.max(0) as u32;
+        entry.minor_faults = ti.pti_faults.max(0) as u64;
+        entry.major_faults = ti.pti_pageins.max(0) as u64;
+        // macOS gives aggregate context switches only; nonvoluntary stays None
+        entry.voluntary_ctxt_switches = Some(ti.pti_csw.max(0) as u64);
+    }
+
+    // FD count: list all file descriptors for this process
+    // EPERM or other errors → leave fd_count as None
+    if let Ok(fds) = listpidinfo::<ListFDs>(pid_i, 256) {
+        entry.fd_count = Some(fds.len());
+    }
+}
 
 pub fn enumerate_threads(_sys: &System) -> Vec<ProcessEntry> {
     Vec::new()
