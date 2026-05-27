@@ -245,9 +245,8 @@ pub fn read_net_drops(iface_name: &str) -> (u64, u64) {
                 // SAFETY: bounds-checked above.
                 let sdl = unsafe { &*(buf.as_ptr().add(sdl_offset) as *const libc::sockaddr_dl) };
                 let nlen = sdl.sdl_nlen as usize;
-                if nlen > 0 {
-                    // SAFETY: sdl_nlen bytes reside in sdl_data right after the
-                    // fixed sockaddr_dl fields.
+                if nlen > 0 && nlen <= sdl.sdl_data.len() {
+                    // SAFETY: nlen is within sdl_data's bounds (checked above).
                     let name_bytes = unsafe {
                         std::slice::from_raw_parts(sdl.sdl_data.as_ptr() as *const u8, nlen)
                     };

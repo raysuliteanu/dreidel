@@ -443,6 +443,9 @@ fn build_net(nets: &Networks) -> NetSnapshot {
                 ipv4_addresses.sort_unstable();
                 ipv6_addresses.sort_unstable();
 
+                #[cfg(target_os = "macos")]
+                let (mac_rx_drop, mac_tx_drop) = macos::read_net_drops(name);
+
                 InterfaceSnapshot {
                     name: name.clone(),
                     rx_bytes: data.received(),
@@ -460,13 +463,13 @@ fn build_net(nets: &Networks) -> NetSnapshot {
                     #[cfg(target_os = "linux")]
                     rx_dropped: dev_stats.get(name).map(|s| s.recv_drop).unwrap_or(0),
                     #[cfg(target_os = "macos")]
-                    rx_dropped: macos::read_net_drops(name).0,
+                    rx_dropped: mac_rx_drop,
                     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
                     rx_dropped: 0,
                     #[cfg(target_os = "linux")]
                     tx_dropped: dev_stats.get(name).map(|s| s.sent_drop).unwrap_or(0),
                     #[cfg(target_os = "macos")]
-                    tx_dropped: macos::read_net_drops(name).1,
+                    tx_dropped: mac_tx_drop,
                     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
                     tx_dropped: 0,
                 }
