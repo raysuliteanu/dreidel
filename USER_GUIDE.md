@@ -22,6 +22,7 @@ configuration option in dreidel.
 7. [CLI Reference](#7-cli-reference)
 8. [Configuration File](#8-configuration-file)
 9. [Troubleshooting](#9-troubleshooting)
+10. [Platform Notes](#10-platform-notes)
 
 ---
 
@@ -703,3 +704,38 @@ help       = "?"   # Open help overlay
 
 Run with `-vv` for verbose output when diagnosing unexpected
 behavior.
+
+---
+
+## 10. Platform Notes
+
+### macOS
+
+dreidel runs on macOS with collection parity for most metrics. The
+following table summarises what is and is not available.
+
+**Available on macOS:**
+
+| Component | Fields populated |
+| --------- | ---------------- |
+| CPU       | Per-core usage, frequency, brand string, aggregate %, physical core count, CPU mode percentages (user/system/idle/nice) |
+| Memory    | Free, active, inactive, wired, compressed; swap in/out bytes |
+| Network   | TX/RX rates, errors, drop counters (TX and RX drops via NET_RT_IFLIST2) |
+| Process   | Priority, nice value, TTY, thread count, CPU times, minor/major page faults, aggregate context switches, file descriptor count |
+
+**Not available on macOS (accepted gaps):**
+
+| Field | Reason |
+| ----- | ------ |
+| CPU temperature (package and per-core) | Requires private entitlements on Apple Silicon |
+| CPU scaling governor | Not applicable on macOS |
+| Per-process I/O syscall counts (syscr/syscw) | Not exposed by libproc |
+| Per-process shared memory (SHR) | No direct equivalent |
+| Per-process swap usage | Deferred — requires an expensive VM region walk |
+| Voluntary vs. nonvoluntary context switch split | macOS provides aggregate only |
+| CPU iowait / irq / softirq / steal modes | Linux kernel scheduler states; zeroed on macOS |
+| Memory Buffers field | No macOS equivalent |
+
+Fields that are unavailable are shown as `—` or `0` in the UI rather
+than being omitted entirely, so the layout remains consistent across
+platforms.

@@ -20,6 +20,7 @@ The crate is a dual lib+bin package:
 | `tokio-util`                     | `CancellationToken` for clean shutdown of background tasks                          |
 | `sysinfo`                        | Cross-platform system metrics: CPU, memory, processes, networks, disks              |
 | `procfs`                         | Linux-only `/proc` access for per-process priority, nice, threads, SHR, CPU split, faults, context switches, tty, fd count, and richer I/O; also used for aggregate CPU mode percentages (`/proc/stat`) and memory breakdown (`/proc/meminfo`) shown in the status bar |
+| `libproc` / `libc`              | macOS-only; `libproc` provides per-process fd count, priority, nice, tty, thread count, CPU times, and page-fault counters; `libc` is used for network drop counters via `NET_RT_IFLIST2` |
 | `clap`                           | CLI argument parsing (derive macro)                                                 |
 | `serde` / `toml`                 | Config file deserialization                                                         |
 | `humantime`                      | Parses human-readable durations (`"1s"`, `"500ms"`) in config                       |
@@ -262,7 +263,12 @@ that runs two `tokio::time::interval` timers:
 This dual-interval design avoids thousands of `/proc` syscalls on every tick while
 still keeping thread data visible in the UI.
 
-Linux-specific metrics are guarded by `#[cfg(target_os = "linux")]`:
+Platform-specific metrics are collected behind three-way `cfg` guards:
+`linux` / `macos` / `not(any(linux, macos))`. The third arm provides
+zero/`None` stubs so the crate compiles on other Unix targets without
+any collection logic.
+
+**Linux** (`#[cfg(target_os = "linux")]`):
 
 - **Status bar** — aggregate CPU mode percentages (user/sys/nice/idle/iowait/irq/softirq/steal)
   computed from `/proc/stat` jiffy deltas stored in `prev_cpu_total` between ticks;
@@ -272,18 +278,32 @@ Linux-specific metrics are guarded by `#[cfg(target_os = "linux")]`:
 - **Sensors** — package and per-core temperatures from hwmon (via `sysinfo`), mapped to
   logical cores through `/sys/devices/system/cpu/cpuN/topology/core_id`.
 - **Swap I/O** — cumulative swap-in/out bytes from `/proc/vmstat`.
-
-Process snapshots combine cross-platform `sysinfo` fields (name, cmdline, RSS,
-virtual memory, start/runtime, executable path, cwd, root, user/group IDs,
-session ID, and cumulative disk I/O bytes) with Linux-only `procfs` fields.
-The process detail modal currently surfaces the highest-value per-process fields in
-two columns: identity, CPU, memory, runtime, filesystem paths, scheduling,
-fault counters, context switches, descriptor count, and detailed I/O counters.
+- **Thread enumeration** — per-process threads enumerated via `/proc/<pid>/task/` on the slow interval.
 
 Per-core temperatures are mapped from physical core sensors (coretemp hwmon
 labels like "Core 0") to logical core indices via
 `/sys/devices/system/cpu/cpuN/topology/core_id`. Hyperthreaded siblings share
 their physical core's temperature reading.
+
+**macOS** (`#[cfg(target_os = "macos")]`) — implemented in `src/stats/macos.rs`:
+
+- **Status bar** — CPU mode percentages (user/sys/nice/idle) from `host_cpu_load_info`;
+  memory pressure fields (active, inactive, wired, compressed) from `host_vm_info64`.
+- **Per-process** — priority, nice, tty, thread count, CPU user/system times, minor/major
+  page faults, aggregate context switches, and open fd count via `libproc`.
+- **Network** — TX and RX drop counters collected via the `NET_RT_IFLIST2` sysctl using `libc`.
+- **Thread enumeration** — per-process threads enumerated via `libproc::listpidthreads` on
+  the slow interval.
+- Fields with no macOS equivalent (SHR, per-process swap, voluntary/nonvoluntary context
+  switch split, I/O syscall counts, CPU temperatures, scaling governor) are set to
+  zero or `None`.
+
+Process snapshots combine cross-platform `sysinfo` fields (name, cmdline, RSS,
+virtual memory, start/runtime, executable path, cwd, root, user/group IDs,
+session ID, and cumulative disk I/O bytes) with platform-specific fields.
+The process detail modal currently surfaces the highest-value per-process fields in
+two columns: identity, CPU, memory, runtime, filesystem paths, scheduling,
+fault counters, context switches, descriptor count, and detailed I/O counters.
 
 #### `stats/snapshots.rs` — Snapshot structs
 
@@ -291,10 +311,13 @@ Plain data structs — no logic, only fields. Each has a `.stub()` constructor u
 in tests to avoid depending on the live stats collector. The structs are:
 
 `SysSnapshot`, `CpuSnapshot` (includes `per_core_temp`, `package_temp`, and
-`cpu_modes: Option<CpuModes>` on Linux — `CpuModes` carries the eight per-mode
-percentages computed from `/proc/stat` deltas), `MemSnapshot` (includes
+`cpu_modes: Option<CpuModes>` — on Linux `CpuModes` carries eight per-mode
+percentages from `/proc/stat` deltas; on macOS four modes from
+`host_cpu_load_info`; on other platforms `None`), `MemSnapshot` (includes
 `ram_free`, `ram_buffers`, `ram_cached`, `ram_available` from `/proc/meminfo` on
-Linux), `NetSnapshot` / `InterfaceSnapshot`,
+Linux; `ram_active`, `ram_inactive`, `ram_wired`, `ram_compressed`,
+`swap_in_bytes`, `swap_out_bytes` on macOS), `NetSnapshot` / `InterfaceSnapshot`
+(includes `tx_drop` and `rx_drop` on Linux and macOS),
 `DiskSnapshot` / `DiskDeviceSnapshot`, `ProcSnapshot` / `ProcessEntry` / `ProcessStatus`.
 
 `ProcessEntry` now includes both list-view fields and detail-only fields. The list
