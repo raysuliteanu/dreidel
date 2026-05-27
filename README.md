@@ -1,6 +1,6 @@
 # dreidel
 
-**A fast, keyboard-driven Linux-first terminal system monitor that combines a
+**A fast, keyboard-driven terminal system monitor for Linux and macOS that combines a
 clear dashboard layout with focused drill-down views for CPU, network, disk,
 and processes.**
 
@@ -123,8 +123,8 @@ dreidel --help        # see all CLI options
   reverse direction.
 - **Process tree view:** Press `t` to toggle tree mode — processes
   are shown in a parent/child hierarchy with expand/collapse
-  (`Space`). On Linux, threads appear as children of their owning
-  process (flat list view shows processes only).
+  (`Space`). On Linux and macOS, threads appear as children of their
+  owning process (flat list view shows processes only).
 - **Extended process columns:** Make the terminal ≥ 120 columns
   wide (or press `f` for fullscreen) to see the full htop-style
   column set: User, PR, NI, VIRT, RES, SHR, Time, Command.
@@ -174,7 +174,7 @@ A minimal example:
 ```toml
 [general]
 refresh_rate_ms = "500ms"
-thread_refresh_ms = "5s"   # how often to enumerate threads (Linux)
+thread_refresh_ms = "5s"   # how often to enumerate threads (Linux and macOS)
 theme = "dark"
 
 [layout]

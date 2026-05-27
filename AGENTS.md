@@ -45,8 +45,8 @@ typed `Action::*Update(Snapshot)` variants on a bounded `mpsc::Sender<Action>`.
 It runs two intervals: a **fast interval** (`refresh_rate_ms`, default 1s) that
 refreshes CPU/mem/net/disk/process data, and a **slow interval**
 (`thread_refresh_ms`, default 5s) that enumerates per-process threads via
-`/proc/<pid>/task/`. Thread entries are cached between slow ticks and merged
-into every `ProcUpdate`. `App` is the sole receiver.
+`/proc/<pid>/task/` on Linux and `libproc` on macOS. Thread entries are cached
+between slow ticks and merged into every `ProcUpdate`. `App` is the sole receiver.
 
 ### Action bus
 
@@ -143,9 +143,11 @@ within one file before saving, or temporarily add `#[allow(dead_code)]` /
 
 - Use `.context("present tense phrase")` on every `?` propagation (`anyhow`).
 - Use `expect("why this can't fail")` over `unwrap()`.
-- `#[cfg(target_os = "linux")]` guards per-core and package temperature
-(CpuSnapshot), swap activity (MemSnapshot, `/proc/vmstat`), and thread
-enumeration.
+- Platform guards use a three-way pattern: `#[cfg(target_os = "linux")]`,
+`#[cfg(target_os = "macos")]`, and `#[cfg(not(any(target_os = "linux", target_os = "macos")))]`.
+`#[cfg(target_os = "linux")]` guards per-core and package temperature
+(CpuSnapshot) and swap activity (MemSnapshot, `/proc/vmstat`). Thread
+enumeration is guarded for both Linux (`/proc/<pid>/task/`) and macOS (`libproc`).
 - Logs go to `~/.local/share/dreidel/dreidel.log` (never stderr — would corrupt
 the TUI).
 - Config file: `~/.config/dreidel/config.toml` (TOML, all fields optional with
