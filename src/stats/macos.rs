@@ -186,9 +186,82 @@ pub fn read_mem_details() -> (u64, u64, u64, u64, u64, u64, u64, u64) {
     )
 }
 
-/// Returns (rx_dropped, tx_dropped) for the named interface.
-#[allow(dead_code)] // used in Task 6: network drop counters
-pub fn read_net_drops(_iface_name: &str) -> (u64, u64) {
+/// Returns (rx_dropped, tx_dropped) for the named interface via `sysctl(NET_RT_IFLIST2)`.
+pub fn read_net_drops(iface_name: &str) -> (u64, u64) {
+    use libc::{CTL_NET, NET_RT_IFLIST2, PF_ROUTE, RTM_IFINFO2, if_msghdr2, sysctl};
+    use std::mem;
+
+    let mut mib: [libc::c_int; 6] = [CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, 0];
+    let mut buf_len: libc::size_t = 0;
+
+    // First call: query the required buffer size (null buf pointer).
+    // SAFETY: Standard sysctl size-query pattern.
+    let ret = unsafe {
+        sysctl(
+            mib.as_mut_ptr(),
+            6,
+            std::ptr::null_mut(),
+            &mut buf_len,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if ret != 0 || buf_len == 0 {
+        return (0, 0);
+    }
+
+    let mut buf = vec![0u8; buf_len];
+
+    // Second call: fetch the data.
+    // SAFETY: buf is allocated to the size returned by the first call.
+    let ret = unsafe {
+        sysctl(
+            mib.as_mut_ptr(),
+            6,
+            buf.as_mut_ptr() as *mut libc::c_void,
+            &mut buf_len,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if ret != 0 {
+        return (0, 0);
+    }
+
+    let mut offset = 0usize;
+    while offset + mem::size_of::<if_msghdr2>() <= buf_len {
+        // SAFETY: We verified offset + size fits within buf_len.
+        let hdr = unsafe { &*(buf.as_ptr().add(offset) as *const if_msghdr2) };
+        let msg_len = hdr.ifm_msglen as usize;
+        if msg_len == 0 {
+            break;
+        }
+
+        if hdr.ifm_type as libc::c_int == RTM_IFINFO2 {
+            // The sockaddr_dl carrying the interface name follows immediately after
+            // the fixed if_msghdr2 header.
+            let sdl_offset = offset + mem::size_of::<if_msghdr2>();
+            if sdl_offset + mem::size_of::<libc::sockaddr_dl>() <= buf_len {
+                // SAFETY: bounds-checked above.
+                let sdl = unsafe { &*(buf.as_ptr().add(sdl_offset) as *const libc::sockaddr_dl) };
+                let nlen = sdl.sdl_nlen as usize;
+                if nlen > 0 {
+                    // SAFETY: sdl_nlen bytes reside in sdl_data right after the
+                    // fixed sockaddr_dl fields.
+                    let name_bytes = unsafe {
+                        std::slice::from_raw_parts(sdl.sdl_data.as_ptr() as *const u8, nlen)
+                    };
+                    if let Ok(name) = std::str::from_utf8(name_bytes)
+                        && name == iface_name
+                    {
+                        return (hdr.ifm_data.ifi_iqdrops, hdr.ifm_snd_drops as u64);
+                    }
+                }
+            }
+        }
+        offset += msg_len;
+    }
+
     (0, 0)
 }
 

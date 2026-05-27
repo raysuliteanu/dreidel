@@ -652,8 +652,8 @@ impl NetComponent {
                 stat_lines[1],
             );
 
-            // Row 2: Total TX · Total RX · Err TX · Err RX (+ Linux: Drop TX · Drop RX)
-            #[cfg(not(target_os = "linux"))]
+            // Row 2: Total TX · Total RX · Err TX · Err RX (+ Linux/macOS: Drop TX · Drop RX)
+            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
             let traffic_line = Line::from(vec![
                 Span::styled(format!("{:<LW$}", "Total TX:"), dim),
                 Span::styled(format!("{:<VW$}", fmt_rate_col(iface.total_tx_bytes)), ac),
@@ -664,7 +664,7 @@ impl NetComponent {
                 Span::styled(format!("{:<LW$}", "Err RX:"), dim),
                 Span::styled(iface.rx_errors.to_string(), val),
             ]);
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
             let traffic_line = Line::from(vec![
                 Span::styled(format!("{:<LW$}", "Total TX:"), dim),
                 Span::styled(format!("{:<VW$}", fmt_rate_col(iface.total_tx_bytes)), ac),

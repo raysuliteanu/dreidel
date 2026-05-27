@@ -459,11 +459,15 @@ fn build_net(nets: &Networks) -> NetSnapshot {
                     mtu: data.mtu(),
                     #[cfg(target_os = "linux")]
                     rx_dropped: dev_stats.get(name).map(|s| s.recv_drop).unwrap_or(0),
-                    #[cfg(not(target_os = "linux"))]
+                    #[cfg(target_os = "macos")]
+                    rx_dropped: macos::read_net_drops(name).0,
+                    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
                     rx_dropped: 0,
                     #[cfg(target_os = "linux")]
                     tx_dropped: dev_stats.get(name).map(|s| s.sent_drop).unwrap_or(0),
-                    #[cfg(not(target_os = "linux"))]
+                    #[cfg(target_os = "macos")]
+                    tx_dropped: macos::read_net_drops(name).1,
+                    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
                     tx_dropped: 0,
                 }
             })
