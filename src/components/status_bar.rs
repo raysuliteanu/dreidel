@@ -375,7 +375,9 @@ mod tests {
         action::Action,
         stats::snapshots::{CpuSnapshot, MemSnapshot, ProcSnapshot, SysSnapshot},
     };
+    #[cfg(target_os = "linux")]
     use insta::assert_snapshot;
+    #[cfg(target_os = "linux")]
     use ratatui::{Terminal, backend::TestBackend};
 
     fn fixed_sys() -> SysSnapshot {
@@ -391,6 +393,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn renders_all_rows_with_swap() {
         let mut comp = StatusBarComponent::new(ColorPalette::dark());
         comp.update(&Action::SysUpdate(fixed_sys())).unwrap();

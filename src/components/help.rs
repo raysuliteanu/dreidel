@@ -291,8 +291,8 @@ mod tests {
         // Redact the commit id (set at build time, varies per commit).
         settings.add_filter(r"Commit id: \w+", "Commit id: [COMMIT_ID]");
         // Config and log paths vary per system; redact them for snapshot stability.
-        settings.add_filter(r"config: \S+", "config: [CONFIG_PATH]");
-        settings.add_filter(r"log: \S+", "log: [LOG_PATH]");
+        settings.add_filter(r"config: [^│]+", "config: [CONFIG_PATH]");
+        settings.add_filter(r"log: [^│]+", "log: [LOG_PATH]");
         settings.add_filter(r"theme: \S+", "theme: [THEME]");
         settings.add_filter(r"\(detected: \S+\)", "(detected: [DETECTED])");
         settings.bind(|| {
