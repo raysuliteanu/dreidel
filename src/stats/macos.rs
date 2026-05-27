@@ -183,8 +183,8 @@ pub fn read_mem_details() -> (u64, u64, u64, u64, u64, u64, u64, u64) {
     let wired = vm.wire_count as u64 * page_size;
     let compressed = vm.compressor_page_count as u64 * page_size;
     let available = free + inactive;
-    let swap_in = vm.pageins * page_size;
-    let swap_out = vm.pageouts * page_size;
+    let swap_in = vm.swapins * page_size;
+    let swap_out = vm.swapouts * page_size;
 
     (
         free, active, inactive, wired, compressed, available, swap_in, swap_out,
@@ -326,14 +326,9 @@ pub fn enumerate_threads(sys: &System) -> Vec<ProcessEntry> {
             continue;
         };
 
-        for tid in tids {
-            // On macOS the main thread's TID is not the same as PID (unlike Linux).
-            // Skip the first TID only if it happens to equal the PID — this is a
-            // conservative heuristic; macOS does not guarantee TID == PID.
-            if tid as u32 == pid {
-                continue;
-            }
-
+        // The first TID returned is the main thread; skip it to match Linux behaviour
+        // where main-thread TID == PID and is excluded.
+        for tid in tids.into_iter().skip(1) {
             let cpu_time_secs = if let Ok(info) = pidinfo::<ThreadInfo>(pid_i, tid) {
                 // pth_user_time and pth_system_time are in microseconds
                 (info.pth_user_time + info.pth_system_time) as f64 / 1_000_000.0
@@ -342,6 +337,8 @@ pub fn enumerate_threads(sys: &System) -> Vec<ProcessEntry> {
             };
 
             thread_entries.push(ProcessEntry {
+                // Mach thread IDs are u64 but ProcessEntry.pid is u32.
+                // Low 32 bits are used; collisions are theoretical on long-uptime systems.
                 pid: tid as u32,
                 name: format!("[{proc_name}:{tid}]"),
                 cmd: Vec::new(),
