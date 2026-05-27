@@ -156,20 +156,22 @@ for smooth resolution.
 
 **Compact layout** (left column of sidebar/classic presets):
 
-<!-- Auto-generated: cargo test --test doc_screenshots -->
+<!-- screenshot:cpu_compact:begin -->
 
 ```
 ┌ [C]PU ───────────────────────────────────────────────────┐
-│                                       │cpu0  42.0%   55°C│
-│                                       │cpu1  18.0%   58°C│
-│                                      ⠁│cpu2  75.0%   60°C│
-│                                       │cpu3   5.0%   52°C│
-│                                      ⠄│                  │
-│                                       │                  │
-│                                      ⠂│                  │
-│                                      ⠂│                  │
+│                                              │cpu0  42.0%│
+│                                              │cpu1  18.0%│
+│                                             ⠁│cpu2  75.0%│
+│                                              │cpu3   5.0%│
+│                                             ⠄│           │
+│                                              │           │
+│                                             ⠂│           │
+│                                             ⠂│           │
 └──────────────────────────────────────────────────────────┘
 ```
+
+<!-- screenshot:cpu_compact:end -->
 
 - The label column on the right shows the current percentage for
   each core. On Linux, per-core temperatures are shown alongside
@@ -199,6 +201,33 @@ When a filter is active but not being edited the title shows
   (Linux), and CPU governor (Linux).
 - All cores are visible and scrollable.
 
+<!-- screenshot:cpu_fullscreen:begin -->
+
+```
+┌ [C]PU ───────────────────────────────────────────────────────────────────────┐
+│CPU: 35.0%  Brand: Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz  Cores: 4         │
+│Freq: 3400 MHz                                                                │
+│──────────────────────────────────────────────────────────────────────────────│
+│                                                                  │cpu0  42.0%│
+│                                                                  │cpu1  18.0%│
+│                                                                  │cpu2  75.0%│
+│                                                                 ⡀│cpu3   5.0%│
+│                                                                  │           │
+│                                                                  │           │
+│                                                                  │           │
+│                                                                  │           │
+│                                                                 ⠄│           │
+│                                                                  │           │
+│                                                                  │           │
+│                                                                  │           │
+│                                                                 ⠁│           │
+│                                                                  │           │
+│                                                                 ⠁│           │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+<!-- screenshot:cpu_fullscreen:end -->
+
 ### 3.2 Network
 
 The Network panel lists all interfaces with live RX/TX rates. An
@@ -207,7 +236,7 @@ enough vertical space.
 
 **List view:**
 
-<!-- Auto-generated: cargo test --test doc_screenshots -->
+<!-- screenshot:net_list:begin -->
 
 ```
 ┌ [N]ET ─────────────────────────────────────────────────────────────┐
@@ -219,6 +248,8 @@ enough vertical space.
 │                                                                    │
 └────────────────────────────────────────────────────────────────────┘
 ```
+
+<!-- screenshot:net_list:end -->
 
 When fullscreen or in a wide layout (≥ 100 columns), additional
 columns appear: TX packets/sec, RX packets/sec, and IP address.
@@ -263,18 +294,20 @@ information. Usage is color-coded green → orange (≥70%) → red
 
 **List view:**
 
-<!-- Auto-generated: cargo test --test doc_screenshots -->
+<!-- screenshot:disk_list:begin -->
 
 ```
-┌ [I]DISK ───────────────────────────────────────────────────────────┐
-│Device             Mount                Size      Free  %Used  %Free│
-│sda                /                500.1 GB  275.1 GB  45.0%  55.0%│
+┌ [D]DISK ───────────────────────────────────────────────────────────┐
+│Device Mount                            Size      Free  %Used  %Free│
+│sda    /                            500.1 GB  275.1 GB  45.0%  55.0%│
 │                                                                    │
 │                                                                    │
 │                                                                    │
 │                                                                    │
 └────────────────────────────────────────────────────────────────────┘
 ```
+
+<!-- screenshot:disk_list:end -->
 
 **Filtering** (`/` when focused):
 
@@ -305,6 +338,25 @@ width:
 | Normal   | PID · Name · CPU% · MEM% · Status                        | Width < 120 columns                 |
 | Extended | PID · User · PR · NI · VIRT · RES · SHR · S · %CPU · %MEM · TIME · Command | Width ≥ 120 columns or fullscreen |
 
+<!-- screenshot:process_list:begin -->
+
+```
+┌ [P]rocesses ─────────────────────────────────────────────────────────────────────────────────────┐
+│PID     UID     Name                                                   CPU%▼   MEM      Status    │
+│12345   ray     firefox                                                18.4    3.2%     running   │
+│1       root    systemd                                                0.1     0.1%     sleeping  │
+│501     ray     bash                                                   0.1     0.0%     sleeping  │
+│500     root    sshd                                                   0.0     0.0%     sleeping  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<!-- screenshot:process_list:end -->
+
 **Sorting**
 
 Press `s` to cycle through sortable columns in left-to-right
@@ -327,6 +379,25 @@ thread TID, since threads cannot be killed independently.
 
 To start in tree mode by default, set `show_tree = true` in the
 `[process]` config section.
+
+<!-- screenshot:process_tree:begin -->
+
+```
+┌ [P]rocesses [tree] ──────────────────────────────────────────────────────────────────────────────┐
+│PID     UID     Name                                                   CPU%▼   MEM      Status    │
+│1       root    systemd                                                0.1     0.1%     sleeping  │
+│12345   ray     ├── firefox                                            18.4    3.2%     running   │
+│500     root    └── sshd                                               0.0     0.0%     sleeping  │
+│501     ray         └── bash                                           0.1     0.0%     sleeping  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<!-- screenshot:process_tree:end -->
 
 **Filtering**
 
@@ -353,7 +424,7 @@ to the list.
 
 Press `Enter` on any process to open a two-column detail inspector:
 
-<!-- Auto-generated: cargo test --test doc_screenshots -->
+<!-- screenshot:process_detail:begin -->
 
 ```
 ┌ [P]rocesses ─────────────────────────────────────────────────────────────────────────────────────┐
@@ -388,6 +459,8 @@ Press `Enter` on any process to open a two-column detail inspector:
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+<!-- screenshot:process_detail:end -->
+
 The left column shows identity, CPU, memory, scheduling, and fault
 data; the right column shows corresponding paired fields. Press
 `Esc` or `q` to close.
@@ -412,15 +485,16 @@ The status bar can be positioned at the `top` (default), `bottom`,
 or `hidden` via `--status-bar` or `layout.status_bar` in the
 config file.
 
+<!-- screenshot:status_bar:begin -->
+
 ```
-┌ dev-box ──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│up 3d 4h 0m  load: 1.24 0.98 0.87                                                                   2026-03-25 12:00:00│
-│cpu    5.2% user    0.2% sys    0.0% nice   84.8% idle    9.8% iowait   0.0% irq   0.0% softirq   0.0% steal           │
-│tasks  4 total  1 running  3 sleeping  0 stopped  0 zombie                                                             │
-│████████████████████                                  RAM 6.0G/16.0G  free 4.0G  buffer/cache 6.0G  available 10.0G    │
-│                                                      SWAP 0B/4.0G  free 4.0G                                          │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ dev-box ─────────────────────────────────────────────────────────────────────────────────────────┐
+│cpu  —                                                                                            │
+│█████████████                     RAM 6.0G/16.0G  free 4.0G  buffer/cache 6.0G  available 10.0G   │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+<!-- screenshot:status_bar:end -->
 
 - **Row 1 — uptime:** system uptime and 1/5/15-minute load averages;
   current time is right-aligned

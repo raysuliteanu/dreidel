@@ -15,6 +15,9 @@
 use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
+use std::sync::Mutex;
+
+static GUIDE_LOCK: Mutex<()> = Mutex::new(());
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
@@ -65,6 +68,86 @@ fn write_screenshot(name: &str, text: &str) {
     fs::create_dir_all(dir).expect("create screenshots dir");
     let path = dir.join(format!("{name}.txt"));
     fs::write(&path, text).unwrap_or_else(|e| panic!("writing {}: {e}", path.display()));
+    patch_user_guide(name, text);
+}
+
+fn patch_user_guide(name: &str, text: &str) {
+    let _guard = GUIDE_LOCK.lock().expect("guide lock poisoned");
+    let guide_path = Path::new("USER_GUIDE.md");
+    let content =
+        fs::read_to_string(guide_path).unwrap_or_else(|e| panic!("reading USER_GUIDE.md: {e}"));
+
+    let begin_marker = format!("<!-- screenshot:{name}:begin -->");
+    let end_marker = format!("<!-- screenshot:{name}:end -->");
+
+    let begin = content.find(&begin_marker).unwrap_or_else(|| {
+        panic!("begin marker for screenshot '{name}' not found in USER_GUIDE.md")
+    });
+    let end = content
+        .find(&end_marker)
+        .unwrap_or_else(|| panic!("end marker for screenshot '{name}' not found in USER_GUIDE.md"));
+
+    assert!(begin < end, "markers out of order for '{name}'");
+
+    let after_begin = begin + begin_marker.len();
+    let new_content = format!(
+        "{}\n\n```\n{text}```\n\n{}",
+        &content[..after_begin],
+        &content[end..]
+    );
+
+    fs::write(guide_path, new_content).unwrap_or_else(|e| panic!("writing USER_GUIDE.md: {e}"));
+}
+
+/// Verify that every screenshot block in USER_GUIDE.md matches its .txt file.
+/// Run `cargo test --test doc_screenshots screenshot_` to regenerate if this fails.
+#[test]
+fn verify_user_guide_screenshots() {
+    let guide = fs::read_to_string("USER_GUIDE.md").expect("reading USER_GUIDE.md");
+
+    let names = [
+        "cpu_compact",
+        "cpu_fullscreen",
+        "disk_list",
+        "net_list",
+        "process_detail",
+        "process_list",
+        "process_tree",
+        "status_bar",
+    ];
+
+    for name in names {
+        let txt_path = Path::new(OUT_DIR).join(format!("{name}.txt"));
+        let expected = fs::read_to_string(&txt_path)
+            .unwrap_or_else(|e| panic!("reading {}: {e}", txt_path.display()));
+
+        let begin_marker = format!("<!-- screenshot:{name}:begin -->");
+        let end_marker = format!("<!-- screenshot:{name}:end -->");
+
+        let begin = guide
+            .find(&begin_marker)
+            .unwrap_or_else(|| panic!("begin marker for '{name}' not found in USER_GUIDE.md"));
+        let end = guide
+            .find(&end_marker)
+            .unwrap_or_else(|| panic!("end marker for '{name}' not found in USER_GUIDE.md"));
+
+        let block = &guide[begin + begin_marker.len()..end];
+
+        let fence_start = block
+            .find("```\n")
+            .unwrap_or_else(|| panic!("no opening ``` fence in USER_GUIDE.md block for '{name}'"));
+        let after_fence = fence_start + 4;
+        let fence_end = block[after_fence..]
+            .find("```")
+            .unwrap_or_else(|| panic!("no closing ``` fence in USER_GUIDE.md block for '{name}'"));
+
+        let actual = &block[after_fence..after_fence + fence_end];
+        assert_eq!(
+            actual, expected,
+            "USER_GUIDE.md screenshot '{name}' is out of sync with {name}.txt\n\
+             Regenerate with: cargo test --test doc_screenshots screenshot_"
+        );
+    }
 }
 
 fn key(code: KeyCode) -> KeyEvent {
