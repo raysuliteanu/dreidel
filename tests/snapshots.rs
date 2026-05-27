@@ -2,9 +2,14 @@
 
 use dreidel::{
     action::Action,
-    components::{Component, cpu::CpuComponent, status_bar::StatusBarComponent},
-    stats::snapshots::{CpuSnapshot, MemSnapshot, ProcSnapshot, SysSnapshot},
+    components::{Component, cpu::CpuComponent},
+    stats::snapshots::CpuSnapshot,
     theme::ColorPalette,
+};
+#[cfg(target_os = "linux")]
+use dreidel::{
+    components::status_bar::StatusBarComponent,
+    stats::snapshots::{MemSnapshot, ProcSnapshot, SysSnapshot},
 };
 use insta::assert_snapshot;
 use ratatui::{Terminal, backend::TestBackend};
@@ -20,6 +25,7 @@ fn cpu_component_snapshot() {
 }
 
 #[test]
+#[cfg(target_os = "linux")]
 fn status_bar_snapshot() {
     use chrono::TimeZone;
     let sys = SysSnapshot {
