@@ -55,7 +55,7 @@ pub struct CpuSnapshot {
     pub aggregate: f32,
     pub per_core: Vec<f32>,
     pub frequency: Vec<u64>,
-    /// Number of physical (non-hyperthreaded) cores. Linux-only; `None` on other platforms.
+    /// Number of physical (non-hyperthreaded) cores. `None` on platforms where it cannot be determined.
     pub physical_core_count: Option<u32>,
     pub cpu_brand: String,
     /// Package-level CPU temperature in °C. Linux-only; `None` on other platforms.
@@ -64,8 +64,8 @@ pub struct CpuSnapshot {
     pub per_core_temp: Vec<Option<f32>>,
     /// CPU scaling governor, e.g. "powersave". Linux-only; `None` on other platforms.
     pub governor: Option<String>,
-    /// Aggregate CPU time breakdown from `/proc/stat`. Linux-only; `None` until
-    /// two samples have been collected for delta calculation.
+    /// Aggregate CPU time breakdown by mode. `None` until two samples have been collected
+    /// for delta calculation, and `None` on platforms where tick data is unavailable.
     pub cpu_modes: Option<CpuModes>,
 }
 
@@ -178,10 +178,10 @@ pub struct InterfaceSnapshot {
     /// IPv6 addresses with prefix length (e.g. `"fe80::1/64"`), sorted.
     pub ipv6_addresses: Vec<String>,
     pub mtu: u64,
-    /// Cumulative receive drops from /proc/net/dev. Linux-only; `0` on other platforms.
+    /// Cumulative receive drops. Populated on Linux and macOS; `0` on other platforms.
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub rx_dropped: u64,
-    /// Cumulative transmit drops from /proc/net/dev. Linux-only; `0` on other platforms.
+    /// Cumulative transmit drops. Populated on Linux and macOS; `0` on other platforms.
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub tx_dropped: u64,
 }
