@@ -159,7 +159,7 @@ impl CpuComponent {
             Span::styled("  Cores: ", dim),
             Span::styled(format!("{logical}"), val),
         ];
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         if let Some(phys) = snap.physical_core_count {
             row0_spans.push(Span::styled("/", dim));
             row0_spans.push(Span::styled(format!("{phys} phys"), val));
