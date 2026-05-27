@@ -6,7 +6,7 @@ use dreidel::{
     stats::snapshots::CpuSnapshot,
     theme::ColorPalette,
 };
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use dreidel::{
     components::status_bar::StatusBarComponent,
     stats::snapshots::{MemSnapshot, ProcSnapshot, SysSnapshot},
@@ -41,6 +41,31 @@ fn status_bar_snapshot() {
     comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
         .unwrap();
     comp.update(&Action::MemUpdate(MemSnapshot::stub()))
+        .unwrap();
+    comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        .unwrap();
+    let mut t = Terminal::new(TestBackend::new(120, 7)).unwrap();
+    t.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+    assert_snapshot!(t.backend());
+}
+
+#[test]
+#[cfg(target_os = "macos")]
+fn status_bar_snapshot_macos() {
+    use chrono::TimeZone;
+    let sys = SysSnapshot {
+        hostname: "dev-box".into(),
+        uptime: 273_600,
+        load_avg: [1.24, 0.98, 0.87],
+        timestamp: chrono::Local
+            .with_ymd_and_hms(2026, 3, 25, 12, 0, 0)
+            .unwrap(),
+    };
+    let mut comp = StatusBarComponent::new(ColorPalette::dark());
+    comp.update(&Action::SysUpdate(sys)).unwrap();
+    comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
+        .unwrap();
+    comp.update(&Action::MemUpdate(MemSnapshot::stub_macos()))
         .unwrap();
     comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
         .unwrap();
