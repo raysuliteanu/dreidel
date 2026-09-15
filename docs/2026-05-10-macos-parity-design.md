@@ -1,15 +1,18 @@
 # macOS Platform Parity — Design Spec
 
-**Date:** 2026-05-10
+**Date:** 2026-05-10 (amended 2026-09-15: CPU temperature via SMC, GPU section)
 **Status:** Approved for implementation
 
 ## Goal
 
 Bring dreidel's runtime data parity on macOS as close as possible to the Linux
 experience, using macOS-native APIs where procfs equivalents exist. Some gaps are
-accepted as genuinely platform-specific (CPU temperatures, scaling governor, per-process
-I/O syscall counts, shared-memory byte count). All silently-zero fields that _can_ be
-populated on macOS _will_ be populated.
+accepted as genuinely platform-specific (scaling governor, per-process I/O syscall
+counts, shared-memory byte count). All silently-zero fields that _can_ be populated
+on macOS _will_ be populated.
+
+Beyond parity, this spec adds one macOS-first feature: a **GPU section in the CPU
+panel** (utilization + memory), analogous to btop's "gpu-totals" row in its CPU box.
 
 ---
 
@@ -32,6 +35,8 @@ Non-Linux, non-macOS platforms (e.g. FreeBSD) keep the existing zero/None stubs.
 [target.'cfg(target_os = "macos")'.dependencies]
 libproc = "0.14"
 libc    = "0.2"
+objc2-io-kit = "0.3"
+objc2-core-foundation = "0.3"
 ```
 
 - **`libproc`** — safe Rust wrappers around the macOS `proc_pidinfo` family of
@@ -42,21 +47,78 @@ libc    = "0.2"
   for the `sysctl(NET_RT_IFLIST2)` network drop counter path. Made an explicit
   macOS dependency even though it is already a transitive dep, to make intent
   clear.
+- **`objc2-io-kit`** + **`objc2-core-foundation`** — IOKit registry and user-client
+  access. Used for the GPU section (`IOAccelerator` → `PerformanceStatistics`) and
+  for CPU temperature (`AppleSMC` user client). Both are already transitive deps of
+  `sysinfo` (0.3.2 in `Cargo.lock`), so this adds no new crates to the build.
 
 ---
 
 ## Data Model Changes (`src/stats/snapshots.rs`)
 
-### `CpuSnapshot` — no struct changes
+### `CpuSnapshot` — existing fields
 
 `physical_core_count`, `cpu_modes`, `aggregate`, `per_core`, `frequency`, and
-`cpu_brand` are all populated on macOS. The Linux-only fields (`package_temp`,
-`per_core_temp`, `governor`) remain `None` on macOS; no stable public API for
-CPU temperature exists on Apple Silicon without private entitlements.
+`cpu_brand` are all populated on macOS. `governor` remains `None` on macOS (not
+applicable).
+
+**CPU temperature is populated on macOS via the SMC.** The earlier assumption that
+this needed private entitlements was wrong: btop 1.4.7 reads it unprivileged through
+the `AppleSMC` IOKit user client, and so will we. `package_temp` comes from the
+`TC0P` key (CPU proximity / package). `per_core_temp` is filled from the per-core
+keys where present (`Tp0?` / `Tc0?` families on Apple Silicon); on machines where
+per-core keys are absent, `per_core_temp` is `vec![None; n]` and only the package
+row renders. The doc comments on these two fields change from "Linux-only" to
+"Linux and macOS; `None` elsewhere".
 
 `CpuModes` on macOS is populated with `user`, `system`, `idle`, and `nice` from
 `host_processor_info`. The `iowait`, `irq`, `softirq`, and `steal` fields are set
 to `0.0` — those CPU states do not exist on macOS.
+
+### `CpuSnapshot` — one new field: `gpu`
+
+```rust
+/// GPU utilization and memory. macOS (Apple Silicon and AMD/Intel via
+/// IOAccelerator) only for now; `None` on other platforms.
+pub gpu: Option<GpuInfo>,
+
+#[derive(Debug, Clone)]
+pub struct GpuInfo {
+    /// e.g. "Apple M4 Pro"
+    pub name: String,
+    /// GPU core count, if the registry entry exposes `gpu-core-count`.
+    pub core_count: Option<u32>,
+    /// "Device Utilization %" — the headline number.
+    pub device_util: f32,
+    /// "Renderer Utilization %"
+    pub renderer_util: f32,
+    /// "Tiler Utilization %"
+    pub tiler_util: f32,
+    /// "In use system memory" in bytes.
+    pub mem_in_use: u64,
+    /// "Alloc system memory" in bytes.
+    pub mem_alloc: u64,
+}
+```
+
+The GPU is embedded in `CpuSnapshot` rather than given its own `Action` variant and
+component. The request is a *section of the CPU panel*, and embedding avoids a new
+`ComponentId`, layout slot, config key, focus hotkey, and Tab-cycle entry. A standalone
+GPU panel can be split out later if it ever grows a graph of its own.
+
+**Data source: IOKit `IOAccelerator` registry.** `IOServiceGetMatchingServices(
+IOServiceMatching("IOAccelerator"))` → first entry → `IORegistryEntryCreateCFProperty(
+"PerformanceStatistics")` → the keys above. Verified on an M4 Pro Mac mini with
+`ioreg -r -c IOAccelerator`; readable without root or entitlements. Name and core
+count come from the same entry's parent (`model` / `gpu-core-count`).
+
+**Not chosen (for now): IOReport.** btop 1.4.7 uses the undocumented `libIOReport.dylib`
+("GPU Stats" residency channels + "GPU Energy") — that is how it shows GPU watts. It
+has no Rust crate, needs ~60 lines of hand-written FFI against an unversioned API, is
+Apple-Silicon-only, and gives no memory figures. `IOAccelerator` covers utilization and
+memory (the "7%  44G/48G" part of btop's row) with a public API. Power and frequency
+are deferred to a follow-on that adds IOReport if wanted. GPU temperature is not
+available by either route (btop shows 0°C).
 
 ### `MemSnapshot` — four new fields
 
@@ -129,6 +191,23 @@ level so they are visible under `-vv` without polluting normal output.
 ```
 read_physical_core_count() -> Option<u32>
     sysinfo::System::physical_core_count()
+
+read_cpu_temps(smc: &SmcConnection, ncpu: usize) -> (Option<f32>, Vec<Option<f32>>)
+    IOServiceOpen(AppleSMC) once at collector startup → SmcConnection (held in
+    the collector task alongside prev_cpu_total; None if open fails).
+    IOConnectCallStructMethod(kSMCReadKey) for "TC0P" → package_temp.
+    Per-core keys probed once at startup (which of Tp0?/Tc0? exist), then read
+    each tick → per_core_temp. Missing keys → None for that slot.
+    Returns (None, vec![None; ncpu]) if the SMC connection is unavailable.
+
+read_gpu() -> Option<GpuInfo>
+    IOServiceGetMatchingServices(IOServiceMatching("IOAccelerator"))
+    First matching entry → IORegistryEntryCreateCFProperty("PerformanceStatistics")
+    Read: "Device Utilization %", "Renderer Utilization %", "Tiler Utilization %",
+          "In use system memory", "Alloc system memory"
+    Name / core_count from the parent entry ("model", "gpu-core-count").
+    Returns None if no IOAccelerator or the dict is missing (e.g. VM guests).
+    Called every fast tick from build_cpu_macos; cost is one registry lookup.
 
 read_cpu_modes() -> Option<CpuModes>
     host_processor_info(PROCESSOR_CPU_LOAD_INFO) → per-CPU tick arrays
@@ -210,9 +289,30 @@ platforms now populate those fields.
 
 ### CPU panel (`src/components/cpu.rs`)
 
-No changes. Temperature and governor rows stay Linux-only, which is correct.
+**Temperature.** The package and per-core temperature rendering is currently
+`#[cfg(target_os = "linux")]`. Expand to `#[cfg(any(target_os = "linux", target_os = "macos"))]`.
+The rendering already handles `None` per-core slots, so Macs without per-core SMC
+keys show only the package value. The governor row stays Linux-only.
 `physical_core_count` rendering is already guarded by `if let Some(phys)` — it will
 display automatically once macOS populates the field.
+
+**GPU row.** When `snap.gpu.is_some()`, render one extra row below the per-core
+block, modelled on btop's CPU-box GPU line:
+
+```
+GPU  Apple M4 Pro (16c)  [████░░░░░░░░░░░░]   7%   415 MB / 37.2 GB
+```
+
+Fields: name, core count (omitted if `None`), a gauge of `device_util`, the
+percentage, and `mem_in_use / mem_alloc`. `renderer_util` and `tiler_util` are
+carried in the snapshot for the fullscreen detail view only (one extra line:
+`Renderer 12%  Tiler 3%`); the compact row shows just `device_util`.
+Additionally push `device_util` as a second `HistoryChart` series on the existing
+aggregate graph so GPU load is visible over time without a separate panel.
+
+`preferred_height` grows by 1 when `gpu.is_some()` (2 in fullscreen). The row is
+cfg-free — it keys on the `Option` — so a future Linux `read_gpu()` (AMD
+`/sys/class/drm/card*/device/gpu_busy_percent`, NVIDIA via NVML) needs no UI work.
 
 ### Process panel (`src/components/process/`)
 
@@ -246,6 +346,7 @@ pub fn stub() -> Self {
         cpu_brand: "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz".into(),
         package_temp: None,          // was Some(62.0)
         per_core_temp: vec![None; 4],// was vec![Some(55.0), …]
+        gpu: None,
         governor: None,              // was Some("powersave")
         cpu_modes: None,             // was Some(CpuModes { … })
     }
@@ -254,7 +355,12 @@ pub fn stub() -> Self {
 
 Add a `stub_linux()` constructor that restores the Linux-specific values, used by
 tests that specifically exercise Linux rendering paths (temperature column, governor
-row).
+row). Add a `stub_macos()` constructor with `package_temp: Some(39.0)`,
+`per_core_temp` populated, `governor: None`, and `gpu: Some(GpuInfo { name:
+"Apple M4 Pro", core_count: Some(16), device_util: 7.0, … })`, used by
+`#[cfg(target_os = "macos")]` snapshot tests `cpu_with_gpu` and `cpu_fullscreen_gpu`.
+Since temperature rendering is now shared, the temperature-column test moves from
+Linux-only to `#[cfg(any(linux, macos))]` using the platform-specific stub.
 
 `MemSnapshot::stub()` gains values for the four new macOS fields (realistic non-zero
 values) for use in macOS mem panel tests; Linux mem panel tests use a separate
@@ -270,8 +376,9 @@ canonical cross-platform snapshots. Linux-specific rendering is covered by dedic
 
 | Feature | Status |
 |---|---|
-| CPU temperature (package + per-core) | Not available without private entitlements |
 | CPU scaling governor | Not applicable on macOS |
+| GPU power / frequency | Needs IOReport (undocumented, Apple Silicon only); deferred to a follow-on |
+| GPU temperature | Not exposed by SMC or IOReport on Apple Silicon (btop shows 0°C too) |
 | Per-process I/O syscall counts (syscr/syscw) | Not exposed by macOS libproc |
 | Per-process shared memory (SHR) | No direct macOS equivalent |
 | Per-process swap usage | Would require walking all VM regions via `PROC_PIDREGIONINFO` — expensive, deferred |
@@ -298,5 +405,12 @@ Suggested sequencing to keep the build green at each step:
 7. **Process enrichment** — implement `enrich_process_entry()`; wire into `build_proc`.
 8. **Thread enumeration** — implement `enumerate_threads()` for macOS; wire into
    slow-tick path.
-9. **Docs update** — revise `USER_GUIDE.md` and `ARCHITECTURE.md` to reflect
-   macOS support; update `Cargo.toml` description/keywords.
+9. **CPU temperature** — add `objc2-io-kit`/`objc2-core-foundation` deps; implement
+   `SmcConnection` + `read_cpu_temps()`; expand temperature cfg guards in `cpu.rs`;
+   add `stub_macos()` and move the temperature snapshot test to `any(linux, macos)`.
+10. **GPU section** — add `GpuInfo` + `CpuSnapshot::gpu`; implement `read_gpu()`;
+    wire into `build_cpu_macos`; add the GPU row, fullscreen detail line, chart
+    series, and `preferred_height` bump in `cpu.rs`; add `cpu_with_gpu` snapshots.
+11. **Docs update** — revise `USER_GUIDE.md` (CPU panel: temperature on macOS, GPU
+    row), `ARCHITECTURE.md` (macOS data sources incl. SMC and IOAccelerator), and
+    the platform-guard note in `AGENTS.md`; update `Cargo.toml` description/keywords.
