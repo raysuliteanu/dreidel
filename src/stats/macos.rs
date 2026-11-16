@@ -32,7 +32,9 @@ pub struct MacosCpuTicks {
 }
 
 pub fn read_physical_core_count() -> Option<u32> {
-    sysinfo::System::physical_core_count().map(|n| n as u32)
+    sysinfo::System::physical_core_count()
+        .ok()
+        .map(|n| n as u32)
 }
 
 /// Returns `None` on the first call (no prior snapshot for delta) and on error.
@@ -132,7 +134,7 @@ pub fn build_cpu_macos(sys: &System, prev_ticks: &mut Option<MacosCpuTicks>) -> 
     let (cpu_modes, new_ticks) = read_cpu_modes(prev_ticks.as_ref());
     *prev_ticks = new_ticks;
     CpuSnapshot {
-        per_core: cpus.iter().map(|c| c.cpu_usage()).collect(),
+        per_core: cpus.iter().map(|c| c.usage()).collect(),
         aggregate: sys.global_cpu_usage(),
         frequency: cpus.iter().map(|c| c.frequency()).collect(),
         cpu_brand: cpus

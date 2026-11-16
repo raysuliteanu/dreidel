@@ -2,7 +2,7 @@
 name = "dreidel"
 version = "0.7.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.95"
 description = "A keyboard-driven terminal system monitor for Linux and macOS"
 keywords = ["tui", "monitor", "system", "ratatui", "macos"]
 categories = ["command-line-utilities", "visualization"]
@@ -37,27 +37,27 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.102"
-chrono = "0.4.44"
+chrono = "0.4.45"
 clap = { version = "4.6.0", features = ["derive"] }
 crossterm = { version = "0.29.0", features = ["event-stream"] }
 dirs = "6.0.0"
 futures = "0.3.32"
-humantime = "2.3.0"
-nix = { version = "0.31.2", features = ["signal"] }
-ratatui = "0.30.0"
-serde = { version = "1.0.228", features = ["derive"] }
+humantime = "2.4.0"
+nix = { version = "0.32.0", features = ["signal"] }
+ratatui = "0.30.2"
+serde = { version = "1.0.229", features = ["derive"] }
 strum = { version = "0.28.0", features = ["derive"] }
-sysinfo = "0.38.4"
+sysinfo = "0.40.4"
 termbg = "0.6.2"
-tokio = { version = "1.50.0", features = [
+tokio = { version = "1.54.1", features = [
     "sync",
     "time",
     "rt",
     "rt-multi-thread",
     "macros",
 ] }
-tokio-util = "0.7.18"
-toml = "1.1.0"
+tokio-util = "0.7.20"
+toml = "1.2.1"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 
@@ -66,7 +66,7 @@ procfs = { version = "0.18.0", default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"
-libproc = "0.14"
+libproc = "0.15"
 
 [features]
 test-stubs = [] # Exposes stub() constructors on snapshot types for testing

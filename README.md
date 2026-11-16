@@ -61,7 +61,7 @@ configuration option, see the **[User Guide](USER_GUIDE.md)**.
 ### From source
 
 Requires a recent stable [Rust toolchain](https://rustup.rs)
-(1.88 or later).
+(1.95 or later).
 
 ```sh
 git clone https://github.com/raysuliteanu/dreidel

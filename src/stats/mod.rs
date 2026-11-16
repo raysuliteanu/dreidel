@@ -18,7 +18,7 @@ use crate::action::Action;
 use sysinfo::{Components, DiskKind, Disks, Networks, System};
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
 pub fn spawn_collector(
     tx: Sender<Action>,
@@ -35,10 +35,13 @@ pub async fn run_collector(
     refresh_ms: u64,
     thread_refresh_ms: u64,
 ) {
-    let mut sys = System::new_all();
-    let mut nets = Networks::new_with_refreshed_list();
-    let mut disks = Disks::new_with_refreshed_list();
-    let mut components = Components::new_with_refreshed_list();
+    let (mut sys, mut nets, mut disks, mut components) = match init_sources() {
+        Ok(sources) => sources,
+        Err(e) => {
+            error!("stats collector: failed to initialize sysinfo: {e}");
+            return;
+        }
+    };
 
     let mut fast_interval = tokio::time::interval(std::time::Duration::from_millis(refresh_ms));
     let mut slow_interval =
@@ -121,14 +124,22 @@ pub async fn run_collector(
     }
 }
 
+fn init_sources() -> Result<(System, Networks, Disks, Components), sysinfo::Error> {
+    Ok((
+        System::new_all()?,
+        Networks::new_with_refreshed_list()?,
+        Disks::new_with_refreshed_list()?,
+        Components::new_with_refreshed_list()?,
+    ))
+}
+
 fn build_sys(_sys: &System) -> SysSnapshot {
     SysSnapshot {
         hostname: System::host_name().unwrap_or_default(),
-        uptime: System::uptime(),
-        load_avg: {
-            let la = System::load_average();
-            [la.one, la.five, la.fifteen]
-        },
+        uptime: System::uptime().unwrap_or_default(),
+        load_avg: System::load_average()
+            .map(|la| [la.one, la.five, la.fifteen])
+            .unwrap_or_default(),
         timestamp: chrono::Local::now(),
     }
 }
@@ -208,7 +219,7 @@ fn build_cpu(
         modes
     });
     CpuSnapshot {
-        per_core: cpus.iter().map(|c| c.cpu_usage()).collect(),
+        per_core: cpus.iter().map(|c| c.usage()).collect(),
         aggregate: sys.global_cpu_usage(),
         frequency: cpus.iter().map(|c| c.frequency()).collect(),
         cpu_brand: cpus
@@ -233,7 +244,7 @@ fn build_cpu(
 fn build_cpu_stub(sys: &System, _components: &Components) -> CpuSnapshot {
     let cpus = sys.cpus();
     CpuSnapshot {
-        per_core: cpus.iter().map(|c| c.cpu_usage()).collect(),
+        per_core: cpus.iter().map(|c| c.usage()).collect(),
         aggregate: sys.global_cpu_usage(),
         frequency: cpus.iter().map(|c| c.frequency()).collect(),
         cpu_brand: cpus
@@ -429,6 +440,7 @@ fn build_net(nets: &Networks) -> NetSnapshot {
         interfaces: nets
             .iter()
             .map(|(name, data)| {
+                let name = name.to_string_lossy().into_owned();
                 let mut ipv4_addresses: Vec<String> = Vec::new();
                 let mut ipv6_addresses: Vec<String> = Vec::new();
                 for n in data.ip_networks() {
@@ -444,7 +456,7 @@ fn build_net(nets: &Networks) -> NetSnapshot {
                 ipv6_addresses.sort_unstable();
 
                 #[cfg(target_os = "macos")]
-                let (mac_rx_drop, mac_tx_drop) = macos::read_net_drops(name);
+                let (mac_rx_drop, mac_tx_drop) = macos::read_net_drops(&name);
 
                 InterfaceSnapshot {
                     name: name.clone(),
@@ -461,13 +473,13 @@ fn build_net(nets: &Networks) -> NetSnapshot {
                     ipv6_addresses,
                     mtu: data.mtu(),
                     #[cfg(target_os = "linux")]
-                    rx_dropped: dev_stats.get(name).map(|s| s.recv_drop).unwrap_or(0),
+                    rx_dropped: dev_stats.get(&name).map(|s| s.recv_drop).unwrap_or(0),
                     #[cfg(target_os = "macos")]
                     rx_dropped: mac_rx_drop,
                     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
                     rx_dropped: 0,
                     #[cfg(target_os = "linux")]
-                    tx_dropped: dev_stats.get(name).map(|s| s.sent_drop).unwrap_or(0),
+                    tx_dropped: dev_stats.get(&name).map(|s| s.sent_drop).unwrap_or(0),
                     #[cfg(target_os = "macos")]
                     tx_dropped: mac_tx_drop,
                     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
