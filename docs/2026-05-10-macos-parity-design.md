@@ -1,6 +1,7 @@
 # macOS Platform Parity — Design Spec
 
-**Date:** 2026-05-10 (amended 2026-09-15: CPU temperature via SMC, GPU section)
+**Date:** 2026-05-10 (amended 2026-09-15: CPU temperature via SMC, GPU section;
+amended 2026-11-16: GPU section sourced from `sysinfo` 0.40's `Gpus` API, Linux included)
 **Status:** Approved for implementation
 
 ## Goal
@@ -11,8 +12,10 @@ accepted as genuinely platform-specific (scaling governor, per-process I/O sysca
 counts, shared-memory byte count). All silently-zero fields that _can_ be populated
 on macOS _will_ be populated.
 
-Beyond parity, this spec adds one macOS-first feature: a **GPU section in the CPU
-panel** (utilization + memory), analogous to btop's "gpu-totals" row in its CPU box.
+Beyond parity, this spec adds a **GPU section in the CPU panel** (utilization, plus
+memory where the platform reports it), analogous to btop's "gpu-totals" row in its CPU
+box. It is sourced from `sysinfo`'s cross-platform `Gpus` API, so it works on Linux as
+well as macOS with no platform-specific GPU code in dreidel.
 
 ---
 
@@ -47,10 +50,20 @@ objc2-core-foundation = "0.3"
   for the `sysctl(NET_RT_IFLIST2)` network drop counter path. Made an explicit
   macOS dependency even though it is already a transitive dep, to make intent
   clear.
-- **`objc2-io-kit`** + **`objc2-core-foundation`** — IOKit registry and user-client
-  access. Used for the GPU section (`IOAccelerator` → `PerformanceStatistics`) and
-  for CPU temperature (`AppleSMC` user client). Both are already transitive deps of
+- **`objc2-io-kit`** + **`objc2-core-foundation`** — IOKit user-client access for
+  CPU temperature (`AppleSMC` user client). Both are already transitive deps of
   `sysinfo` (0.3.2 in `Cargo.lock`), so this adds no new crates to the build.
+
+### `sysinfo` 0.40 with the `gpu` feature
+
+```toml
+sysinfo = { version = "0.40.4", features = ["gpu"] }
+```
+
+`sysinfo` was bumped from 0.38 to 0.40 (MSRV 1.88 → 1.95) as the first step of the GPU
+work; 0.40 adds the `Gpus` API behind the opt-in `gpu` feature. Enabling the feature
+pulls in no new crates on Linux (NVML and Vulkan are `dlopen`ed at runtime) and only
+the `objc2-*` crates listed above on macOS.
 
 ---
 
@@ -75,50 +88,78 @@ row renders. The doc comments on these two fields change from "Linux-only" to
 `host_processor_info`. The `iowait`, `irq`, `softirq`, and `steal` fields are set
 to `0.0` — those CPU states do not exist on macOS.
 
-### `CpuSnapshot` — one new field: `gpu`
+### `CpuSnapshot` — one new field: `gpus`
 
 ```rust
-/// GPU utilization and memory. macOS (Apple Silicon and AMD/Intel via
-/// IOAccelerator) only for now; `None` on other platforms.
-pub gpu: Option<GpuInfo>,
+/// One entry per GPU reported by `sysinfo::Gpus`, in sysinfo's order.
+/// Empty when no GPU is found or the platform is unsupported.
+pub gpus: Vec<GpuInfo>,
 
 #[derive(Debug, Clone)]
 pub struct GpuInfo {
-    /// e.g. "Apple M4 Pro"
+    /// `Gpu::model()`, e.g. "Apple M4 Pro"; "GPU" if sysinfo returns `None`.
     pub name: String,
-    /// GPU core count, if the registry entry exposes `gpu-core-count`.
-    pub core_count: Option<u32>,
-    /// "Device Utilization %" — the headline number.
-    pub device_util: f32,
-    /// "Renderer Utilization %"
-    pub renderer_util: f32,
-    /// "Tiler Utilization %"
-    pub tiler_util: f32,
-    /// "In use system memory" in bytes.
-    pub mem_in_use: u64,
-    /// "Alloc system memory" in bytes.
-    pub mem_alloc: u64,
+    /// `Gpu::usage()` in percent. `None` when the driver doesn't expose it
+    /// (some Linux GPUs; always `Some` on macOS).
+    pub usage: Option<f32>,
+    /// `Gpu::used_memory()` in bytes (dedicated VRAM). Always `None` on macOS,
+    /// where the GPU shares system memory.
+    pub mem_used: Option<u64>,
+    /// `Gpu::total_memory()` in bytes. Always `None` on macOS.
+    pub mem_total: Option<u64>,
 }
 ```
+
+A `Vec` rather than an `Option` because Linux machines commonly have both an
+integrated and a discrete GPU, and `sysinfo` reports each one.
 
 The GPU is embedded in `CpuSnapshot` rather than given its own `Action` variant and
 component. The request is a *section of the CPU panel*, and embedding avoids a new
 `ComponentId`, layout slot, config key, focus hotkey, and Tab-cycle entry. A standalone
 GPU panel can be split out later if it ever grows a graph of its own.
 
-**Data source: IOKit `IOAccelerator` registry.** `IOServiceGetMatchingServices(
-IOServiceMatching("IOAccelerator"))` → first entry → `IORegistryEntryCreateCFProperty(
-"PerformanceStatistics")` → the keys above. Verified on an M4 Pro Mac mini with
-`ioreg -r -c IOAccelerator`; readable without root or entitlements. Name and core
-count come from the same entry's parent (`model` / `gpu-core-count`).
+**Data source: `sysinfo::Gpus`.** What it reads per platform:
+
+| Platform | Source | `model` | `usage` | `used/total_memory` |
+|---|---|---|---|---|
+| macOS | IOKit `IOAccelerator` → `PerformanceStatistics` ("Device Utilization %") | yes | yes | always `None` |
+| Linux, AMD (and others exposing it) | `/sys/class/drm/card*/device/` (`gpu_busy_percent`, `mem_info_vram_*`) | yes | yes | yes |
+| Linux, NVIDIA | NVML (`libnvidia-ml.so`, `dlopen`ed) | yes | yes | yes |
+| Linux, fallback | Vulkan (`dlopen`ed) when sysfs/NVML don't cover a device | yes | driver-dependent | driver-dependent |
+
+Verified on an M4 Pro Mac mini: `Gpus::new_with_refreshed_list()` returns one entry
+(`model = "Apple M4 Pro"`, `vendor = "Apple Inc."`, `usage = Some(6.0)`, memory `None`);
+a refresh takes under 1 ms. Readable without root or entitlements.
+
+**Dropped from the 2026-09-15 design** (they came from hand-reading `IOAccelerator`,
+which `sysinfo` doesn't expose): GPU core count, renderer/tiler utilization, and the
+macOS "In use / Alloc system memory" figures. See Accepted Gaps.
 
 **Not chosen (for now): IOReport.** btop 1.4.7 uses the undocumented `libIOReport.dylib`
 ("GPU Stats" residency channels + "GPU Energy") — that is how it shows GPU watts. It
 has no Rust crate, needs ~60 lines of hand-written FFI against an unversioned API, is
-Apple-Silicon-only, and gives no memory figures. `IOAccelerator` covers utilization and
-memory (the "7%  44G/48G" part of btop's row) with a public API. Power and frequency
-are deferred to a follow-on that adds IOReport if wanted. GPU temperature is not
-available by either route (btop shows 0°C).
+Apple-Silicon-only, and gives no memory figures. Power and frequency are deferred to a
+follow-on that adds IOReport if wanted. GPU temperature is not available on Apple
+Silicon by any route (btop shows 0°C).
+
+**Per-process GPU stays out of scope — and must be switched off.** With the `gpu`
+feature on, `ProcessRefreshKind::everything()` (and therefore `sys.refresh_all()`)
+also collects `Process::gpu_usage`/`gpu_memory`, which on Linux walks
+`/proc/<pid>/fd` for every process on every fast tick. Replace `sys.refresh_all()` in
+the collector with an explicit refresh that excludes it:
+
+```rust
+sys.refresh_specifics(
+    RefreshKind::everything().with_processes(
+        ProcessRefreshKind::everything()
+            .without_gpu_usage()
+            .without_gpu_memory(),
+    ),
+);
+```
+
+A per-process GPU column (sysinfo supports usage on macOS and Linux, memory on
+Linux) is a possible follow-on and would revisit this.
 
 ### `MemSnapshot` — four new fields
 
@@ -200,15 +241,6 @@ read_cpu_temps(smc: &SmcConnection, ncpu: usize) -> (Option<f32>, Vec<Option<f32
     each tick → per_core_temp. Missing keys → None for that slot.
     Returns (None, vec![None; ncpu]) if the SMC connection is unavailable.
 
-read_gpu() -> Option<GpuInfo>
-    IOServiceGetMatchingServices(IOServiceMatching("IOAccelerator"))
-    First matching entry → IORegistryEntryCreateCFProperty("PerformanceStatistics")
-    Read: "Device Utilization %", "Renderer Utilization %", "Tiler Utilization %",
-          "In use system memory", "Alloc system memory"
-    Name / core_count from the parent entry ("model", "gpu-core-count").
-    Returns None if no IOAccelerator or the dict is missing (e.g. VM guests).
-    Called every fast tick from build_cpu_macos; cost is one registry lookup.
-
 read_cpu_modes() -> Option<CpuModes>
     host_processor_info(PROCESSOR_CPU_LOAD_INFO) → per-CPU tick arrays
     Sum across CPUs, delta from previous call → percentages
@@ -261,6 +293,20 @@ Same pattern for `build_mem`, `build_net` (enriched with `read_net_drops`),
 The `prev_cpu_total` analogue for macOS CPU mode deltas lives in `mod.rs` alongside
 the Linux one, behind its own cfg guard.
 
+**GPU collection is cfg-free and lives in `mod.rs`, not `macos.rs`:**
+
+```
+build_gpus(gpus: &Gpus) -> Vec<GpuInfo>
+    Map each sysinfo Gpu to GpuInfo (model → name, usage, used/total_memory).
+```
+
+The collector owns a `Gpus` next to `Networks`/`Disks`/`Components`. It is created
+with `Gpus::new_with_refreshed_list()`; unlike those, a failure here is not fatal —
+log at `warn!` and keep `None`, so the collector runs and `gpus` stays empty. On each
+fast tick call `gpus.refresh(false)`, then set `cpu_snap.gpus = build_gpus(&gpus)`
+after the per-platform `build_cpu*` call (so the three `build_cpu*` variants don't each
+need the parameter).
+
 ---
 
 ## Component UI Changes
@@ -296,23 +342,24 @@ keys show only the package value. The governor row stays Linux-only.
 `physical_core_count` rendering is already guarded by `if let Some(phys)` — it will
 display automatically once macOS populates the field.
 
-**GPU row.** When `snap.gpu.is_some()`, render one extra row below the per-core
-block, modelled on btop's CPU-box GPU line:
+**GPU rows.** Render one row per entry in `snap.gpus` below the per-core block,
+modelled on btop's CPU-box GPU line:
 
 ```
-GPU  Apple M4 Pro (16c)  [████░░░░░░░░░░░░]   7%   415 MB / 37.2 GB
+macOS: GPU  Apple M4 Pro      [████░░░░░░░░░░░░]   7%
+Linux: GPU  RTX 4070          [██░░░░░░░░░░░░░░]  12%   1.2 GB / 12.0 GB
 ```
 
-Fields: name, core count (omitted if `None`), a gauge of `device_util`, the
-percentage, and `mem_in_use / mem_alloc`. `renderer_util` and `tiler_util` are
-carried in the snapshot for the fullscreen detail view only (one extra line:
-`Renderer 12%  Tiler 3%`); the compact row shows just `device_util`.
-Additionally push `device_util` as a second `HistoryChart` series on the existing
-aggregate graph so GPU load is visible over time without a separate panel.
+Fields: name, a gauge of `usage`, the percentage, and `mem_used / mem_total` when both
+are `Some`. When `usage` is `None` the gauge and percentage render as `n/a`. The same
+row is used in compact and fullscreen views.
 
-`preferred_height` grows by 1 when `gpu.is_some()` (2 in fullscreen). The row is
-cfg-free — it keys on the `Option` — so a future Linux `read_gpu()` (AMD
-`/sys/class/drm/card*/device/gpu_busy_percent`, NVIDIA via NVML) needs no UI work.
+Additionally push the first GPU's `usage` as a second `HistoryChart` series on the
+existing aggregate graph so GPU load is visible over time without a separate panel
+(skipped when that GPU has no `usage`).
+
+`preferred_height` grows by `gpus.len()`. The rows are cfg-free — they key on the
+`Vec` — so platform differences come only from what `sysinfo` reports.
 
 ### Process panel (`src/components/process/`)
 
@@ -346,7 +393,7 @@ pub fn stub() -> Self {
         cpu_brand: "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz".into(),
         package_temp: None,          // was Some(62.0)
         per_core_temp: vec![None; 4],// was vec![Some(55.0), …]
-        gpu: None,
+        gpus: vec![],
         governor: None,              // was Some("powersave")
         cpu_modes: None,             // was Some(CpuModes { … })
     }
@@ -356,11 +403,15 @@ pub fn stub() -> Self {
 Add a `stub_linux()` constructor that restores the Linux-specific values, used by
 tests that specifically exercise Linux rendering paths (temperature column, governor
 row). Add a `stub_macos()` constructor with `package_temp: Some(39.0)`,
-`per_core_temp` populated, `governor: None`, and `gpu: Some(GpuInfo { name:
-"Apple M4 Pro", core_count: Some(16), device_util: 7.0, … })`, used by
-`#[cfg(target_os = "macos")]` snapshot tests `cpu_with_gpu` and `cpu_fullscreen_gpu`.
+`per_core_temp` populated and `governor: None`, used by the macOS temperature tests.
 Since temperature rendering is now shared, the temperature-column test moves from
 Linux-only to `#[cfg(any(linux, macos))]` using the platform-specific stub.
+
+The base `stub()` gets `gpus: vec![]`. Because the GPU rows are cfg-free, the GPU
+snapshot tests are **not** platform-gated: `cpu_with_gpu` and `cpu_fullscreen_gpu`
+build a stub with two GPUs — one macOS-style (`"Apple M4 Pro"`, `usage: Some(7.0)`,
+memory `None`) and one Linux-style (`"RTX 4070"`, `usage: Some(12.0)`, memory
+`Some`) — plus a third with `usage: None` to cover the `n/a` path.
 
 `MemSnapshot::stub()` gains values for the four new macOS fields (realistic non-zero
 values) for use in macOS mem panel tests; Linux mem panel tests use a separate
@@ -377,6 +428,8 @@ canonical cross-platform snapshots. Linux-specific rendering is covered by dedic
 | Feature | Status |
 |---|---|
 | CPU scaling governor | Not applicable on macOS |
+| GPU memory on macOS | `sysinfo` returns `None` (unified memory). IOKit's "In use / Alloc system memory" could be read directly as a follow-on |
+| GPU core count, renderer/tiler utilization | Not exposed by `sysinfo`; would need direct `IOAccelerator` reads (macOS) |
 | GPU power / frequency | Needs IOReport (undocumented, Apple Silicon only); deferred to a follow-on |
 | GPU temperature | Not exposed by SMC or IOReport on Apple Silicon (btop shows 0°C too) |
 | Per-process I/O syscall counts (syscr/syscw) | Not exposed by macOS libproc |
@@ -408,9 +461,15 @@ Suggested sequencing to keep the build green at each step:
 9. **CPU temperature** — add `objc2-io-kit`/`objc2-core-foundation` deps; implement
    `SmcConnection` + `read_cpu_temps()`; expand temperature cfg guards in `cpu.rs`;
    add `stub_macos()` and move the temperature snapshot test to `any(linux, macos)`.
-10. **GPU section** — add `GpuInfo` + `CpuSnapshot::gpu`; implement `read_gpu()`;
-    wire into `build_cpu_macos`; add the GPU row, fullscreen detail line, chart
-    series, and `preferred_height` bump in `cpu.rs`; add `cpu_with_gpu` snapshots.
+10. **GPU section** — **done first:** bump `sysinfo` to 0.40 and MSRV to 1.95
+    (CI, `README.md`, `BUILDING.md`), adapting to its `Result`-returning
+    constructors/getters, `Cpu::usage`, and `OsString` interface names. Then: enable
+    the `gpu` feature; replace `refresh_all()` with the GPU-free `refresh_specifics`
+    above; add `GpuInfo` + `CpuSnapshot::gpus` and `build_gpus()`; own a `Gpus` in the
+    collector; add the GPU rows, chart series, and `preferred_height` bump in
+    `cpu.rs`; add the cross-platform `cpu_with_gpu` / `cpu_fullscreen_gpu` snapshots.
+    Independent of step 9 (no shared IOKit code any more).
 11. **Docs update** — revise `USER_GUIDE.md` (CPU panel: temperature on macOS, GPU
-    row), `ARCHITECTURE.md` (macOS data sources incl. SMC and IOAccelerator), and
-    the platform-guard note in `AGENTS.md`; update `Cargo.toml` description/keywords.
+    rows on macOS and Linux), `ARCHITECTURE.md` (macOS data sources incl. SMC;
+    GPU via `sysinfo::Gpus`), and the platform-guard note in `AGENTS.md`; update
+    `Cargo.toml` description/keywords.
