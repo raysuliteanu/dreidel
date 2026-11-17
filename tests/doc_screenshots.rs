@@ -19,9 +19,16 @@
 use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
+/// Serializes every read and write of `USER_GUIDE.md` and the screenshot files:
+/// the tests run in parallel, and the verifier must never see a half-written file.
 static GUIDE_LOCK: Mutex<()> = Mutex::new(());
+
+/// Take `GUIDE_LOCK`, ignoring poisoning so one failing test doesn't cascade.
+fn lock_guide() -> MutexGuard<'static, ()> {
+    GUIDE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
@@ -67,16 +74,25 @@ fn backend_to_text(backend: &TestBackend) -> String {
     out
 }
 
+/// Write `contents` to `path` only if it differs, so an up-to-date checkout (e.g.
+/// CI) never rewrites files that other tests are reading.
+fn write_if_changed(path: &Path, contents: &str) {
+    if fs::read_to_string(path).is_ok_and(|old| old == contents) {
+        return;
+    }
+    fs::write(path, contents).unwrap_or_else(|e| panic!("writing {}: {e}", path.display()));
+}
+
 fn write_screenshot(name: &str, text: &str) {
+    let _guard = lock_guide();
     let dir = Path::new(OUT_DIR);
     fs::create_dir_all(dir).expect("create screenshots dir");
-    let path = dir.join(format!("{name}.txt"));
-    fs::write(&path, text).unwrap_or_else(|e| panic!("writing {}: {e}", path.display()));
+    write_if_changed(&dir.join(format!("{name}.txt")), text);
     patch_user_guide(name, text);
 }
 
+/// Caller must hold `GUIDE_LOCK`.
 fn patch_user_guide(name: &str, text: &str) {
-    let _guard = GUIDE_LOCK.lock().expect("guide lock poisoned");
     let guide_path = Path::new("USER_GUIDE.md");
     let content =
         fs::read_to_string(guide_path).unwrap_or_else(|e| panic!("reading USER_GUIDE.md: {e}"));
@@ -100,13 +116,14 @@ fn patch_user_guide(name: &str, text: &str) {
         &content[end..]
     );
 
-    fs::write(guide_path, new_content).unwrap_or_else(|e| panic!("writing USER_GUIDE.md: {e}"));
+    write_if_changed(guide_path, &new_content);
 }
 
 /// Verify that every screenshot block in USER_GUIDE.md matches its .txt file.
 /// Run `cargo test --test doc_screenshots screenshot_` to regenerate if this fails.
 #[test]
 fn verify_user_guide_screenshots() {
+    let _guard = lock_guide();
     let guide = fs::read_to_string("USER_GUIDE.md").expect("reading USER_GUIDE.md");
 
     let names = [
