@@ -45,7 +45,7 @@ impl ColorPalette {
             accent: Rgb(122, 162, 247),
             warn: Rgb(224, 175, 104),
             critical: Rgb(247, 118, 142),
-            dim: Rgb(220, 225, 240),
+            dim: Rgb(86, 95, 137),
             highlight: Rgb(187, 154, 247),
         }
     }
@@ -59,7 +59,7 @@ impl ColorPalette {
             accent: Rgb(0, 100, 200),
             warn: Rgb(180, 100, 0),
             critical: Rgb(180, 0, 0),
-            dim: Rgb(30, 30, 30),
+            dim: Rgb(120, 120, 120),
             highlight: Rgb(80, 0, 180),
         }
     }
@@ -71,5 +71,40 @@ impl Theme {
             Theme::Dark | Theme::Auto => ColorPalette::dark(),
             Theme::Light => ColorPalette::light(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::style::Color;
+
+    fn luminance(c: Color) -> f64 {
+        let Color::Rgb(r, g, b) = c else {
+            panic!("expected Rgb color, got {c:?}");
+        };
+        let lin = |v: u8| {
+            let s = f64::from(v) / 255.0;
+            if s <= 0.04045 {
+                s / 12.92
+            } else {
+                ((s + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+    }
+
+    #[test]
+    fn dark_dim_is_darker_than_fg() {
+        let p = ColorPalette::dark();
+        assert!(luminance(p.dim) < luminance(p.fg));
+        assert!(luminance(p.dim) > luminance(p.bg));
+    }
+
+    #[test]
+    fn light_dim_is_lighter_than_fg() {
+        let p = ColorPalette::light();
+        assert!(luminance(p.dim) > luminance(p.fg));
+        assert!(luminance(p.dim) < luminance(Color::Rgb(255, 255, 255)));
     }
 }
