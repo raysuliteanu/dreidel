@@ -897,8 +897,13 @@ impl ProcessComponent {
         } else {
             "▲"
         };
+        // Below this width the Fill(1) Name column would shrink to a sliver (and
+        // the over-constrained fixed columns would solve nondeterministically),
+        // so the Name column is dropped.
+        let narrow = area.width < 50;
         let header_cells = ["PID", "UID", "Name", "CPU%", "MEM", "Status"]
             .iter()
+            .filter(|h| !(narrow && **h == "Name"))
             .map(|h| {
                 let label = match *h {
                     "CPU%" if self.sort_col == SortColumn::Cpu => format!("CPU%{}", dir_sym),
@@ -939,7 +944,7 @@ impl ProcessComponent {
                     p.name.clone()
                 };
                 let dash = "—".to_string();
-                Row::new(vec![
+                let mut cells = vec![
                     p.pid.to_string(),
                     p.user.clone(),
                     name,
@@ -954,21 +959,34 @@ impl ProcessComponent {
                         format!("{:.1}%", p.mem_pct)
                     },
                     p.status.to_string(),
-                ])
-                .style(Style::new().fg(cpu_color(p.cpu_pct, &self.palette)))
+                ];
+                if narrow {
+                    cells.remove(2);
+                }
+                Row::new(cells).style(Style::new().fg(cpu_color(p.cpu_pct, &self.palette)))
             })
             .collect();
 
-        let widths = [
-            Constraint::Length(7),
-            Constraint::Length(7),
-            Constraint::Fill(1),
-            Constraint::Length(7),
-            Constraint::Length(8),
-            Constraint::Length(10),
-        ];
+        let widths: &[Constraint] = if narrow {
+            &[
+                Constraint::Length(6),
+                Constraint::Length(6),
+                Constraint::Length(6),
+                Constraint::Length(7),
+                Constraint::Fill(1),
+            ]
+        } else {
+            &[
+                Constraint::Length(7),
+                Constraint::Length(7),
+                Constraint::Fill(1),
+                Constraint::Length(7),
+                Constraint::Length(8),
+                Constraint::Length(10),
+            ]
+        };
 
-        let table = Table::new(rows, widths)
+        let table = Table::new(rows, widths.iter().copied())
             .header(header)
             .row_highlight_style(Style::new().bg(self.palette.border).fg(self.palette.fg));
 
