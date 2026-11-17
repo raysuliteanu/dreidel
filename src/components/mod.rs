@@ -41,7 +41,6 @@ pub enum ComponentId {
 impl ComponentId {
     /// Minimum (width, height) in cells, including borders, below which the
     /// component is not usable.
-    #[allow(dead_code)] // wired up in Task 7
     pub fn min_size(self) -> (u16, u16) {
         match self {
             ComponentId::Process => (40, 6),

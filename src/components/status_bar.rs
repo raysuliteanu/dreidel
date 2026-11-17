@@ -26,7 +26,7 @@ use ratatui::{
 
 use crate::{
     action::Action,
-    components::Component,
+    components::{Component, ComponentId},
     stats::snapshots::{CpuSnapshot, MemSnapshot, ProcSnapshot, ProcessStatus, SysSnapshot},
     theme::ColorPalette,
 };
@@ -45,6 +45,9 @@ pub struct StatusBarComponent {
     cpu: Option<CpuSnapshot>,
     mem: Option<MemSnapshot>,
     proc: Option<ProcSnapshot>,
+    /// Focus key + id of each panel dropped from the layout, shown as
+    /// `+[X]name` hints in the bottom border.
+    dropped: Vec<(char, ComponentId)>,
 }
 
 impl StatusBarComponent {
@@ -55,7 +58,13 @@ impl StatusBarComponent {
             cpu: None,
             mem: None,
             proc: None,
+            dropped: Vec::new(),
         }
+    }
+
+    /// Set the panels dropped from the layout so their focus keys are hinted.
+    pub fn set_dropped(&mut self, hints: Vec<(char, ComponentId)>) {
+        self.dropped = hints;
     }
 
     /// Whether the host has swap configured; controls whether the SWAP row is drawn.
@@ -98,6 +107,11 @@ impl Component for StatusBarComponent {
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::new().fg(self.palette.border));
+        let block = if self.dropped.is_empty() {
+            block
+        } else {
+            block.title_bottom(self.dropped_hints())
+        };
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
@@ -123,6 +137,33 @@ impl Component for StatusBarComponent {
 }
 
 impl StatusBarComponent {
+    /// Bottom-border hints for dropped panels, e.g. ` +[N]et +[D]isk `, styled
+    /// like the panel titles (`keyed_title`).
+    fn dropped_hints(&self) -> Line<'static> {
+        let accent_bold = Style::new()
+            .fg(self.palette.accent)
+            .add_modifier(Modifier::BOLD);
+        let fg = Style::new().fg(self.palette.fg);
+        let mut spans = Vec::new();
+        for (key, id) in &self.dropped {
+            let rest = match id {
+                ComponentId::Cpu => "PU",
+                ComponentId::Net => "et",
+                ComponentId::Disk => "isk",
+                ComponentId::Process => "rocesses",
+                ComponentId::StatusBar => continue,
+            };
+            spans.push(Span::styled(" +[", accent_bold));
+            spans.push(Span::styled(
+                key.to_ascii_uppercase().to_string(),
+                accent_bold,
+            ));
+            spans.push(Span::styled(format!("]{rest}"), fg));
+        }
+        spans.push(Span::styled(" ", fg));
+        Line::from(spans)
+    }
+
     fn draw_sys_row(&self, frame: &mut Frame, area: Rect) {
         let Some(sys) = &self.sys else { return };
         let uptime = format_uptime(sys.uptime);
@@ -481,6 +522,21 @@ mod tests {
 
         assert_eq!(comp.preferred_height(), Some(7));
         let mut terminal = Terminal::new(TestBackend::new(120, 7)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    fn renders_dropped_hints() {
+        // No mem/cpu data: those rows differ per platform and aren't under test.
+        let mut comp = StatusBarComponent::new(ColorPalette::dark());
+        comp.update(&Action::SysUpdate(fixed_sys())).unwrap();
+        comp.set_dropped(vec![
+            ('n', crate::components::ComponentId::Net),
+            ('d', crate::components::ComponentId::Disk),
+        ]);
+
+        let mut terminal = Terminal::new(TestBackend::new(120, 6)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
         assert_snapshot!(terminal.backend());
     }

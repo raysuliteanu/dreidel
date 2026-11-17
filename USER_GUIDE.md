@@ -632,6 +632,25 @@ Available slot names per preset:
 | `dashboard` | `top`, `mid_left`, `mid_right`, `bottom`        |
 | `grid`      | `grid_left_mid`, `grid_left_bot`, `grid_right_top`, `grid_right_bot` |
 
+### Small Terminals
+
+When the terminal is too small for every panel to be usable, dreidel
+drops panels instead of squeezing them. Panels are dropped in this
+order: Disk, then Network, then CPU, then Process. The focused panel
+is never dropped. Once a panel has been dropped, the remaining panels
+are rearranged to fill the space.
+
+Each dropped panel is listed in the status bar's bottom border as a
+hint such as `+[N]et +[D]isk`. Press that panel's focus key to bring
+it back. It becomes the focused panel, and another panel is dropped
+in its place if needed. Tab and Shift-Tab skip dropped panels.
+
+The smallest supported terminal is 40×10. Below that, dreidel shows
+only the message `terminal too small (need 40×10)`. The status bar is
+hidden automatically when showing it would leave fewer than 10 rows
+for the panels. When the status bar is hidden, the dropped-panel hints
+are not shown either.
+
 ---
 
 ## 6. Themes

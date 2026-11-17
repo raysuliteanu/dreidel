@@ -50,8 +50,8 @@ App::handle_actions()                  (main async loop)
       │  handles UI state (focus, fullscreen, help, quit)
       ▼
 App::render()
-      │  calls LayoutPreset::compute() to map SlotId → Rect
-      │  calls comp.draw(frame, rect) for each visible component
+      │  calls fit_layout() to place visible components (dropping some if too small)
+      │  calls comp.draw(frame, rect) for each placed component
       ▼
 ratatui Terminal::draw()               (double-buffered, diff-based)
       │
@@ -119,6 +119,20 @@ The layout engine. `LayoutPreset` has four variants:
 (e.g. CPU reports the exact rows it needs) so panels are tight to their content
 instead of using fixed percentages. `SlotOverrides` allows individual slots to be
 reassigned to a different component via config.
+
+`fit_layout(preset, area, overrides, hints, visible, focused) → FitResult` is what
+`App::render_to()` calls each frame. With all four components visible it tries the
+preset; with fewer it uses `compute_adaptive`. If any placed rect is below its
+`ComponentId::min_size()`, components are dropped in `DROP_ORDER` (Disk, Net, Cpu,
+Process — never the focused one) and the rest re-laid out adaptively until all fit
+or one remains. `FitResult { placed, dropped }` drives drawing, `App::rendered_ids`
+(Tab cycling) and `App::dropped_ids` (focus keys still accepted; shown as `+[X]name`
+hints in the status bar's bottom border). A component that a slot override leaves
+without a slot stays hidden and is not reported as dropped.
+
+Before layout, `render_to()` checks the terminal against `MIN_TERMINAL` (40×10):
+below it only a centered "terminal too small" message is drawn. The status bar is
+auto-hidden when it would leave fewer than 10 rows for the panels.
 
 `split_status_bar(area, pos, height)` carves the status bar rect from the total
 terminal area. The height argument is supplied by `StatusBarComponent::preferred_height()`,

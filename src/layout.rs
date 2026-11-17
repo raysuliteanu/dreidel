@@ -117,7 +117,6 @@ pub fn compute_adaptive(area: Rect, components: &[ComponentId]) -> Vec<(Componen
 
 /// Components in the order they are dropped when the terminal is too small
 /// (first entry is dropped first).
-#[allow(dead_code)] // wired up in Task 7
 pub const DROP_ORDER: [ComponentId; 4] = [
     ComponentId::Disk,
     ComponentId::Net,
@@ -127,13 +126,11 @@ pub const DROP_ORDER: [ComponentId; 4] = [
 
 /// Result of [`fit_layout`]: the components that fit and those that were dropped.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)] // wired up in Task 7
 pub struct FitResult {
     pub placed: Vec<(ComponentId, Rect)>,
     pub dropped: Vec<ComponentId>,
 }
 
-#[allow(dead_code)] // wired up in Task 7
 fn meets_min_size(placed: &[(ComponentId, Rect)]) -> bool {
     placed.iter().all(|(id, rect)| {
         let (w, h) = id.min_size();
@@ -147,7 +144,6 @@ fn meets_min_size(placed: &[(ComponentId, Rect)]) -> bool {
 /// With all four components visible the preset is tried first; after any drop, or
 /// with fewer than four visible, [`compute_adaptive`] is used. A single remaining
 /// component fills `area` even if it is below its minimum.
-#[allow(dead_code)] // wired up in Task 7
 pub fn fit_layout(
     preset: LayoutPreset,
     area: Rect,
@@ -161,7 +157,7 @@ pub fn fit_layout(
 
     let mut placed = if candidates.len() == 4 {
         let slots = preset.compute(area, overrides, hints);
-        candidates
+        let placed: Vec<(ComponentId, Rect)> = candidates
             .iter()
             .filter_map(|id| {
                 slots
@@ -169,7 +165,11 @@ pub fn fit_layout(
                     .find(|(c, _)| c == id)
                     .map(|(_, rect)| (*id, *rect))
             })
-            .collect()
+            .collect();
+        // A slot override can leave a component without a slot; keep it hidden
+        // even if drops later switch to the adaptive layout.
+        candidates.retain(|id| placed.iter().any(|(p, _)| p == id));
+        placed
     } else {
         compute_adaptive(area, &candidates)
     };
@@ -548,5 +548,23 @@ mod tests {
         );
         assert_eq!(r.placed, compute_adaptive(area, &visible));
         assert!(r.dropped.is_empty());
+    }
+
+    #[test]
+    fn fit_keeps_override_hidden_component_hidden_after_drops() {
+        // Override LeftTop to Net so Cpu has no slot in the preset. When drops force
+        // the adaptive layout, Cpu must not reappear (nor be reported as dropped).
+        let overrides = SlotOverrides(HashMap::from([(SlotId::LeftTop, ComponentId::Net)]));
+        let r = fit_layout(
+            LayoutPreset::Sidebar,
+            Rect::new(0, 0, 60, 20),
+            &overrides,
+            &LayoutHints::default(),
+            &all_four(),
+            ComponentId::Process,
+        );
+        assert!(!r.dropped.is_empty());
+        assert!(!r.placed.iter().any(|(id, _)| *id == ComponentId::Cpu));
+        assert!(!r.dropped.contains(&ComponentId::Cpu));
     }
 }

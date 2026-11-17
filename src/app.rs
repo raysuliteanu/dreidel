@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use crossterm::event::KeyEvent;
 use ratatui::{
     layout::{Constraint, Layout, Rect},
-    widgets::Clear,
+    widgets::{Clear, Paragraph},
 };
 use std::str::FromStr;
 use tokio::sync::mpsc;
@@ -19,16 +19,20 @@ use tracing::{debug, warn};
 use crate::{
     action::Action,
     components::help::HelpComponent,
+    components::status_bar::StatusBarComponent,
     components::{Component, ComponentId},
     config::Config,
     layout::{
-        LayoutHints, LayoutPreset, SlotOverrides, StatusBarPosition, compute_adaptive,
-        split_status_bar,
+        LayoutHints, LayoutPreset, SlotOverrides, StatusBarPosition, fit_layout, split_status_bar,
     },
     stats::spawn_collector,
     theme::ColorPalette,
     tui::{Event, Tui},
 };
+
+/// Smallest terminal (width, height) dreidel renders into; below this only a
+/// "terminal too small" message is drawn.
+const MIN_TERMINAL: (u16, u16) = (40, 10);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FocusState {
@@ -59,7 +63,7 @@ pub struct App {
     action_tx: mpsc::Sender<Action>,
     action_rx: mpsc::Receiver<Action>,
     components: Vec<(ComponentId, Box<dyn Component>)>,
-    status_bar: Box<dyn Component>,
+    status_bar: StatusBarComponent,
     help_comp: Box<dyn Component>,
     focus: FocusState,
     show_help: bool,
@@ -70,10 +74,13 @@ pub struct App {
     slot_overrides: SlotOverrides,
     status_pos: StatusBarPosition,
     visible: Vec<ComponentId>,
-    /// Ordered list of component IDs that currently have a layout slot AND are
-    /// in `visible`. Kept in sync each render; used to restrict Tab cycling to
+    /// Ordered list of component IDs placed by [`fit_layout`] in the last
+    /// render (in `components` order). Used to restrict Tab cycling to
     /// components the user can actually see.
     rendered_ids: Vec<ComponentId>,
+    /// Visible components dropped by [`fit_layout`] because the terminal is too
+    /// small for them. Their focus keys still work: focusing one brings it back.
+    dropped_ids: Vec<ComponentId>,
     palette: ColorPalette,
 }
 
@@ -115,18 +122,18 @@ impl App {
             ),
         ];
 
-        let visible: Vec<ComponentId> = config
-            .layout
-            .show
-            .iter()
-            .map(|s| {
-                ComponentId::from_str(s).map_err(|_| {
-                    anyhow::anyhow!(
-                        "unknown component {s:?} in show list; valid values are: cpu, net, disk, process"
-                    )
-                })
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
+        let mut visible: Vec<ComponentId> = Vec::new();
+        for s in &config.layout.show {
+            let id = ComponentId::from_str(s).map_err(|_| {
+                anyhow::anyhow!(
+                    "unknown component {s:?} in show list; valid values are: cpu, net, disk, process"
+                )
+            })?;
+            // `fit_layout` expects distinct panel ids; the status bar is not a panel.
+            if id != ComponentId::StatusBar && !visible.contains(&id) {
+                visible.push(id);
+            }
+        }
 
         let preset = LayoutPreset::from_str(&config.layout.preset).unwrap_or_else(|_| {
             warn!(value = %config.layout.preset, "unknown layout preset; using default (sidebar)");
@@ -144,9 +151,7 @@ impl App {
         Ok(Self {
             action_tx,
             action_rx,
-            status_bar: Box::new(crate::components::status_bar::StatusBarComponent::new(
-                palette.clone(),
-            )),
+            status_bar: StatusBarComponent::new(palette.clone()),
             help_comp: Box::new(HelpComponent::new(
                 palette.clone(),
                 config.keybindings.clone(),
@@ -172,6 +177,7 @@ impl App {
             status_pos,
             visible,
             rendered_ids: Vec::new(),
+            dropped_ids: Vec::new(),
             palette,
             config,
             components,
@@ -295,13 +301,18 @@ impl App {
         let kb = &self.config.keybindings;
         if let KeyCode::Char(c) = key.code {
             let c = c.to_ascii_lowercase();
-            // Only focus a component if it is actually in the layout.  Use
-            // rendered_ids (populated after the first render) when available;
-            // fall back to visible so the very first key-press also works.
-            let focusable = if self.rendered_ids.is_empty() {
-                &self.visible
+            // Only focus a component if it is in the layout or was dropped for
+            // lack of space (focusing a dropped panel brings it back).  Use
+            // rendered_ids/dropped_ids (populated after the first render) when
+            // available; fall back to visible so the very first key-press also works.
+            let focusable: Vec<ComponentId> = if self.rendered_ids.is_empty() {
+                self.visible.clone()
             } else {
-                &self.rendered_ids
+                self.rendered_ids
+                    .iter()
+                    .chain(&self.dropped_ids)
+                    .copied()
+                    .collect()
             };
             if c == kb.focus_proc && focusable.contains(&ComponentId::Process) {
                 let _ = self
@@ -438,14 +449,30 @@ impl App {
             comp.set_focused(*id == focused_id);
         }
 
+        let size = terminal.size().context("reading terminal size")?;
+        let total_area = Rect::new(0, 0, size.width, size.height);
+        if total_area.width < MIN_TERMINAL.0 || total_area.height < MIN_TERMINAL.1 {
+            terminal
+                .draw(|frame| {
+                    let row = Layout::vertical([
+                        Constraint::Fill(1),
+                        Constraint::Length(1),
+                        Constraint::Fill(1),
+                    ])
+                    .split(frame.area())[1];
+                    frame.render_widget(
+                        Paragraph::new("terminal too small (need 40×10)").centered(),
+                        row,
+                    );
+                })
+                .context("drawing too-small message")?;
+            return Ok(());
+        }
+
         let focus = self.focus.clone();
-        let preset = self.preset;
-        let visible = self.visible.clone();
         let show_help = self.show_help;
         let loading = self.loading;
         let palette = self.palette.clone();
-        let status_pos = self.status_pos;
-        let slot_overrides = self.slot_overrides.clone();
         let cpu_height = self
             .components
             .iter()
@@ -455,66 +482,67 @@ impl App {
             left_top: cpu_height,
             right_top: cpu_height,
         };
-        // Tab cycling visits only components the user can see.
-        // With adaptive layout (< 4 components) every visible component is
-        // shown, so rendered_ids is just the visible list in order.
-        if visible.len() < 4 {
-            self.rendered_ids = visible.clone();
+
+        // Hide the status bar when it would leave fewer than MIN_TERMINAL rows
+        // for the panels.
+        let status_height = self.status_bar.preferred_height().unwrap_or(6);
+        let status_pos = if total_area.height.saturating_sub(status_height) >= MIN_TERMINAL.1 {
+            self.status_pos
         } else {
-            // Probe the preset with a zero-size rect to get the slot→component
-            // mapping without computing real geometry.
-            let probe_map = preset.compute(Rect::new(0, 0, 0, 0), &slot_overrides, &hints);
-            self.rendered_ids = self
-                .components
-                .iter()
-                .map(|(id, _)| *id)
-                .filter(|id| visible.contains(id) && probe_map.values().any(|(cid, _)| cid == id))
-                .collect();
-        }
+            StatusBarPosition::Hidden
+        };
+        let (status_rect, main_area) = split_status_bar(total_area, status_pos, status_height);
+
+        let fit = fit_layout(
+            self.preset,
+            main_area,
+            &self.slot_overrides,
+            &hints,
+            &self.visible,
+            focused_id,
+        );
+        // Tab cycling visits only components the user can see.
+        self.rendered_ids = self
+            .components
+            .iter()
+            .map(|(id, _)| *id)
+            .filter(|id| fit.placed.iter().any(|(pid, _)| pid == id))
+            .collect();
+        self.dropped_ids = fit.dropped;
+        let kb = &self.config.keybindings;
+        let dropped_hints = self
+            .dropped_ids
+            .iter()
+            .filter_map(|id| {
+                let key = match id {
+                    ComponentId::Process => kb.focus_proc,
+                    ComponentId::Cpu => kb.focus_cpu,
+                    ComponentId::Net => kb.focus_net,
+                    ComponentId::Disk => kb.focus_disk,
+                    ComponentId::StatusBar => return None,
+                };
+                Some((key, *id))
+            })
+            .collect();
+        self.status_bar.set_dropped(dropped_hints);
 
         terminal.draw(|frame| {
-            let total_area = frame.area();
-
-            let status_height = self.status_bar.preferred_height().unwrap_or(6);
-            let (status_rect, content_area) =
-                split_status_bar(total_area, status_pos, status_height);
             if status_pos != StatusBarPosition::Hidden
                 && let Err(e) = self.status_bar.draw(frame, status_rect)
             {
                 warn!(error = %e, "status bar draw failed");
             }
 
-            let main_area = content_area;
-
             // Always draw the normal layout first so it remains visible behind
             // any overlay (fullscreen modal, help, loading).
-            if visible.len() < 4 {
-                // Adaptive: fill all space based solely on how many components
-                // were requested, respecting the order from --show.
-                for (component_id, rect) in compute_adaptive(main_area, &visible) {
-                    if let Some((_, comp)) = self
-                        .components
-                        .iter_mut()
-                        .find(|(cid, _)| *cid == component_id)
-                        && let Err(e) = comp.draw(frame, rect)
-                    {
-                        warn!(component = ?component_id, error = %e, "component draw failed");
-                    }
-                }
-            } else {
-                let slot_map = preset.compute(main_area, &slot_overrides, &hints);
-                for (component_id, rect) in slot_map.values() {
-                    if !visible.contains(component_id) {
-                        continue;
-                    }
-                    if let Some((_, comp)) = self
-                        .components
-                        .iter_mut()
-                        .find(|(cid, _)| cid == component_id)
-                        && let Err(e) = comp.draw(frame, *rect)
-                    {
-                        warn!(component = ?component_id, error = %e, "component draw failed");
-                    }
+            for (component_id, rect) in &fit.placed {
+                if let Some((_, comp)) = self
+                    .components
+                    .iter_mut()
+                    .find(|(cid, _)| cid == component_id)
+                    && let Err(e) = comp.draw(frame, *rect)
+                {
+                    warn!(component = ?component_id, error = %e, "component draw failed");
                 }
             }
 
@@ -870,6 +898,149 @@ mod tests {
                 .iter()
                 .any(|a| matches!(a, Action::FocusComponent(_))),
             "pressing a focus key for a hidden component must not change focus; got {actions:?}"
+        );
+    }
+
+    /// Collect a buffer row as a string.
+    fn row_text(buf: &ratatui::buffer::Buffer, y: u16) -> String {
+        (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect()
+    }
+
+    fn buffer_text(buf: &ratatui::buffer::Buffer) -> String {
+        (0..buf.area.height)
+            .map(|y| row_text(buf, y))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn small_terminal_drops_low_priority_panels() {
+        let mut app = make_app();
+        feed_stubs(&mut app);
+        let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+        app.render_to(&mut terminal).unwrap();
+
+        assert!(
+            app.dropped_ids.contains(&ComponentId::Disk),
+            "Disk should be dropped at 60x20; dropped = {:?}",
+            app.dropped_ids
+        );
+        assert!(!app.rendered_ids.contains(&ComponentId::Disk));
+        assert!(app.rendered_ids.contains(&ComponentId::Process));
+    }
+
+    #[test]
+    fn focus_key_for_dropped_panel_brings_it_back() {
+        let mut app = make_app();
+        feed_stubs(&mut app);
+        let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+        app.render_to(&mut terminal).unwrap();
+        assert!(app.dropped_ids.contains(&ComponentId::Disk));
+        drain(&mut app);
+
+        app.handle_key_event(key(app.config.keybindings.focus_disk))
+            .unwrap();
+        let actions = drain(&mut app);
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, Action::FocusComponent(ComponentId::Disk))),
+            "focus key for a dropped panel must focus it; got {actions:?}"
+        );
+
+        app.focus = FocusState::Normal {
+            focused: ComponentId::Disk,
+        };
+        app.render_to(&mut terminal).unwrap();
+        assert!(app.rendered_ids.contains(&ComponentId::Disk));
+        assert!(
+            !app.dropped_ids.is_empty() && !app.dropped_ids.contains(&ComponentId::Disk),
+            "another panel should be dropped instead; dropped = {:?}",
+            app.dropped_ids
+        );
+    }
+
+    #[test]
+    fn tab_skips_dropped_panels() {
+        let mut app = make_app();
+        feed_stubs(&mut app);
+        let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+        app.render_to(&mut terminal).unwrap();
+        assert!(!app.dropped_ids.is_empty());
+        drain(&mut app);
+
+        for focused in app.rendered_ids.clone() {
+            app.focus = FocusState::Normal { focused };
+            app.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE))
+                .unwrap();
+            for action in drain(&mut app) {
+                if let Action::FocusComponent(id) = action {
+                    assert!(
+                        !app.dropped_ids.contains(&id),
+                        "Tab from {focused:?} focused dropped panel {id:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn too_small_terminal_shows_message() {
+        let mut app = make_app();
+        feed_stubs(&mut app);
+        let mut terminal = Terminal::new(TestBackend::new(39, 10)).unwrap();
+        app.render_to(&mut terminal).unwrap();
+
+        let text = buffer_text(terminal.backend().buffer());
+        assert!(
+            text.contains("terminal too small (need 40×10)"),
+            "expected too-small message, got:\n{text}"
+        );
+    }
+
+    #[test]
+    fn status_bar_hidden_when_content_would_be_under_10_rows() {
+        let mut app = make_app();
+        feed_stubs(&mut app);
+        app.status_bar
+            .update(&Action::SysUpdate(SysSnapshot::stub()))
+            .unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(80, 15)).unwrap();
+        app.render_to(&mut terminal).unwrap();
+
+        let hostname = SysSnapshot::stub().hostname;
+        let row0 = row_text(terminal.backend().buffer(), 0);
+        assert!(
+            !row0.contains(&hostname),
+            "status bar must be hidden at 80x15; row 0 = {row0:?}"
+        );
+    }
+
+    #[test]
+    fn fullscreen_with_dropped_panels_renders_focused_modal() {
+        let mut app = make_app();
+        feed_stubs(&mut app);
+        app.focus = FocusState::Normal {
+            focused: ComponentId::Disk,
+        };
+        let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+        app.render_to(&mut terminal).unwrap();
+        assert!(!app.dropped_ids.is_empty());
+
+        app.focus = FocusState::FullScreen(ComponentId::Disk);
+        app.render_to(&mut terminal).unwrap();
+
+        // Status bar (no mem data → 6 rows) sits on top; the modal is centered
+        // in the remaining content area.
+        let status_height = app.status_bar.preferred_height().unwrap_or(6);
+        let content = Rect::new(0, status_height, 60, 20 - status_height);
+        let modal = centered_pct(content, 95, 95);
+        let buf = terminal.backend().buffer().clone();
+        assert!(has_content(&buf, modal));
+        let top = row_text(&buf, modal.y);
+        assert!(
+            top.contains("[D]"),
+            "modal top border should carry the Disk title; got {top:?}"
         );
     }
 

@@ -80,7 +80,9 @@ inside `tui.draw(|frame| { ... })`.
 overrides, hints)`. The sidebar preset has 4 slots: `LeftTop`=CPU,
 `LeftBot`=Net, `LeftExtra`=Disk, `Right`=Process. `LayoutHints` carries a
 preferred height from CPU so that panel is tight to its content; Net/Disk split
-remaining height equally.
+remaining height equally. `App::render_to` calls `fit_layout`, which drops
+panels (Disk, Net, Cpu, Process order; never the focused one) when their rects
+fall below `ComponentId::min_size()`.
 
 ### Key dispatch
 
@@ -90,13 +92,16 @@ In `App::handle_events`, `Event::Key` goes to the _focused component_ first via
 quit).
 
 Focus-switch keys (`p/c/n/d`) are **no-ops for hidden components** — pressing
-`p` when process is not in the layout does nothing. The guard checks
-`rendered_ids` (populated after the first render) and falls back to `visible`
-before the first render. Initial focus defaults to the first listed component in
-`visible`; when all four components are present it defaults to Process.
+`p` when process is not in the layout does nothing. The guard accepts ids in
+`rendered_ids` or `dropped_ids` (both populated after the first render from
+`fit_layout`'s `FitResult`) and falls back to `visible` before the first render.
+Focusing a panel that was dropped for lack of space brings it back (the focused
+component is never dropped). Initial focus defaults to the first listed
+component in `visible`; when all four components are present it defaults to
+Process.
 
-Tab cycling uses `App::rendered_ids` — only components that have a layout slot
-AND are in `visible` — updated each render.
+Tab cycling uses `App::rendered_ids` — the components `fit_layout` placed in the
+last render, in `components` order — so dropped panels are skipped.
 
 ### ComponentId ↔ config string mapping
 
