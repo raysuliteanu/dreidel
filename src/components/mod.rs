@@ -38,6 +38,20 @@ pub enum ComponentId {
     Process,
 }
 
+impl ComponentId {
+    /// Minimum (width, height) in cells, including borders, below which the
+    /// component is not usable.
+    #[allow(dead_code)] // wired up in Task 7
+    pub fn min_size(self) -> (u16, u16) {
+        match self {
+            ComponentId::Process => (40, 6),
+            ComponentId::Cpu => (16, 3),
+            ComponentId::Net | ComponentId::Disk => (30, 5),
+            ComponentId::StatusBar => (0, 0),
+        }
+    }
+}
+
 /// 32 visually distinct colors for multi-series graphs (per-core CPU, per-interface net, etc.).
 ///
 /// The first 16 are vivid, spread across the hue wheel. The next 16 are lighter

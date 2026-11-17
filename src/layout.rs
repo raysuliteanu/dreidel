@@ -115,6 +115,81 @@ pub fn compute_adaptive(area: Rect, components: &[ComponentId]) -> Vec<(Componen
     }
 }
 
+/// Components in the order they are dropped when the terminal is too small
+/// (first entry is dropped first).
+#[allow(dead_code)] // wired up in Task 7
+pub const DROP_ORDER: [ComponentId; 4] = [
+    ComponentId::Disk,
+    ComponentId::Net,
+    ComponentId::Cpu,
+    ComponentId::Process,
+];
+
+/// Result of [`fit_layout`]: the components that fit and those that were dropped.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)] // wired up in Task 7
+pub struct FitResult {
+    pub placed: Vec<(ComponentId, Rect)>,
+    pub dropped: Vec<ComponentId>,
+}
+
+#[allow(dead_code)] // wired up in Task 7
+fn meets_min_size(placed: &[(ComponentId, Rect)]) -> bool {
+    placed.iter().all(|(id, rect)| {
+        let (w, h) = id.min_size();
+        rect.width >= w && rect.height >= h
+    })
+}
+
+/// Place `visible` components in `area`, dropping components (per [`DROP_ORDER`],
+/// never the `focused` one) until every placed rect meets its minimum size.
+///
+/// With all four components visible the preset is tried first; after any drop, or
+/// with fewer than four visible, [`compute_adaptive`] is used. A single remaining
+/// component fills `area` even if it is below its minimum.
+#[allow(dead_code)] // wired up in Task 7
+pub fn fit_layout(
+    preset: LayoutPreset,
+    area: Rect,
+    overrides: &SlotOverrides,
+    hints: &LayoutHints,
+    visible: &[ComponentId],
+    focused: ComponentId,
+) -> FitResult {
+    let mut candidates: Vec<ComponentId> = visible.to_vec();
+    let mut dropped = Vec::new();
+
+    let mut placed = if candidates.len() == 4 {
+        let slots = preset.compute(area, overrides, hints);
+        candidates
+            .iter()
+            .filter_map(|id| {
+                slots
+                    .values()
+                    .find(|(c, _)| c == id)
+                    .map(|(_, rect)| (*id, *rect))
+            })
+            .collect()
+    } else {
+        compute_adaptive(area, &candidates)
+    };
+
+    while candidates.len() > 1 && !meets_min_size(&placed) {
+        let Some(victim) = DROP_ORDER
+            .iter()
+            .copied()
+            .find(|id| *id != focused && candidates.contains(id))
+        else {
+            break;
+        };
+        candidates.retain(|id| *id != victim);
+        dropped.push(victim);
+        placed = compute_adaptive(area, &candidates);
+    }
+
+    FitResult { placed, dropped }
+}
+
 impl LayoutPreset {
     pub fn compute(&self, area: Rect, overrides: &SlotOverrides, hints: &LayoutHints) -> SlotMap {
         let defaults = self.default_slots();
@@ -384,5 +459,94 @@ mod tests {
             .map(|(_, r)| r)
             .unwrap();
         assert_eq!(cpu_rect.height, 5);
+    }
+
+    fn all_four() -> Vec<ComponentId> {
+        use ComponentId::*;
+        vec![Cpu, Net, Disk, Process]
+    }
+
+    fn fit(preset: LayoutPreset, w: u16, h: u16, focused: ComponentId) -> FitResult {
+        fit_layout(
+            preset,
+            Rect::new(0, 0, w, h),
+            &SlotOverrides::default(),
+            &LayoutHints::default(),
+            &all_four(),
+            focused,
+        )
+    }
+
+    #[test]
+    fn fit_keeps_all_four_at_200x50() {
+        let r = fit(LayoutPreset::Sidebar, 200, 50, ComponentId::Process);
+        assert!(r.dropped.is_empty());
+        assert_eq!(r.placed.len(), 4);
+    }
+
+    #[test]
+    fn fit_drops_disk_first() {
+        // Sidebar at 80x24: the left column is ~28 wide (< 30 for Net/Disk), so the
+        // preset fails. The adaptive 3-panel [Cpu, Net, Process] layout puts Net in a
+        // 40-wide column with 12 rows (>= 30x5) and Process in 40x24, so it fits.
+        let r = fit(LayoutPreset::Sidebar, 80, 24, ComponentId::Process);
+        assert_eq!(r.dropped, vec![ComponentId::Disk]);
+        assert_eq!(r.placed.len(), 3);
+    }
+
+    #[test]
+    fn fit_never_drops_focused() {
+        let r = fit(LayoutPreset::Sidebar, 60, 20, ComponentId::Disk);
+        assert!(r.placed.iter().any(|(id, _)| *id == ComponentId::Disk));
+    }
+
+    #[test]
+    fn fit_falls_back_to_focused_only() {
+        let area = Rect::new(0, 0, 40, 8);
+        let r = fit(LayoutPreset::Sidebar, 40, 8, ComponentId::Process);
+        assert_eq!(r.placed, vec![(ComponentId::Process, area)]);
+        assert_eq!(r.dropped.len(), 3);
+    }
+
+    #[test]
+    fn fit_respects_minimums_when_not_single() {
+        let sizes = [(200, 50), (120, 40), (80, 24), (60, 20), (40, 12), (30, 8)];
+        for preset in [
+            LayoutPreset::Sidebar,
+            LayoutPreset::Classic,
+            LayoutPreset::Dashboard,
+            LayoutPreset::Grid,
+        ] {
+            for (w, h) in sizes {
+                let r = fit(preset, w, h, ComponentId::Process);
+                if r.placed.len() > 1 {
+                    for (id, rect) in &r.placed {
+                        let (mw, mh) = id.min_size();
+                        assert!(
+                            rect.width >= mw && rect.height >= mh,
+                            "{preset:?} {w}x{h}: {id:?} got {}x{}",
+                            rect.width,
+                            rect.height
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fit_adaptive_when_fewer_than_four_visible() {
+        let area = Rect::new(0, 0, 200, 50);
+        let visible = [ComponentId::Cpu, ComponentId::Net];
+        let r = fit_layout(
+            LayoutPreset::Sidebar,
+            area,
+            &SlotOverrides::default(),
+            &LayoutHints::default(),
+            &visible,
+            ComponentId::Cpu,
+        );
+        assert_eq!(r.placed, compute_adaptive(area, &visible));
+        assert!(r.dropped.is_empty());
     }
 }
