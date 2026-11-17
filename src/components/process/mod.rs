@@ -112,6 +112,9 @@ pub struct ProcessComponent {
     /// or area width ≥ 120).  Stored here so the sort-cycle key handler can use
     /// the column order that matches what is actually visible on screen.
     is_wide_layout: bool,
+    /// True when the last normal-layout draw was narrow enough to hide the UID
+    /// and Status columns, so the sort cycle can skip them.
+    is_narrow_layout: bool,
     compact_snapshot: Option<ProcessCompactSnapshot>,
     /// One-shot flag set by `begin_overlay_render()`.  Consumed at the start of
     /// `draw()` to distinguish the compact background pass from the overlay pass.
@@ -147,6 +150,7 @@ impl Default for ProcessComponent {
             focused: false,
             is_fullscreen: false,
             is_wide_layout: false,
+            is_narrow_layout: false,
             compact_snapshot: None,
             rendering_as_overlay: false,
             view_mode: ProcessViewMode::Flat,
@@ -483,6 +487,7 @@ impl Component for ProcessComponent {
                     // Cycle through sortable columns in the order they appear
                     // on screen so the indicator always moves left-to-right.
                     // Normal view:   PID | User | Name | CPU% | MEM | Status
+                    // Narrow view:   PID | Name | CPU% | MEM
                     // Extended view: PID | User | PR | NI | VIRT | RES | SHR | S | %CPU | %MEM | TIME | Command
                     let cols: &[SortColumn] = if self.is_wide_layout {
                         &[
@@ -498,6 +503,13 @@ impl Component for ProcessComponent {
                             SortColumn::Mem,
                             SortColumn::Time,
                             SortColumn::Name,
+                        ]
+                    } else if self.is_narrow_layout {
+                        &[
+                            SortColumn::Pid,
+                            SortColumn::Name,
+                            SortColumn::Cpu,
+                            SortColumn::Mem,
                         ]
                     } else {
                         &[
@@ -902,6 +914,7 @@ impl ProcessComponent {
         // differently from run to run. In narrow mode drop UID and Status so
         // the fixed columns fit and Name keeps the remainder.
         let narrow = area.width < 50;
+        self.is_narrow_layout = narrow;
         let header_cells = ["PID", "UID", "Name", "CPU%", "MEM", "Status"]
             .iter()
             .filter(|h| !(narrow && matches!(**h, "UID" | "Status")))
@@ -1481,6 +1494,32 @@ mod tests {
         assert!(
             rendered.contains("firefox"),
             "process name must show: {rendered}"
+        );
+    }
+
+    /// In narrow mode (UID and Status hidden) the sort cycle skips the hidden
+    /// columns: CPU% → MEM → PID → Name → CPU% …
+    #[test]
+    fn narrow_sort_cycle_skips_hidden_columns() {
+        let mut comp = ProcessComponent::default();
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+            .unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(40, 12)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        assert_eq!(comp.sort_col, SortColumn::Cpu);
+        let mut seen = Vec::new();
+        for _ in 0..4 {
+            comp.handle_key_event(key('s')).unwrap();
+            seen.push(comp.sort_col);
+        }
+        assert_eq!(
+            seen,
+            vec![
+                SortColumn::Mem,
+                SortColumn::Pid,
+                SortColumn::Name,
+                SortColumn::Cpu
+            ]
         );
     }
 
