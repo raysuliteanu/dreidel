@@ -193,8 +193,8 @@ the lowercase string representations (`"cpu"`, `"mem"`, `"net"`, `"disk"`,
 - **`handle_detail_key(key, is_fullscreen, view)`** — shared helper for the Detail arm:
   Esc/q/Q returns to `ListView::List` (toggling fullscreen if active), all other keys
   are swallowed
-- **`list_border_block(focus_key, rest, palette, focused)`** — shared border/title builder
-  for the Net and Disk list panels
+- **`panel_block(focus_key, rest, palette, focused)`** — shared rounded border/title builder
+  used by the CPU, Net, Disk and Process panels
 
 ### `src/components/chart.rs` — `HistoryChart` widget
 
