@@ -138,12 +138,55 @@ fn meets_min_size(placed: &[(ComponentId, Rect)]) -> bool {
     })
 }
 
+/// Stack `components` vertically, each spanning the full width of `area`.
+///
+/// CPU gets its preferred height from `hints` (or its minimum), capped so the
+/// others can still reach their minimum heights; Process takes any excess.
+fn compute_stacked(
+    area: Rect,
+    components: &[ComponentId],
+    hints: &LayoutHints,
+) -> Vec<(ComponentId, Rect)> {
+    let others_min: u16 = components
+        .iter()
+        .filter(|id| **id != ComponentId::Cpu)
+        .map(|id| id.min_size().1)
+        .sum();
+    let has_process = components.contains(&ComponentId::Process);
+    let constraints: Vec<Constraint> = components
+        .iter()
+        .map(|id| {
+            let min_h = id.min_size().1;
+            if *id == ComponentId::Cpu {
+                let preferred = hints.left_top.unwrap_or(min_h);
+                let cap = area.height.saturating_sub(others_min);
+                Constraint::Length(preferred.min(cap).max(min_h))
+            } else if *id == ComponentId::Process {
+                Constraint::Min(min_h)
+            } else if has_process {
+                // Process benefits most from extra rows, so it takes the excess.
+                Constraint::Length(min_h)
+            } else {
+                Constraint::Min(min_h)
+            }
+        })
+        .collect();
+    let rows = Layout::vertical(constraints).split(area);
+    components
+        .iter()
+        .copied()
+        .zip(rows.iter().copied())
+        .collect()
+}
+
 /// Place `visible` components in `area`, dropping components (per [`DROP_ORDER`],
 /// never the `focused` one) until every placed rect meets its minimum size.
 ///
 /// With all four components visible the preset is tried first; after any drop, or
-/// with fewer than four visible, [`compute_adaptive`] is used. A single remaining
-/// component fills `area` even if it is below its minimum.
+/// with fewer than four visible, [`compute_adaptive`] is used. Before each drop a
+/// vertically stacked arrangement ([`compute_stacked`]) of the remaining candidates
+/// is tried. A single remaining component fills `area` even if it is below its
+/// minimum.
 pub fn fit_layout(
     preset: LayoutPreset,
     area: Rect,
@@ -175,6 +218,13 @@ pub fn fit_layout(
     };
 
     while candidates.len() > 1 && !meets_min_size(&placed) {
+        // Before dropping anything, see whether stacking the candidates
+        // vertically (each full width) satisfies every minimum.
+        let stacked = compute_stacked(area, &candidates, hints);
+        if meets_min_size(&stacked) {
+            placed = stacked;
+            break;
+        }
         let Some(victim) = DROP_ORDER
             .iter()
             .copied()
@@ -486,10 +536,11 @@ mod tests {
 
     #[test]
     fn fit_drops_disk_first() {
-        // Sidebar at 80x24: the left column is ~28 wide (< 30 for Net/Disk), so the
-        // preset fails. The adaptive 3-panel [Cpu, Net, Process] layout puts Net in a
-        // 40-wide column with 12 rows (>= 30x5) and Process in 40x24, so it fits.
-        let r = fit(LayoutPreset::Sidebar, 80, 24, ComponentId::Process);
+        // Sidebar at 80x16: the left column is ~28 wide (< 31 for Net), so the
+        // preset fails, and stacking all four needs 19 rows. The adaptive 3-panel
+        // [Cpu, Net, Process] layout puts Net in a 40-wide column with 8 rows
+        // (>= 31x5) and Process in 40x16, so it fits.
+        let r = fit(LayoutPreset::Sidebar, 80, 16, ComponentId::Process);
         assert_eq!(r.dropped, vec![ComponentId::Disk]);
         assert_eq!(r.placed.len(), 3);
     }
@@ -535,6 +586,21 @@ mod tests {
     }
 
     #[test]
+    fn fit_stacks_cpu_and_process_at_60x20() {
+        // Side-by-side columns are 30 wide (< Process min 40); stacking full-width
+        // rows must keep at least CPU and Process instead of falling to Process only.
+        let r = fit(LayoutPreset::Sidebar, 60, 20, ComponentId::Process);
+        let cpu = r.placed.iter().find(|(id, _)| *id == ComponentId::Cpu);
+        let process = r.placed.iter().find(|(id, _)| *id == ComponentId::Process);
+        let (Some((_, cpu)), Some((_, process))) = (cpu, process) else {
+            panic!("expected CPU and Process placed, got {:?}", r.placed);
+        };
+        assert_eq!(cpu.width, 60);
+        assert_eq!(process.width, 60);
+        assert!(cpu.bottom() <= process.top(), "CPU stacked above Process");
+    }
+
+    #[test]
     fn fit_adaptive_when_fewer_than_four_visible() {
         let area = Rect::new(0, 0, 200, 50);
         let visible = [ComponentId::Cpu, ComponentId::Net];
@@ -554,10 +620,11 @@ mod tests {
     fn fit_keeps_override_hidden_component_hidden_after_drops() {
         // Override LeftTop to Net so Cpu has no slot in the preset. When drops force
         // the adaptive layout, Cpu must not reappear (nor be reported as dropped).
+        // At 60x14 stacking [Net, Disk, Process] needs 16 rows, so Disk is dropped.
         let overrides = SlotOverrides(HashMap::from([(SlotId::LeftTop, ComponentId::Net)]));
         let r = fit_layout(
             LayoutPreset::Sidebar,
-            Rect::new(0, 0, 60, 20),
+            Rect::new(0, 0, 60, 14),
             &overrides,
             &LayoutHints::default(),
             &all_four(),

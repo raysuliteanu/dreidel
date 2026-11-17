@@ -639,7 +639,9 @@ Available slot names per preset:
 ### Small Terminals
 
 When the terminal is too small for every panel to be usable, dreidel
-drops panels instead of squeezing them. Panels are dropped in this
+first tries stacking the panels on top of each other, each using the
+full width. If they still do not fit, it drops panels instead of
+squeezing them. Panels are dropped in this
 order: Disk, then Network, then CPU, then Process. The focused panel
 is never dropped. Once a panel has been dropped, the remaining panels
 are rearranged to fill the space.
