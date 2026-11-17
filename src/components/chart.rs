@@ -66,6 +66,30 @@ pub(crate) fn window_max<'a>(
         .unwrap_or(0)
 }
 
+/// Minimum graph width (columns) worth drawing next to a legend.
+pub(crate) const MIN_GRAPH_W: u16 = 12;
+
+/// True when a legend of `legend_width` leaves at least [`MIN_GRAPH_W`] columns for the graph.
+pub(crate) fn legend_fits(area_width: u16, legend_width: u16) -> bool {
+    area_width >= legend_width + MIN_GRAPH_W
+}
+
+/// Render the last `width` samples as block-character levels `▁▂▃▄▅▆▇█`,
+/// scaling each by `v / max` (clamped). A non-positive `max` yields the lowest level.
+pub(crate) fn spark_text(samples: &[f64], max: f64, width: usize) -> String {
+    const LEVELS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    samples[samples.len().saturating_sub(width)..]
+        .iter()
+        .map(|&v| {
+            if max <= 0.0 {
+                LEVELS[0]
+            } else {
+                LEVELS[((v / max).clamp(0.0, 1.0) * 7.0) as usize]
+            }
+        })
+        .collect()
+}
+
 /// Vertical anchor for a legend entry inside the right-side label column.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum LegendAnchor {
@@ -150,7 +174,8 @@ impl<'a> HistoryChart<'a> {
     }
 
     /// Total width of the right-side legend column including the `Borders::LEFT`
-    /// separator (i.e. inner label width + 1).
+    /// separator (i.e. inner label width + 1). `0` means no legend or separator:
+    /// the graph spans the full area.
     pub(crate) fn legend_width(mut self, w: u16) -> Self {
         self.legend_width = w;
         self
@@ -294,6 +319,38 @@ mod tests {
         let a: VecDeque<u64> = [9_000, 1, 2, 3].into();
         let b: VecDeque<u64> = [5, 4].into();
         assert_eq!(window_max([&a, &b], 3), 5);
+    }
+
+    #[test]
+    fn spark_text_maps_to_eight_levels() {
+        assert_eq!(spark_text(&[0.0, 50.0, 100.0], 100.0, 3), "▁▄█");
+    }
+
+    #[test]
+    fn spark_text_keeps_newest_when_truncating() {
+        assert_eq!(spark_text(&[100.0, 0.0, 0.0], 100.0, 2), "▁▁");
+    }
+
+    #[test]
+    fn legend_fits_requires_min_graph_width() {
+        assert!(legend_fits(23, 11));
+        assert!(!legend_fits(22, 11));
+    }
+
+    #[test]
+    fn renders_without_legend() {
+        let mut terminal = Terminal::new(TestBackend::new(30, 6)).unwrap();
+        terminal
+            .draw(|f| {
+                let chart = HistoryChart::new(100)
+                    .series((0..60).map(|i| (i % 20) as f64 * 5.0), dim())
+                    .legend_width(0)
+                    .border_style(border())
+                    .axis_style(dim());
+                f.render_widget(chart, f.area());
+            })
+            .unwrap();
+        assert_snapshot!("chart_no_legend", terminal.backend());
     }
 
     #[test]

@@ -1,0 +1,8 @@
+---
+source: src/components/cpu.rs
+expression: t.backend()
+---
+"╭ [C]PU 35% ─────────────────╮"
+"│cpu0   42% ▃                │"
+"│cpu1   18% ▂                │"
+"╰────────────────────────────╯"

@@ -21,13 +21,48 @@ use ratatui::{
 
 use crate::{
     action::Action,
-    components::chart::{HistoryChart, LegendEntry},
+    components::chart::{HistoryChart, LegendEntry, MIN_GRAPH_W, legend_fits, spark_text},
     components::{
         Component, FilterEvent, FilterInput, HISTORY_LEN, SERIES_COLORS, fmt_bytes, panel_block,
     },
     stats::snapshots::{CpuSnapshot, GpuInfo},
     theme::ColorPalette,
 };
+
+/// How much of the CPU chart's detail fits in the available area.
+#[derive(Debug, PartialEq, Eq)]
+enum CpuTier {
+    /// Graph plus legend with temperatures.
+    Wide,
+    /// Graph plus legend without temperatures.
+    Medium,
+    /// Graph only, no legend.
+    Narrow,
+    /// One text sparkline row per core.
+    Tiny,
+}
+
+fn cpu_tier(width: u16, height: u16, has_temps: bool) -> CpuTier {
+    if height <= 2 || width < MIN_GRAPH_W {
+        CpuTier::Tiny
+    } else if has_temps && legend_fits(width, 19) {
+        CpuTier::Wide
+    } else if legend_fits(width, 12) {
+        CpuTier::Medium
+    } else {
+        CpuTier::Narrow
+    }
+}
+
+fn has_temps(snap: &CpuSnapshot) -> bool {
+    #[cfg(target_os = "linux")]
+    return snap.per_core_temp.iter().any(|t| t.is_some());
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = snap;
+        false
+    }
+}
 
 /// Max cores shown in the compact sidebar slot; also the page-scroll step so
 /// one PageDown always advances by exactly one visible window.
@@ -206,22 +241,43 @@ impl CpuComponent {
         first: usize,
         last: usize,
     ) {
-        #[cfg(target_os = "linux")]
-        let has_temps = snap.per_core_temp.iter().any(|t| t.is_some());
-        #[cfg(not(target_os = "linux"))]
-        let has_temps = false;
-
-        let label_inner_w: u16 = if has_temps { 18 } else { 11 };
-        let label_total_w: u16 = label_inner_w + 1;
-
-        if area.width <= label_total_w + 4 {
-            return;
-        }
+        let has_temps = has_temps(snap);
+        let tier = cpu_tier(area.width, area.height, has_temps);
 
         let actual_visible = (last - first).min(area.height as usize);
         if actual_visible == 0 {
             return;
         }
+
+        if tier == CpuTier::Tiny {
+            let prefix_w = 11; // "cpu{:<2}{:>4.0}% "
+            let spark_w = (area.width as usize).saturating_sub(prefix_w);
+            let lines: Vec<Line> = filtered[first..first + actual_visible]
+                .iter()
+                .map(|&idx| {
+                    let hist: Vec<f64> = self.per_core_history[idx].iter().copied().collect();
+                    let text = format!(
+                        "cpu{:<2}{:>4.0}% {}",
+                        idx,
+                        snap.per_core[idx],
+                        spark_text(&hist, 100.0, spark_w)
+                    );
+                    Line::styled(text, Style::new().fg(core_color(idx)))
+                })
+                .collect();
+            frame.render_widget(ratatui::widgets::Paragraph::new(lines), area);
+            return;
+        }
+
+        let label_inner_w: u16 = match tier {
+            CpuTier::Wide => 18,
+            _ => 11,
+        };
+        let label_total_w: u16 = if tier == CpuTier::Narrow {
+            0
+        } else {
+            label_inner_w + 1
+        };
 
         let mut chart = HistoryChart::new(HISTORY_LEN)
             .y_bounds(0.0, 100.0)
@@ -236,13 +292,16 @@ impl CpuComponent {
             );
         }
 
-        for &core_idx in &filtered[first..first + actual_visible] {
+        for &core_idx in filtered[first..first + actual_visible]
+            .iter()
+            .filter(|_| tier != CpuTier::Narrow)
+        {
             let pct = snap.per_core[core_idx];
             #[allow(unused_mut)] // push_str only on linux
             let mut text = format!("cpu{:<2}{:>5.1}%", core_idx, pct);
 
             #[cfg(target_os = "linux")]
-            if has_temps {
+            if tier == CpuTier::Wide {
                 if let Some(Some(temp)) = snap.per_core_temp.get(core_idx) {
                     text.push_str(&format!(" {:>4.0}°C", temp));
                 } else {
@@ -478,18 +537,9 @@ impl Component for CpuComponent {
             return self.draw_compact_background(frame, area);
         }
 
-        let title_rest = match &self.state {
-            CpuState::FilterMode { input } => format!("PU [/{}▌]", input),
-            CpuState::Normal if !self.filter.is_empty() => format!("PU [/{}]", self.filter),
-            CpuState::Normal => "PU".to_string(),
-        };
-        let block = panel_block(self.focus_key, &title_rest, &self.palette, self.focused);
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
-
-        if self.latest.is_none() {
-            return Ok(());
-        }
+        // Block borders don't depend on the title, so size the layout first;
+        // the chart tier (known only from `chart_area`) shapes the title.
+        let inner = panel_block(self.focus_key, "PU", &self.palette, self.focused).inner(area);
 
         // Show stats header only in fullscreen when there's enough room.
         let show_header = self.is_fullscreen && inner.height >= 6;
@@ -504,6 +554,35 @@ impl Component for CpuComponent {
             Constraint::Length(gpu_h),
         ])
         .areas(inner);
+
+        let aggregate = match &self.latest {
+            Some(snap)
+                if matches!(
+                    cpu_tier(chart_area.width, chart_area.height, has_temps(snap)),
+                    CpuTier::Narrow | CpuTier::Tiny
+                ) =>
+            {
+                Some(snap.aggregate)
+            }
+            _ => None,
+        };
+        let base = match aggregate {
+            Some(agg) => format!("PU {:.0}%", agg),
+            None => "PU".to_string(),
+        };
+        let title_rest = match &self.state {
+            CpuState::FilterMode { input } => format!("{} [/{}▌]", base, input),
+            CpuState::Normal if !self.filter.is_empty() => {
+                format!("{} [/{}]", base, self.filter)
+            }
+            CpuState::Normal => base,
+        };
+        let block = panel_block(self.focus_key, &title_rest, &self.palette, self.focused);
+        frame.render_widget(block, area);
+
+        if self.latest.is_none() {
+            return Ok(());
+        }
 
         // Precompute mutable state before borrowing `self.latest`.
         let filtered = self.filtered_cores();
@@ -863,5 +942,84 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
         assert_snapshot!("cpu_fullscreen_gpu", terminal.backend());
+    }
+
+    fn has_content(buf: &ratatui::buffer::Buffer, rect: Rect) -> bool {
+        (rect.top()..rect.bottom())
+            .any(|y| (rect.left()..rect.right()).any(|x| buf[(x, y)].symbol() != " "))
+    }
+
+    /// Render at `w`x`h` with `snap` (if any) and return the terminal.
+    fn render_at(snap: Option<CpuSnapshot>, w: u16, h: u16) -> Terminal<TestBackend> {
+        let mut comp = CpuComponent::default();
+        if let Some(snap) = snap {
+            comp.update(&Action::CpuUpdate(snap)).unwrap();
+        }
+        let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        terminal
+    }
+
+    fn inner_of(w: u16, h: u16) -> Rect {
+        Rect::new(1, 1, w - 2, h - 2)
+    }
+
+    #[test]
+    fn tier_ladder() {
+        assert_eq!(cpu_tier(40, 8, true), CpuTier::Wide);
+        assert_eq!(cpu_tier(26, 8, true), CpuTier::Medium); // sidebar @ 80 cols
+        assert_eq!(cpu_tier(20, 8, false), CpuTier::Narrow);
+        assert_eq!(cpu_tier(40, 2, false), CpuTier::Tiny);
+        assert_eq!(cpu_tier(10, 8, false), CpuTier::Tiny);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn cpu_tier_wide() {
+        // inner 32x8 with temps -> Wide
+        let t = render_at(Some(CpuSnapshot::stub_linux()), 34, 10);
+        assert!(has_content(t.backend().buffer(), inner_of(34, 10)));
+        assert_snapshot!("cpu_tier_wide", t.backend());
+    }
+
+    #[test]
+    fn cpu_tier_medium() {
+        // inner 26x8, no temps -> Medium
+        let t = render_at(Some(CpuSnapshot::stub()), 28, 10);
+        assert!(has_content(t.backend().buffer(), inner_of(28, 10)));
+        assert_snapshot!("cpu_tier_medium", t.backend());
+    }
+
+    #[test]
+    fn cpu_tier_narrow() {
+        // inner 20x8 -> Narrow (20 < 12 + 11)
+        let t = render_at(Some(CpuSnapshot::stub()), 22, 10);
+        assert!(has_content(t.backend().buffer(), inner_of(22, 10)));
+        assert_snapshot!("cpu_tier_narrow", t.backend());
+    }
+
+    #[test]
+    fn cpu_tier_tiny() {
+        // inner 28x2 -> Tiny (height <= 2)
+        let t = render_at(Some(CpuSnapshot::stub()), 30, 4);
+        assert!(has_content(t.backend().buffer(), inner_of(30, 4)));
+        assert_snapshot!("cpu_tier_tiny", t.backend());
+    }
+
+    #[test]
+    fn cpu_tiers_render_without_data() {
+        for (w, h) in [(34, 10), (28, 10), (22, 10), (30, 4), (8, 4)] {
+            render_at(None, w, h);
+        }
+    }
+
+    #[test]
+    fn cpu_tiny_with_filter_matching_nothing() {
+        let mut comp = CpuComponent::default();
+        comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
+            .unwrap();
+        comp.filter = "zzz".into();
+        let mut terminal = Terminal::new(TestBackend::new(30, 4)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
     }
 }
