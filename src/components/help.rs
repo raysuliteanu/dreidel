@@ -160,11 +160,7 @@ impl Component for HelpComponent {
         ];
 
         // --- Footer ---
-        let config_path = tilde_path(
-            dirs::config_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join("dreidel/config.toml"),
-        );
+        let config_path = tilde_path(crate::config::default_config_path());
         let log_path = tilde_path(
             dirs::data_dir()
                 .unwrap_or_else(|| PathBuf::from("."))

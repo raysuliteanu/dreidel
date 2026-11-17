@@ -143,14 +143,32 @@ pub struct Config {
     pub keybindings: KeyBindings,
 }
 
+/// Default config file path: `$XDG_CONFIG_HOME/dreidel/config.toml`, else
+/// `~/.config/dreidel/config.toml`, on every platform (including macOS, where
+/// `dirs::config_dir()` would point at `~/Library/Application Support`).
+pub fn default_config_path() -> std::path::PathBuf {
+    config_path_from(std::env::var_os("XDG_CONFIG_HOME"), dirs::home_dir())
+}
+
+fn config_path_from(
+    xdg_config_home: Option<std::ffi::OsString>,
+    home: Option<std::path::PathBuf>,
+) -> std::path::PathBuf {
+    // Like the XDG spec (and `dirs` on Linux), ignore a relative XDG_CONFIG_HOME.
+    xdg_config_home
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .or_else(|| home.map(|h| h.join(".config")))
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("dreidel/config.toml")
+}
+
 impl Config {
-    /// Load config from XDG path (~/.config/dreidel/config.toml).
+    /// Load config from [`default_config_path`] (or `path` when given).
     /// Returns default config if the file does not exist.
     pub fn load(path: Option<&std::path::Path>) -> anyhow::Result<Self> {
         use anyhow::Context;
-        let default_path = dirs::config_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join("dreidel/config.toml");
+        let default_path = default_config_path();
         let path = path.unwrap_or(&default_path);
         if !path.exists() {
             return Ok(Self::default());
@@ -165,6 +183,30 @@ impl Config {
 mod tests {
     use super::*;
     use crate::theme::Theme;
+
+    #[test]
+    fn config_path_uses_absolute_xdg_config_home() {
+        let p = config_path_from(Some("/xdg".into()), Some("/home/u".into()));
+        assert_eq!(p, std::path::PathBuf::from("/xdg/dreidel/config.toml"));
+    }
+
+    #[test]
+    fn config_path_ignores_relative_xdg_config_home() {
+        let p = config_path_from(Some("rel".into()), Some("/home/u".into()));
+        assert_eq!(
+            p,
+            std::path::PathBuf::from("/home/u/.config/dreidel/config.toml")
+        );
+    }
+
+    #[test]
+    fn config_path_defaults_to_dot_config_under_home() {
+        let p = config_path_from(None, Some("/Users/u".into()));
+        assert_eq!(
+            p,
+            std::path::PathBuf::from("/Users/u/.config/dreidel/config.toml")
+        );
+    }
 
     #[test]
     fn default_config_is_valid() {

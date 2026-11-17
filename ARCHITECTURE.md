@@ -27,7 +27,7 @@ The crate is a dual lib+bin package:
 | `anyhow`                         | Application-level error context                                                     |
 | `strum`                          | Derive `Display`, `EnumString`, `EnumIter` on enums (`ComponentId`, `LayoutPreset`) |
 | `chrono`                         | Timestamps in `SysSnapshot`                                                         |
-| `dirs`                           | XDG config directory path resolution                                                |
+| `dirs`                           | Home and data directory resolution (config path, log file)                          |
 | `tracing` / `tracing-subscriber` | Structured logging to `dreidel/dreidel.log` in the platform data dir                |
 | `futures`                        | `StreamExt`/`FutureExt` used in the `Tui` event loop                                |
 | `insta`                          | Snapshot testing for component `draw()` output                                      |
@@ -366,7 +366,9 @@ faults, context-switch counters, open file-descriptor count, swap usage, and
 
 ### `src/config.rs` — `Config`
 
-Loaded from `~/.config/dreidel/config.toml` (XDG). All fields have serde defaults
+Loaded from `config::default_config_path()`: `$XDG_CONFIG_HOME/dreidel/config.toml`,
+else `~/.config/dreidel/config.toml`, on every platform (not
+`dirs::config_dir()`, which is `~/Library/Application Support` on macOS). All fields have serde defaults
 so a missing file is fine. Sub-structs:
 
 - `GeneralConfig` — `refresh_rate_ms` (humantime), `thread_refresh_ms` (humantime,

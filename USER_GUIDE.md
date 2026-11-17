@@ -734,9 +734,10 @@ dreidel --config ~/my-dreidel.toml
 
 ## 8. Configuration File
 
-dreidel reads `~/.config/dreidel/config.toml` on startup. All
-sections and keys are optional; omit anything to keep the
-built-in default.
+dreidel reads `~/.config/dreidel/config.toml` on startup, on both
+Linux and macOS (`$XDG_CONFIG_HOME/dreidel/config.toml` if
+`XDG_CONFIG_HOME` is set). All sections and keys are optional; omit
+anything to keep the built-in default.
 
 Run `dreidel --init-config` to generate a commented template you
 can save and edit.
