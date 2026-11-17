@@ -2,11 +2,17 @@
 
 //! Background stats collector.
 //!
-//! [`spawn_collector`] launches a Tokio task that refreshes system metrics on
-//! two intervals: a fast cadence (default 1 s) for CPU, memory, network, disk,
-//! and process data, and a slow cadence (default 5 s) for per-process thread
-//! enumeration (Linux only). Each tick builds snapshot structs and sends them
-//! as [`Action`] variants on a bounded `mpsc` channel.
+//! [`spawn_collector`] launches a dedicated OS thread, running a current-thread
+//! Tokio runtime, that refreshes system metrics on two intervals: a fast
+//! cadence (default 1 s) for CPU, GPU, memory, network, disk, and process data,
+//! and a slow cadence (default 5 s) for per-process thread enumeration (Linux
+//! and macOS). Each tick builds snapshot structs and sends them as [`Action`]
+//! variants on a bounded `mpsc` channel.
+//!
+//! The collector gets its own thread because `sysinfo::Gpus` is not `Send` on
+//! Linux (it holds `dlopen`ed NVML/Vulkan handles), and because sysinfo's
+//! refreshes are blocking calls that shouldn't occupy a worker of the main
+//! runtime.
 
 pub mod snapshots;
 pub use snapshots::*;
@@ -15,7 +21,9 @@ pub use snapshots::*;
 mod macos;
 
 use crate::action::Action;
-use sysinfo::{Components, DiskKind, Disks, Networks, System};
+use sysinfo::{
+    Components, DiskKind, Disks, Gpus, Networks, ProcessRefreshKind, RefreshKind, System,
+};
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, warn};
@@ -26,10 +34,19 @@ pub fn spawn_collector(
     refresh_ms: u64,
     thread_refresh_ms: u64,
 ) {
-    tokio::spawn(run_collector(tx, token, refresh_ms, thread_refresh_ms));
+    std::thread::Builder::new()
+        .name("stats-collector".into())
+        .spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .expect("current-thread runtime with only the time driver should always build");
+            rt.block_on(run_collector(tx, token, refresh_ms, thread_refresh_ms));
+        })
+        .expect("spawning the stats collector thread should not fail");
 }
 
-pub async fn run_collector(
+async fn run_collector(
     tx: Sender<Action>,
     token: CancellationToken,
     refresh_ms: u64,
@@ -42,6 +59,10 @@ pub async fn run_collector(
             return;
         }
     };
+    // GPUs are optional: a failure here just means no GPU rows in the CPU panel.
+    let mut gpus = Gpus::new_with_refreshed_list()
+        .inspect_err(|e| warn!("stats collector: GPU enumeration unavailable: {e}"))
+        .ok();
 
     let mut fast_interval = tokio::time::interval(std::time::Duration::from_millis(refresh_ms));
     let mut slow_interval =
@@ -73,10 +94,22 @@ pub async fn run_collector(
             _ = fast_interval.tick() => false,
         };
 
-        sys.refresh_all();
+        // Equivalent to `refresh_all()` minus per-process GPU stats, which the
+        // `gpu` feature would otherwise collect (a `/proc/<pid>/fd` walk per
+        // process on Linux) and which nothing displays.
+        sys.refresh_specifics(
+            RefreshKind::everything().with_processes(
+                ProcessRefreshKind::everything()
+                    .without_gpu_usage()
+                    .without_gpu_memory(),
+            ),
+        );
         nets.refresh(false);
         disks.refresh(false);
         components.refresh(false);
+        if let Some(gpus) = gpus.as_mut() {
+            gpus.refresh(false);
+        }
 
         // Enumerate threads only on the slow cadence.
         #[cfg(target_os = "linux")]
@@ -94,11 +127,12 @@ pub async fn run_collector(
         proc_snap.processes.extend(cached_threads.clone());
 
         #[cfg(target_os = "linux")]
-        let cpu_snap = build_cpu(&sys, &components, &mut prev_cpu_total);
+        let mut cpu_snap = build_cpu(&sys, &components, &mut prev_cpu_total);
         #[cfg(target_os = "macos")]
-        let cpu_snap = macos::build_cpu_macos(&sys, &mut prev_cpu_ticks);
+        let mut cpu_snap = macos::build_cpu_macos(&sys, &mut prev_cpu_ticks);
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-        let cpu_snap = build_cpu_stub(&sys, &components);
+        let mut cpu_snap = build_cpu_stub(&sys, &components);
+        cpu_snap.gpus = gpus.as_ref().map(build_gpus).unwrap_or_default();
 
         let actions = [
             Action::SysUpdate(build_sys(&sys)),
@@ -131,6 +165,17 @@ fn init_sources() -> Result<(System, Networks, Disks, Components), sysinfo::Erro
         Disks::new_with_refreshed_list()?,
         Components::new_with_refreshed_list()?,
     ))
+}
+
+fn build_gpus(gpus: &Gpus) -> Vec<GpuInfo> {
+    gpus.iter()
+        .map(|g| GpuInfo {
+            name: g.model().unwrap_or("GPU").to_owned(),
+            usage: g.usage(),
+            mem_used: g.used_memory(),
+            mem_total: g.total_memory(),
+        })
+        .collect()
 }
 
 fn build_sys(_sys: &System) -> SysSnapshot {
@@ -237,6 +282,7 @@ fn build_cpu(
         physical_core_count: read_physical_core_count(),
         governor: read_cpu_governor(),
         cpu_modes,
+        gpus: Vec::new(),
     }
 }
 
@@ -256,6 +302,7 @@ fn build_cpu_stub(sys: &System, _components: &Components) -> CpuSnapshot {
         physical_core_count: None,
         governor: None,
         cpu_modes: None,
+        gpus: Vec::new(),
     }
 }
 
@@ -758,7 +805,7 @@ fn map_process_status(status: sysinfo::ProcessStatus) -> ProcessStatus {
         sysinfo::ProcessStatus::Zombie => ProcessStatus::Zombie,
         sysinfo::ProcessStatus::Dead => ProcessStatus::Dead,
         // Variants not yet mapped — update if sysinfo adds states we care about.
-        // As of sysinfo 0.38: Tracing, Wakekill, Waking, Parked, LockBlocked,
+        // As of sysinfo 0.40: Tracing, Wakekill, Waking, Parked, LockBlocked,
         // UninterruptibleDiskSleep, Suspended, Unknown fall through here.
         _ => ProcessStatus::Unknown,
     }
@@ -774,7 +821,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(32);
         let token = tokio_util::sync::CancellationToken::new();
         let child = token.child_token();
-        tokio::spawn(run_collector(tx, child, 100, 500));
+        spawn_collector(tx, child, 100, 500);
 
         let mut got_cpu = false;
         for _ in 0..20 {

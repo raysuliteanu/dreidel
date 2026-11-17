@@ -47,7 +47,7 @@ nix = { version = "0.32.0", features = ["signal"] }
 ratatui = "0.30.2"
 serde = { version = "1.0.229", features = ["derive"] }
 strum = { version = "0.28.0", features = ["derive"] }
-sysinfo = "0.40.4"
+sysinfo = { version = "0.40.4", features = ["gpu"] }
 termbg = "0.6.2"
 tokio = { version = "1.54.1", features = [
     "sync",

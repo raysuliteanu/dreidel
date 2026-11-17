@@ -67,6 +67,23 @@ pub struct CpuSnapshot {
     /// Aggregate CPU time breakdown by mode. `None` until two samples have been collected
     /// for delta calculation, and `None` on platforms where tick data is unavailable.
     pub cpu_modes: Option<CpuModes>,
+    /// One entry per GPU reported by `sysinfo::Gpus`, in sysinfo's order.
+    /// Empty when no GPU is found or the platform is unsupported.
+    pub gpus: Vec<GpuInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GpuInfo {
+    /// `Gpu::model()`, e.g. "Apple M4 Pro"; "GPU" if sysinfo returns `None`.
+    pub name: String,
+    /// `Gpu::usage()` in percent. `None` when the driver doesn't expose it
+    /// (some Linux GPUs; always `Some` on macOS).
+    pub usage: Option<f32>,
+    /// `Gpu::used_memory()` in bytes (dedicated VRAM). Always `None` on macOS,
+    /// where the GPU shares system memory.
+    pub mem_used: Option<u64>,
+    /// `Gpu::total_memory()` in bytes. Always `None` on macOS.
+    pub mem_total: Option<u64>,
 }
 
 #[cfg(any(test, feature = "test-stubs"))]
@@ -85,6 +102,7 @@ impl CpuSnapshot {
             per_core_temp: vec![None; 4],
             governor: None,
             cpu_modes: None,
+            gpus: Vec::new(),
         }
     }
 

@@ -38,7 +38,7 @@ The crate is a dual lib+bin package:
 sysinfo / procfs
       │
       ▼
-stats/mod.rs  run_collector()          (background Tokio task)
+stats/mod.rs  run_collector()          (own thread, current-thread Tokio runtime)
       │  builds *Snapshot structs
       │  sends Action::*Update variants
       ▼
@@ -59,8 +59,8 @@ ratatui Terminal::draw()               (double-buffered, diff-based)
 crossterm / stdout
 ```
 
-The stats collector runs in a dedicated Tokio task and is the sole writer to the
-channel. `App` is the sole reader. If the channel is full the collector drops the
+The stats collector runs on a dedicated OS thread (with its own current-thread
+Tokio runtime) and is the sole writer to the channel. `App` is the sole reader. If the channel is full the collector drops the
 update (backpressure) rather than blocking the render loop.
 
 ## Module Reference
@@ -223,7 +223,7 @@ Builder API: `HistoryChart::new(history_len)` followed by `.series()`, `.y_bound
 
 | File             | Component            | Key behaviour                                                    |
 | ---------------- | -------------------- | ---------------------------------------------------------------- |
-| `cpu.rs`         | `CpuComponent`       | Per-core line chart + aggregate gauge; per-core temps on Linux; reports `preferred_height` |
+| `cpu.rs`         | `CpuComponent`       | Per-core line chart + aggregate gauge; per-core temps on Linux; one usage-gauge row per GPU; reports `preferred_height` |
 | `net.rs`         | `NetComponent`       | Per-interface RX/TX table; uses shared `ListView` + `FilterInput` |
 | `disk.rs`        | `DiskComponent`      | Per-device capacity/usage table (mount, size, free, %used/%free); detail view shows read/write rate graph; uses shared `ListView` + `FilterInput` |
 | `process/mod.rs` | `ProcessComponent`   | Sortable, filterable process table; flat view shows processes only (threads excluded); tree view shows threads as children of their owning process; `k` on a thread row kills the owning process |
@@ -249,11 +249,15 @@ component so key handlers use the correct column order.
 
 #### `stats/mod.rs` — Collector
 
-`spawn_collector(tx, token, refresh_ms, thread_refresh_ms)` launches a Tokio task
-that runs two `tokio::time::interval` timers:
+`spawn_collector(tx, token, refresh_ms, thread_refresh_ms)` spawns a
+`stats-collector` OS thread that runs `run_collector` on a current-thread Tokio
+runtime. A dedicated thread is required because `sysinfo::Gpus` is not `Send` on
+Linux (it holds `dlopen`ed NVML/Vulkan handles), and it also keeps sysinfo's
+blocking refreshes off the main runtime's workers. The collector runs two
+`tokio::time::interval` timers:
 
 - **Fast interval** (`refresh_ms`, default 1s) — refreshes `sysinfo::System`,
-  `Networks`, `Disks`, and `Components`, then builds and sends six
+  `Networks`, `Disks`, `Components`, and `Gpus`, then builds and sends six
   `Action::*Update` variants. Process data includes the full process list but
   *not* per-process threads.
 - **Slow interval** (`thread_refresh_ms`, default 5s) — enumerates threads for
@@ -262,6 +266,16 @@ that runs two `tokio::time::interval` timers:
 
 This dual-interval design avoids thousands of `/proc` syscalls on every tick while
 still keeping thread data visible in the UI.
+
+`System` is refreshed with `refresh_specifics` rather than `refresh_all`, to exclude
+per-process GPU stats: with sysinfo's `gpu` feature enabled, `refresh_all` would
+walk `/proc/<pid>/fd` for every process on every tick, for data nothing displays.
+
+**GPU** (cfg-free) — `build_gpus` maps each `sysinfo::Gpu` to a `GpuInfo` (model,
+usage, used/total VRAM) in `CpuSnapshot::gpus`. sysinfo reads IOKit
+`IOAccelerator` on macOS (usage only; memory is always `None` because the GPU
+shares system memory) and sysfs, NVML, or Vulkan on Linux. If GPU enumeration
+fails, the collector logs a warning and `gpus` stays empty.
 
 Platform-specific metrics are collected behind three-way `cfg` guards:
 `linux` / `macos` / `not(any(linux, macos))`. The third arm provides

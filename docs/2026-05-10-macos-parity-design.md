@@ -300,7 +300,10 @@ build_gpus(gpus: &Gpus) -> Vec<GpuInfo>
     Map each sysinfo Gpu to GpuInfo (model → name, usage, used/total_memory).
 ```
 
-The collector owns a `Gpus` next to `Networks`/`Disks`/`Components`. It is created
+The collector owns a `Gpus` next to `Networks`/`Disks`/`Components`. Because `Gpus`
+is not `Send` on Linux (it holds `dlopen`ed NVML/Vulkan handles), the collector
+moved from a `tokio::spawn`ed task to a dedicated `stats-collector` OS thread running
+a current-thread Tokio runtime. It is created
 with `Gpus::new_with_refreshed_list()`; unlike those, a failure here is not fatal —
 log at `warn!` and keep `None`, so the collector runs and `gpus` stays empty. On each
 fast tick call `gpus.refresh(false)`, then set `cpu_snap.gpus = build_gpus(&gpus)`
@@ -354,9 +357,9 @@ Fields: name, a gauge of `usage`, the percentage, and `mem_used / mem_total` whe
 are `Some`. When `usage` is `None` the gauge and percentage render as `n/a`. The same
 row is used in compact and fullscreen views.
 
-Additionally push the first GPU's `usage` as a second `HistoryChart` series on the
-existing aggregate graph so GPU load is visible over time without a separate panel
-(skipped when that GPU has no `usage`).
+*Deferred:* GPU usage history on a chart. The CPU panel has no aggregate graph to
+add a series to — its chart is one line per core, with legend rows tied to cores —
+so this needs its own design (e.g. a GPU line in the fullscreen view).
 
 `preferred_height` grows by `gpus.len()`. The rows are cfg-free — they key on the
 `Vec` — so platform differences come only from what `sysinfo` reports.

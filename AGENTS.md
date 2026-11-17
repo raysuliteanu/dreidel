@@ -40,10 +40,12 @@ The codebase is a dual lib+bin crate (`src/lib.rs` exports modules;
 ``` sysinfo → stats/mod.rs (spawn_collector) → Action::*Update →
 App::handle_actions → Component::update() → render() → draw() ```
 
-`spawn_collector` owns a `sysinfo::System` in a background Tokio task and sends
-typed `Action::*Update(Snapshot)` variants on a bounded `mpsc::Sender<Action>`.
+`spawn_collector` owns a `sysinfo::System` on a dedicated `stats-collector` OS
+thread (current-thread Tokio runtime; needed because `sysinfo::Gpus` is not
+`Send` on Linux) and sends typed `Action::*Update(Snapshot)` variants on a
+bounded `mpsc::Sender<Action>`.
 It runs two intervals: a **fast interval** (`refresh_rate_ms`, default 1s) that
-refreshes CPU/mem/net/disk/process data, and a **slow interval**
+refreshes CPU/GPU/mem/net/disk/process data, and a **slow interval**
 (`thread_refresh_ms`, default 5s) that enumerates per-process threads via
 `/proc/<pid>/task/` on Linux and `libproc` on macOS. Thread entries are cached
 between slow ticks and merged into every `ProcUpdate`. `App` is the sole receiver.

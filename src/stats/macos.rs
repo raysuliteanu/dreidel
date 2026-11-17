@@ -146,6 +146,7 @@ pub fn build_cpu_macos(sys: &System, prev_ticks: &mut Option<MacosCpuTicks>) -> 
         physical_core_count: read_physical_core_count(),
         governor: None,
         cpu_modes,
+        gpus: Vec::new(),
     }
 }
 

@@ -16,14 +16,16 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders},
+    widgets::{Block, Borders, Gauge},
 };
 
 use crate::{
     action::Action,
     components::chart::{HistoryChart, LegendEntry},
-    components::{Component, FilterEvent, FilterInput, HISTORY_LEN, SERIES_COLORS, keyed_title},
-    stats::snapshots::CpuSnapshot,
+    components::{
+        Component, FilterEvent, FilterInput, HISTORY_LEN, SERIES_COLORS, fmt_bytes, keyed_title,
+    },
+    stats::snapshots::{CpuSnapshot, GpuInfo},
     theme::ColorPalette,
 };
 
@@ -100,6 +102,10 @@ impl CpuComponent {
 
     fn num_cores(&self) -> usize {
         self.latest.as_ref().map(|s| s.per_core.len()).unwrap_or(0)
+    }
+
+    fn num_gpus(&self) -> usize {
+        self.latest.as_ref().map(|s| s.gpus.len()).unwrap_or(0)
     }
 
     /// Returns the indices of cores whose label matches the active filter.
@@ -253,6 +259,68 @@ impl CpuComponent {
         frame.render_widget(chart, area);
     }
 
+    /// One row per GPU: name, usage gauge, percentage, and VRAM when reported.
+    /// Names and memory labels are padded to the widest entry so gauges align.
+    fn draw_gpus(&self, frame: &mut Frame, area: Rect, gpus: &[GpuInfo]) {
+        let dim = Style::new().fg(self.palette.dim);
+        let val = Style::new().fg(self.palette.fg);
+
+        let mem_labels: Vec<String> = gpus
+            .iter()
+            .map(|g| match (g.mem_used, g.mem_total) {
+                (Some(used), Some(total)) => {
+                    format!("  {} / {}", fmt_bytes(used), fmt_bytes(total))
+                }
+                _ => String::new(),
+            })
+            .collect();
+        let name_w = gpus
+            .iter()
+            .map(|g| g.name.chars().count())
+            .max()
+            .unwrap_or(0);
+        let mem_w = mem_labels
+            .iter()
+            .map(|s| s.chars().count())
+            .max()
+            .unwrap_or(0);
+
+        let rows = Layout::vertical(vec![Constraint::Length(1); gpus.len()]).split(area);
+        for ((gpu, mem), &row) in gpus.iter().zip(&mem_labels).zip(rows.iter()) {
+            // "GPU " + name + gap | gauge | "  7%" + memory
+            let [label_area, gauge_area, value_area] = Layout::horizontal([
+                Constraint::Length(4 + name_w as u16 + 1),
+                Constraint::Fill(1),
+                Constraint::Length(6 + mem_w as u16),
+            ])
+            .areas(row);
+
+            frame.render_widget(
+                Line::from(vec![
+                    Span::styled("GPU ", dim),
+                    Span::styled(gpu.name.clone(), val),
+                ]),
+                label_area,
+            );
+
+            let (ratio, pct) = match gpu.usage {
+                Some(u) => ((u as f64 / 100.0).clamp(0.0, 1.0), format!("{u:>5.0}%")),
+                None => (0.0, format!("{:>6}", "n/a")),
+            };
+            frame.render_widget(
+                Gauge::default()
+                    .ratio(ratio)
+                    .label("")
+                    .gauge_style(Style::new().fg(self.palette.accent)),
+                gauge_area,
+            );
+            frame.render_widget(
+                Line::from(vec![Span::styled(pct, val), Span::styled(mem.clone(), dim)]),
+                value_area,
+            );
+        }
+    }
+
     fn restore_compact_snapshot(&mut self) {
         if let Some(snap) = self.compact_snapshot.take() {
             self.scroll_offset = snap.scroll_offset;
@@ -305,10 +373,11 @@ impl Component for CpuComponent {
     }
 
     fn preferred_height(&self) -> Option<u16> {
-        // 2 borders + one row per visible (filtered) core, capped at COMPACT_MAX_CORES.
-        // Use filtered_cores_len() to avoid allocating a Vec on every layout pass.
+        // 2 borders + one row per visible (filtered) core, capped at COMPACT_MAX_CORES,
+        // + one row per GPU. Use filtered_cores_len() to avoid allocating a Vec on
+        // every layout pass.
         let cores = self.filtered_cores_len().min(COMPACT_MAX_CORES);
-        Some(2 + cores as u16)
+        Some(2 + cores as u16 + self.num_gpus() as u16)
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<Option<Action>> {
@@ -435,11 +504,13 @@ impl Component for CpuComponent {
         let show_header = self.is_fullscreen && inner.height >= 6;
         let header_h: u16 = if show_header { 2 } else { 0 };
         let sep_h: u16 = if show_header { 1 } else { 0 };
+        let gpu_h = self.num_gpus() as u16;
 
-        let [header_area, sep_area, chart_area] = Layout::vertical([
+        let [header_area, sep_area, chart_area, gpu_area] = Layout::vertical([
             Constraint::Length(header_h),
             Constraint::Length(sep_h),
             Constraint::Fill(1),
+            Constraint::Length(gpu_h),
         ])
         .areas(inner);
 
@@ -462,6 +533,10 @@ impl Component for CpuComponent {
                     .border_style(Style::new().fg(self.palette.border)),
                 sep_area,
             );
+        }
+
+        if !snap.gpus.is_empty() {
+            self.draw_gpus(frame, gpu_area, &snap.gpus);
         }
 
         if chart_area.height == 0 || chart_area.width == 0 {
@@ -741,5 +816,61 @@ mod tests {
             overlay.contains("/0"),
             "overlay pass must show live filter '/0'; got: {overlay}"
         );
+    }
+
+    /// Three GPUs covering each rendering path: macOS-style (usage, no memory),
+    /// Linux-style (usage and VRAM), and a driver that reports no usage.
+    fn stub_with_gpus() -> CpuSnapshot {
+        CpuSnapshot {
+            gpus: vec![
+                GpuInfo {
+                    name: "Apple M4 Pro".into(),
+                    usage: Some(7.0),
+                    mem_used: None,
+                    mem_total: None,
+                },
+                GpuInfo {
+                    name: "RTX 4070".into(),
+                    usage: Some(12.0),
+                    mem_used: Some(1_200_000_000),
+                    mem_total: Some(12_000_000_000),
+                },
+                GpuInfo {
+                    name: "Unknown".into(),
+                    usage: None,
+                    mem_used: None,
+                    mem_total: None,
+                },
+            ],
+            ..CpuSnapshot::stub()
+        }
+    }
+
+    #[test]
+    fn preferred_height_includes_gpu_rows() {
+        let mut comp = CpuComponent::default();
+        comp.update(&Action::CpuUpdate(stub_with_gpus())).unwrap();
+        // 2 borders + 4 cores + 3 GPUs
+        assert_eq!(comp.preferred_height(), Some(9));
+    }
+
+    #[test]
+    fn renders_gpu_rows() {
+        let mut comp = CpuComponent::default();
+        comp.update(&Action::CpuUpdate(stub_with_gpus())).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(70, 9)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        assert_snapshot!("cpu_with_gpu", terminal.backend());
+    }
+
+    #[test]
+    fn renders_gpu_rows_fullscreen() {
+        let mut comp = CpuComponent::default();
+        comp.update(&Action::CpuUpdate(stub_with_gpus())).unwrap();
+        comp.update(&Action::ToggleFullScreen).unwrap();
+        comp.begin_overlay_render();
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        assert_snapshot!("cpu_fullscreen_gpu", terminal.backend());
     }
 }

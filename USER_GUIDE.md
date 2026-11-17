@@ -178,6 +178,17 @@ for smooth resolution.
   the percentages when sensor data is available.
 - Up to 8 cores are visible in compact mode; use `↑`/`↓` or
   `PageUp`/`PageDown` to scroll.
+- One row per detected GPU appears below the chart (macOS and
+  Linux), in both compact and fullscreen views: model name, a
+  usage gauge, the usage percentage, and used/total VRAM where the
+  driver reports it. macOS GPUs share system memory, so no memory
+  figure is shown there. When a driver doesn't report usage the row
+  shows `n/a`. Machines with no detected GPU show no rows.
+
+  ```
+  │GPU Apple M4 Pro ██                             7%                  │
+  │GPU RTX 4070     ███                           12%  1.2 GB / 12.0 GB│
+  ```
 
 **Filtering** (`/` when focused):
 
