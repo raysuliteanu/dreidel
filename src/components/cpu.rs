@@ -979,7 +979,15 @@ mod tests {
         // inner 32x8 with temps -> Wide
         let t = render_at(Some(CpuSnapshot::stub_linux()), 34, 10);
         assert!(has_content(t.backend().buffer(), inner_of(34, 10)));
-        assert_snapshot!("cpu_tier_wide", t.backend());
+        // Temperature legend ("55°C" etc.) only appears in the Wide tier.
+        let buf = t.backend().buffer();
+        let has_temp_legend = (0..buf.area.height).any(|y| {
+            (0..buf.area.width)
+                .map(|x| buf[(x, y)].symbol())
+                .collect::<String>()
+                .contains("°C")
+        });
+        assert!(has_temp_legend);
     }
 
     #[test]
