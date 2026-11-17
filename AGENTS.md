@@ -155,8 +155,9 @@ within one file before saving, or temporarily add `#[allow(dead_code)]` /
 `#[cfg(target_os = "linux")]` guards per-core and package temperature
 (CpuSnapshot) and swap activity (MemSnapshot, `/proc/vmstat`). Thread
 enumeration is guarded for both Linux (`/proc/<pid>/task/`) and macOS (`libproc`).
-- Logs go to `~/.local/share/dreidel/dreidel.log` (never stderr — would corrupt
-the TUI).
+- Logs go to `~/.local/share/dreidel/dreidel.log` on Linux and
+`~/Library/Application Support/dreidel/dreidel.log` on macOS (never stderr —
+would corrupt the TUI).
 - Config file: `~/.config/dreidel/config.toml` (TOML, all fields optional with
 serde defaults).
 - Process flat view shows **processes only** — threads are excluded. Threads

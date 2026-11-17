@@ -829,7 +829,8 @@ help       = "?"   # Open help overlay
 | High CPU use by dreidel | Increase `--refresh-rate` to `2s` or more |
 | Temperature not shown | Temperature collection requires Linux and a supported CPU sensor |
 
-**Log file:** `~/.local/share/dreidel/dreidel.log`
+**Log file:** `~/.local/share/dreidel/dreidel.log` on Linux,
+`~/Library/Application Support/dreidel/dreidel.log` on macOS
 
 Run with `-vv` for verbose output when diagnosing unexpected
 behavior.

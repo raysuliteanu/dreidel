@@ -28,7 +28,7 @@ The crate is a dual lib+bin package:
 | `strum`                          | Derive `Display`, `EnumString`, `EnumIter` on enums (`ComponentId`, `LayoutPreset`) |
 | `chrono`                         | Timestamps in `SysSnapshot`                                                         |
 | `dirs`                           | XDG config directory path resolution                                                |
-| `tracing` / `tracing-subscriber` | Structured logging to `~/.local/share/dreidel/dreidel.log`                          |
+| `tracing` / `tracing-subscriber` | Structured logging to `dreidel/dreidel.log` in the platform data dir                |
 | `futures`                        | `StreamExt`/`FutureExt` used in the `Tui` event loop                                |
 | `insta`                          | Snapshot testing for component `draw()` output                                      |
 
@@ -445,5 +445,7 @@ to avoid ambiguity.
 
 ## Logging
 
-All log output goes to `~/.local/share/dreidel/dreidel.log` via `tracing`. Nothing
+All log output goes to `dreidel/dreidel.log` under the platform data directory
+(`dirs::data_dir()`: `~/.local/share` on Linux, `~/Library/Application Support` on
+macOS) via `tracing`. Nothing
 is written to stderr — stderr would corrupt the alternate-screen TUI.
