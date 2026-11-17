@@ -43,7 +43,12 @@ skip-tree = []
 [advisories]
 version = 2
 # Deny crates with known security advisories.
-ignore = []
+ignore = [
+    # humantime is unmaintained (no safe upgrade); replace with jiff — see TODO.md.
+    { id = "RUSTSEC-2026-0542", reason = "unmaintained, no replacement yet; migrating to jiff (TODO.md)" },
+    # chrono is unmaintained (no safe upgrade); replace with jiff — see TODO.md.
+    { id = "RUSTSEC-2026-0543", reason = "unmaintained, no replacement yet; migrating to jiff (TODO.md)" },
+]
 
 [sources]
 unknown-registry = "warn"
