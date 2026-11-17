@@ -137,7 +137,7 @@ impl Component for StatusBarComponent {
 }
 
 impl StatusBarComponent {
-    /// Bottom-border hints for dropped panels, e.g. ` +[N]et +[D]isk `, styled
+    /// Bottom-border hints for dropped panels in drop order, e.g. ` +[D]isk +[N]et `, styled
     /// like the panel titles (`keyed_title`).
     fn dropped_hints(&self) -> Line<'static> {
         let accent_bold = Style::new()

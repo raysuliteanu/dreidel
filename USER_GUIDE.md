@@ -178,6 +178,18 @@ for smooth resolution.
   the percentages when sensor data is available.
 - Up to 8 cores are visible in compact mode; use `↑`/`↓` or
   `PageUp`/`PageDown` to scroll.
+- In narrow panels the chart gives up detail to stay readable.
+  First the legend drops the temperatures. When even the
+  percentage legend would leave too little room for the graph, the
+  legend is dropped and the overall CPU usage is shown in the
+  title instead (e.g. `[C]PU 35%`). In tiny panels (very narrow or
+  only one or two rows high) the chart is replaced by one text line
+  per core with its usage and a small sparkline:
+
+  ```
+  │cpu0   42% ▃                │
+  │cpu1   18% ▂                │
+  ```
 - One row per detected GPU appears below the chart (macOS and
   Linux), in both compact and fullscreen views: model name, a
   usage gauge, the usage percentage, and used/total VRAM where the
@@ -265,6 +277,10 @@ enough vertical space.
 When fullscreen or in a wide layout (≥ 100 columns), additional
 columns appear: TX packets/sec, RX packets/sec, and IP address.
 
+When the panel is too narrow for both, the aggregate chart and the
+per-interface detail chart drop their TX/RX legend so the graph
+keeps enough room.
+
 **Filtering** (`/` when focused):
 
 Press `/` to enter filter mode. The title changes to show the query:
@@ -287,13 +303,15 @@ fullscreen automatically.
 │  TX: 1.2 MB/s   RX: 3.4 MB/s   Pkts TX: 890/s   RX: 1.2k/s             │
 │  IP: 192.168.1.42                                                      │
 │                                                                        │
-│  (full-height TX/RX line chart, last 100 samples)                      │
+│  (full-height TX/RX line chart, up to the last 600 samples)            │
 │                                                                        │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
 Two datasets are plotted simultaneously (TX and RX) in distinct
-colors. The Y-axis auto-scales to the current peak rate. Press
+colors. The Y-axis auto-scales to the current peak rate. How much
+history is shown depends on the chart width: about two samples per
+column, up to the 600 samples dreidel keeps. Press
 `Esc` or `q` to return to the list (and exit fullscreen if it was
 auto-opened).
 
@@ -339,7 +357,8 @@ Press `Enter` to keep the filter or `Esc` to clear it.
 
 Same behavior as Network: pressing `Enter` opens a full-height
 read/write graph for the selected device, auto-entering fullscreen
-if needed. Press `Esc` or `q` to return.
+if needed. As with Network, the graph drops its legend when the
+panel is too narrow for both. Press `Esc` or `q` to return.
 
 ### 3.4 Process
 
@@ -647,7 +666,7 @@ is never dropped. Once a panel has been dropped, the remaining panels
 are rearranged to fill the space.
 
 Each dropped panel is listed in the status bar's bottom border as a
-hint such as `+[N]et +[D]isk`. Press that panel's focus key to bring
+hint such as `+[D]isk +[N]et` (listed in drop order). Press that panel's focus key to bring
 it back. It becomes the focused panel, and another panel is dropped
 in its place if needed. Tab and Shift-Tab skip dropped panels.
 

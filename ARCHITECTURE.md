@@ -221,12 +221,18 @@ so it can be used with `frame.render_widget()`.
 
 The widget handles:
 
-1. **Right-alignment** — series data is shifted so the newest sample sits at the
-   right edge of the graph (`x = history_len - 1`).
+1. **Visible window and right-alignment** — `visible_window(area_width, legend_width,
+   history_len)` sizes the plotted window to about two samples per graph column
+   (braille cells are two dots wide), clamped to `[1, history_len]`; panels retain
+   `HISTORY_LEN` (600) samples. Only the last `window` samples are plotted, shifted
+   so the newest sits at the right edge of the graph (`x = window`).
 2. **Braille rendering** — each series is drawn as a `GraphType::Line` with
    `Marker::Braille` for high-density sparklines.
 3. **Area splitting** — the widget splits its area into graph + legend using
    `Layout::horizontal` with `Constraint::Fill(1)` + `Constraint::Length(legend_width)`.
+   `legend_width(0)` means no legend or separator: the graph spans the full area
+   (used by narrow panels; `legend_fits` decides whether a legend leaves at least
+   `MIN_GRAPH_W` graph columns).
 4. **Legend separator** — a `Borders::LEFT` block between graph and legend acts as
    the y-axis line.
 5. **Anchored legend entries** — `LegendEntry` items are placed at `Top` (stacks
