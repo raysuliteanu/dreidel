@@ -352,7 +352,13 @@ impl DiskComponent {
             .map(|d| d.name.len())
             .max()
             .unwrap_or(0)
-            .max("Device".len());
+            .max("Device".len())
+            // Leave room for " Mount" and Size; longer names are truncated.
+            .min(
+                (inner.width as usize)
+                    .saturating_sub(1 + "Mount".len() + SIZE_W as usize)
+                    .max("Device".len()),
+            );
         // Mount column: all remaining space after name, separator, and right-fixed columns.
         // Narrow panels drop trailing columns, in order %Free, %Used, Free, so
         // name, mount and total size stay readable and the row never overflows.
@@ -719,6 +725,26 @@ mod tests {
         let min = compact_text(24);
         assert!(min.contains("Size") && !min.contains("Free"), "{min}");
         assert!(min.contains("500.1 GB"), "{min}");
+    }
+
+    #[test]
+    fn compact_long_device_name_keeps_size_visible_at_min_width() {
+        let snap = DiskSnapshot {
+            devices: vec![DiskDeviceSnapshot {
+                total_space: 500_107_862_016,
+                ..device("nvme0n1p2")
+            }],
+        };
+        let mut comp = DiskComponent::default();
+        comp.update(&Action::DiskUpdate(snap)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(24, 6)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        let buf = terminal.backend().buffer();
+        let header = rect_text(buf, Rect::new(0, 1, 24, 1));
+        let row = rect_text(buf, Rect::new(0, 2, 24, 1));
+        assert!(header.trim_end().ends_with("Size│"), "{header}");
+        assert!(row.trim_end().ends_with("500.1 GB│"), "{row}");
+        assert!(row.contains("..."), "long name truncated: {row}");
     }
 
     #[test]
