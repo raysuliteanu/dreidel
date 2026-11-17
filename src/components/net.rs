@@ -22,7 +22,7 @@ use crate::{
     action::Action,
     components::{
         Component, FilterEvent, FilterInput, HISTORY_LEN, ListView, MIN_CHART_FLOOR, PAGE_SCROLL,
-        chart::{HistoryChart, LegendEntry},
+        chart::{HistoryChart, LegendEntry, visible_window, window_max},
         fmt_rate, fmt_rate_col, handle_detail_key, panel_block, truncate,
     },
     stats::snapshots::NetSnapshot,
@@ -538,13 +538,8 @@ impl NetComponent {
             return;
         }
 
-        let y_max = tx_hist
-            .iter()
-            .chain(rx_hist.iter())
-            .copied()
-            .max()
-            .unwrap_or(0)
-            .max(MIN_CHART_FLOOR) as f64;
+        let window = visible_window(area.width, NET_LEGEND_W, HISTORY_LEN);
+        let y_max = window_max([tx_hist, rx_hist], window).max(MIN_CHART_FLOOR) as f64;
 
         let tx_cur = tx_hist.back().copied().unwrap_or(0);
         let rx_cur = rx_hist.back().copied().unwrap_or(0);
@@ -698,13 +693,8 @@ impl NetComponent {
             None => return Ok(()),
         };
 
-        let y_max = tx_hist
-            .iter()
-            .chain(rx_hist.iter())
-            .copied()
-            .max()
-            .unwrap_or(0)
-            .max(MIN_CHART_FLOOR) as f64;
+        let window = visible_window(sections[2].width, NET_LEGEND_W, HISTORY_LEN);
+        let y_max = window_max([tx_hist, rx_hist], window).max(MIN_CHART_FLOOR) as f64;
 
         let tx_cur = tx_hist.back().copied().unwrap_or(0);
         let rx_cur = rx_hist.back().copied().unwrap_or(0);
@@ -943,6 +933,27 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(60, 14)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
         assert_snapshot!("net_list_with_chart", terminal.backend());
+    }
+
+    #[test]
+    fn compact_chart_ignores_spike_outside_window() {
+        let mut comp = NetComponent::default();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
+        comp.agg_history = (VecDeque::new(), VecDeque::new());
+        // One old spike followed by 100 steady samples. At 40 columns the chart
+        // area is 38 wide (inside the border), minus the 13-col legend = 25
+        // graph columns = 50 visible samples, so the spike is out of window and
+        // must not set the y-scale.
+        comp.agg_history.0.push_back(10_000_000);
+        comp.agg_history.1.push_back(10_000_000);
+        for _ in 0..100 {
+            comp.agg_history.0.push_back(2_000);
+            comp.agg_history.1.push_back(2_000);
+        }
+        let mut terminal = Terminal::new(TestBackend::new(40, 20)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        assert_snapshot!("net_compact_chart_ignores_spike", terminal.backend());
     }
 
     #[test]

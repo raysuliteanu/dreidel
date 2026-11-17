@@ -18,7 +18,7 @@
 //! ```rust,ignore
 //! use crate::components::chart::{HistoryChart, LegendEntry};
 //!
-//! let chart = HistoryChart::new(100)        // 100-sample history window
+//! let chart = HistoryChart::new(HISTORY_LEN)        // max retained samples
 //!     .series(cpu_history.iter().copied(), Style::new().fg(Color::Cyan))
 //!     .y_bounds(0.0, 100.0)
 //!     .legend_width(12)                     // 11 inner chars + 1 border
@@ -37,6 +37,8 @@
 //! - **`Center`** — placed at the vertical midpoint (used by Disk mid-scale label)
 //! - **`Bottom`** — stacks upward from the last row (used by Disk zero label)
 
+use std::collections::VecDeque;
+
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
@@ -45,6 +47,24 @@ use ratatui::{
     text::Span,
     widgets::{Axis, Block, Borders, Chart, Dataset, GraphType, Widget},
 };
+
+/// Number of history samples that fit in the graph area: two per column
+/// (braille cells are two dots wide), clamped to `[1, history_len]`.
+pub(crate) fn visible_window(area_width: u16, legend_width: u16, history_len: usize) -> usize {
+    (area_width.saturating_sub(legend_width) as usize * 2).clamp(1, history_len)
+}
+
+/// Maximum over the last `window` samples of each series; 0 if all are empty.
+pub(crate) fn window_max<'a>(
+    series: impl IntoIterator<Item = &'a VecDeque<u64>>,
+    window: usize,
+) -> u64 {
+    series
+        .into_iter()
+        .flat_map(|s| s.iter().rev().take(window).copied())
+        .max()
+        .unwrap_or(0)
+}
 
 /// Vertical anchor for a legend entry inside the right-side label column.
 #[derive(Debug, Clone, Copy)]
@@ -167,11 +187,13 @@ impl Widget for HistoryChart<'_> {
                 .areas(area);
 
         // --- Right-align series data ---
-        let x_max = self.history_len as f64;
+        let window = visible_window(area.width, self.legend_width, self.history_len);
+        let x_max = window as f64;
         let aligned: Vec<Vec<(f64, f64)>> = self
             .series
             .iter()
             .map(|(data, _)| {
+                let data = &data[data.len().saturating_sub(window)..];
                 let n = data.len();
                 data.iter()
                     .enumerate()
@@ -250,6 +272,28 @@ mod tests {
 
     fn border() -> Style {
         Style::new().fg(Color::Gray)
+    }
+
+    #[test]
+    fn window_is_two_samples_per_graph_column() {
+        assert_eq!(visible_window(40, 11, 600), 58);
+    }
+
+    #[test]
+    fn window_capped_by_history_len() {
+        assert_eq!(visible_window(400, 11, 600), 600);
+    }
+
+    #[test]
+    fn window_never_zero() {
+        assert_eq!(visible_window(5, 11, 600), 1);
+    }
+
+    #[test]
+    fn window_max_ignores_samples_outside_window() {
+        let a: VecDeque<u64> = [9_000, 1, 2, 3].into();
+        let b: VecDeque<u64> = [5, 4].into();
+        assert_eq!(window_max([&a, &b], 3), 5);
     }
 
     #[test]

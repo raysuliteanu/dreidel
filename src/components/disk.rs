@@ -22,7 +22,7 @@ use crate::{
     action::Action,
     components::{
         Component, FilterEvent, FilterInput, HISTORY_LEN, ListView, MIN_CHART_FLOOR, PAGE_SCROLL,
-        chart::{HistoryChart, LegendEntry},
+        chart::{HistoryChart, LegendEntry, visible_window, window_max},
         fmt_bytes, fmt_rate, handle_detail_key, panel_block, truncate,
     },
     stats::snapshots::DiskSnapshot,
@@ -562,13 +562,8 @@ impl DiskComponent {
             None => return Ok(()),
         };
 
-        let y_max = read_hist
-            .iter()
-            .chain(write_hist.iter())
-            .copied()
-            .max()
-            .unwrap_or(0)
-            .max(MIN_CHART_FLOOR) as f64;
+        let window = visible_window(sections[2].width, DISK_LEGEND_W, HISTORY_LEN);
+        let y_max = window_max([read_hist, write_hist], window).max(MIN_CHART_FLOOR) as f64;
 
         let chart = HistoryChart::new(HISTORY_LEN)
             .series(
@@ -961,6 +956,33 @@ mod tests {
             assert!(read.len() <= HISTORY_LEN);
             assert!(write.len() <= HISTORY_LEN);
         }
+    }
+
+    #[test]
+    fn disk_detail_ignores_spike_outside_window() {
+        let mut comp = DiskComponent::default();
+        comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
+            .unwrap();
+        let name = comp.history.keys().next().unwrap().clone();
+        // One old spike followed by 100 steady samples. At 60 columns the graph
+        // section is at most 58 wide, minus the 11-col legend leaves < 47 graph
+        // columns = < 94 visible samples (< 100), so the spike is out of window.
+        let (read, write) = comp.history.get_mut(&name).unwrap();
+        read.clear();
+        write.clear();
+        read.push_back(10_000_000);
+        write.push_back(10_000_000);
+        for _ in 0..100 {
+            read.push_back(2_000);
+            write.push_back(2_000);
+        }
+        comp.list_state.select(Some(0));
+        comp.handle_key_event(key(KeyCode::Enter)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        let out = format!("{}", terminal.backend());
+        assert!(out.contains(&fmt_rate(2_000)), "{out}");
+        assert!(!out.contains("10.0 MB/s"), "{out}");
     }
 
     #[test]

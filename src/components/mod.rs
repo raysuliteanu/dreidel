@@ -160,7 +160,7 @@ pub(crate) fn truncate(s: &str, max: usize) -> String {
 }
 
 /// History ring-buffer length shared by all sparkline/chart components.
-pub(crate) const HISTORY_LEN: usize = 100;
+pub(crate) const HISTORY_LEN: usize = 600;
 
 /// SI byte-unit thresholds shared across all formatting helpers.
 const MB: u64 = 1_000_000;
