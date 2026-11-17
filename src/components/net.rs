@@ -22,7 +22,7 @@ use crate::{
     action::Action,
     components::{
         Component, FilterEvent, FilterInput, HISTORY_LEN, ListView, MIN_CHART_FLOOR, PAGE_SCROLL,
-        chart::{HistoryChart, LegendEntry, visible_window, window_max},
+        chart::{HistoryChart, LegendEntry, legend_fits, visible_window, window_max},
         fmt_rate, fmt_rate_col, handle_detail_key, panel_block, truncate,
     },
     stats::snapshots::NetSnapshot,
@@ -534,18 +534,23 @@ impl NetComponent {
     /// Draws the compact aggregate TX/RX chart used in the list view header.
     fn draw_compact_chart(&self, frame: &mut Frame, area: Rect) {
         let (tx_hist, rx_hist) = &self.agg_history;
-        if tx_hist.is_empty() || area.width <= NET_LEGEND_W + 4 {
+        if tx_hist.is_empty() {
             return;
         }
 
-        let window = visible_window(area.width, NET_LEGEND_W, HISTORY_LEN);
+        let legend_w = if legend_fits(area.width, NET_LEGEND_W) {
+            NET_LEGEND_W
+        } else {
+            0
+        };
+        let window = visible_window(area.width, legend_w, HISTORY_LEN);
         let y_max = window_max([tx_hist, rx_hist], window).max(MIN_CHART_FLOOR) as f64;
 
         let tx_cur = tx_hist.back().copied().unwrap_or(0);
         let rx_cur = rx_hist.back().copied().unwrap_or(0);
         let rate_w = (NET_LEGEND_W - 1) as usize - 3; // inner width minus "TX " prefix
 
-        let chart = HistoryChart::new(HISTORY_LEN)
+        let mut chart = HistoryChart::new(HISTORY_LEN)
             .series(
                 tx_hist.iter().map(|&v| v as f64),
                 Style::new().fg(self.palette.accent),
@@ -555,17 +560,20 @@ impl NetComponent {
                 Style::new().fg(self.palette.highlight),
             )
             .y_bounds(0.0, y_max)
-            .legend_width(NET_LEGEND_W)
-            .legend(LegendEntry::top(Span::styled(
-                format!("TX {:>rate_w$}", fmt_rate(tx_cur)),
-                Style::new().fg(self.palette.accent),
-            )))
-            .legend(LegendEntry::top(Span::styled(
-                format!("RX {:>rate_w$}", fmt_rate(rx_cur)),
-                Style::new().fg(self.palette.highlight),
-            )))
+            .legend_width(legend_w)
             .border_style(Style::new().fg(self.palette.border))
             .axis_style(Style::new().fg(self.palette.dim));
+        if legend_w > 0 {
+            chart = chart
+                .legend(LegendEntry::top(Span::styled(
+                    format!("TX {:>rate_w$}", fmt_rate(tx_cur)),
+                    Style::new().fg(self.palette.accent),
+                )))
+                .legend(LegendEntry::top(Span::styled(
+                    format!("RX {:>rate_w$}", fmt_rate(rx_cur)),
+                    Style::new().fg(self.palette.highlight),
+                )));
+        }
 
         frame.render_widget(chart, area);
     }
@@ -693,14 +701,19 @@ impl NetComponent {
             None => return Ok(()),
         };
 
-        let window = visible_window(sections[2].width, NET_LEGEND_W, HISTORY_LEN);
+        let legend_w = if legend_fits(sections[2].width, NET_LEGEND_W) {
+            NET_LEGEND_W
+        } else {
+            0
+        };
+        let window = visible_window(sections[2].width, legend_w, HISTORY_LEN);
         let y_max = window_max([tx_hist, rx_hist], window).max(MIN_CHART_FLOOR) as f64;
 
         let tx_cur = tx_hist.back().copied().unwrap_or(0);
         let rx_cur = rx_hist.back().copied().unwrap_or(0);
         let rate_w = (NET_LEGEND_W - 1) as usize - 3;
 
-        let chart = HistoryChart::new(HISTORY_LEN)
+        let mut chart = HistoryChart::new(HISTORY_LEN)
             .series(
                 tx_hist.iter().map(|&v| v as f64),
                 Style::new().fg(self.palette.accent),
@@ -710,17 +723,20 @@ impl NetComponent {
                 Style::new().fg(self.palette.highlight),
             )
             .y_bounds(0.0, y_max)
-            .legend_width(NET_LEGEND_W)
-            .legend(LegendEntry::top(Span::styled(
-                format!("TX {:>rate_w$}", fmt_rate(tx_cur)),
-                Style::new().fg(self.palette.accent),
-            )))
-            .legend(LegendEntry::top(Span::styled(
-                format!("RX {:>rate_w$}", fmt_rate(rx_cur)),
-                Style::new().fg(self.palette.highlight),
-            )))
+            .legend_width(legend_w)
             .border_style(Style::new().fg(self.palette.border))
             .axis_style(Style::new().fg(self.palette.dim));
+        if legend_w > 0 {
+            chart = chart
+                .legend(LegendEntry::top(Span::styled(
+                    format!("TX {:>rate_w$}", fmt_rate(tx_cur)),
+                    Style::new().fg(self.palette.accent),
+                )))
+                .legend(LegendEntry::top(Span::styled(
+                    format!("RX {:>rate_w$}", fmt_rate(rx_cur)),
+                    Style::new().fg(self.palette.highlight),
+                )));
+        }
 
         frame.render_widget(chart, sections[2]);
 
@@ -784,6 +800,64 @@ mod tests {
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn rect_text(buf: &ratatui::buffer::Buffer, rect: Rect) -> String {
+        (rect.top()..rect.bottom())
+            .flat_map(|y| (rect.left()..rect.right()).map(move |x| (x, y)))
+            .map(|(x, y)| buf[(x, y)].symbol().to_string())
+            .collect()
+    }
+
+    fn has_content(buf: &ratatui::buffer::Buffer, rect: Rect) -> bool {
+        (rect.top()..rect.bottom())
+            .any(|y| (rect.left()..rect.right()).any(|x| buf[(x, y)].symbol() != " "))
+    }
+
+    /// Fill a (tx, rx) history pair with a ramp so the chart has something to draw.
+    fn ramp(h: &mut (VecDeque<u64>, VecDeque<u64>)) {
+        for i in 0..60u64 {
+            h.0.push_back(10_000 + i * 1_000);
+            h.1.push_back(5_000 + i * 500);
+        }
+    }
+
+    #[test]
+    fn net_compact_chart_narrow() {
+        let mut comp = NetComponent::default();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
+        ramp(&mut comp.agg_history);
+        // 22 wide: inner 20 < NET_LEGEND_W (13) + MIN_GRAPH_W (12) = 25, so no
+        // legend. 14 high: inner 12 >= 9, so the chart is inner rows 0-3.
+        let mut terminal = Terminal::new(TestBackend::new(22, 14)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        assert!(has_content(
+            terminal.backend().buffer(),
+            Rect::new(1, 1, 20, 4)
+        ));
+        // The legend rows would carry a "/s" rate; none means the graph is full-width.
+        assert!(!rect_text(terminal.backend().buffer(), Rect::new(1, 1, 20, 4)).contains("/s"));
+    }
+
+    #[test]
+    fn net_detail_narrow() {
+        let mut comp = NetComponent::default();
+        comp.update(&Action::NetUpdate(NetSnapshot::stub()))
+            .unwrap();
+        let name = comp.history.keys().next().unwrap().clone();
+        ramp(comp.history.get_mut(&name).unwrap());
+        comp.view = ListView::Detail { name };
+        // 22x16: inner 20x14. Graph section is below 3 stats rows + 1 separator
+        // (inner rows 4..12, 8 high) and is 20 wide < 25, so no legend.
+        let mut terminal = Terminal::new(TestBackend::new(22, 16)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        assert!(has_content(
+            terminal.backend().buffer(),
+            Rect::new(1, 5, 20, 8)
+        ));
+        // The legend rows would carry a "/s" rate; none means the graph is full-width.
+        assert!(!rect_text(terminal.backend().buffer(), Rect::new(1, 5, 20, 8)).contains("/s"));
     }
 
     fn interface(name: &str) -> InterfaceSnapshot {

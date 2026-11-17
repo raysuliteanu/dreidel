@@ -22,7 +22,7 @@ use crate::{
     action::Action,
     components::{
         Component, FilterEvent, FilterInput, HISTORY_LEN, ListView, MIN_CHART_FLOOR, PAGE_SCROLL,
-        chart::{HistoryChart, LegendEntry, visible_window, window_max},
+        chart::{HistoryChart, LegendEntry, legend_fits, visible_window, window_max},
         fmt_bytes, fmt_rate, handle_detail_key, panel_block, truncate,
     },
     stats::snapshots::DiskSnapshot,
@@ -562,10 +562,15 @@ impl DiskComponent {
             None => return Ok(()),
         };
 
-        let window = visible_window(sections[2].width, DISK_LEGEND_W, HISTORY_LEN);
+        let legend_w = if legend_fits(sections[2].width, DISK_LEGEND_W) {
+            DISK_LEGEND_W
+        } else {
+            0
+        };
+        let window = visible_window(sections[2].width, legend_w, HISTORY_LEN);
         let y_max = window_max([read_hist, write_hist], window).max(MIN_CHART_FLOOR) as f64;
 
-        let chart = HistoryChart::new(HISTORY_LEN)
+        let mut chart = HistoryChart::new(HISTORY_LEN)
             .series(
                 read_hist.iter().map(|&v| v as f64),
                 Style::new().fg(self.palette.accent),
@@ -575,21 +580,24 @@ impl DiskComponent {
                 Style::new().fg(self.palette.highlight),
             )
             .y_bounds(0.0, y_max)
-            .legend_width(DISK_LEGEND_W)
-            .legend(LegendEntry::top(Span::styled(
-                fmt_rate(y_max as u64),
-                Style::new().fg(self.palette.dim),
-            )))
-            .legend(LegendEntry::center(Span::styled(
-                fmt_rate(y_max as u64 / 2),
-                Style::new().fg(self.palette.dim),
-            )))
-            .legend(LegendEntry::bottom(Span::styled(
-                "0".to_string(),
-                Style::new().fg(self.palette.dim),
-            )))
+            .legend_width(legend_w)
             .border_style(Style::new().fg(self.palette.border))
             .axis_style(Style::new().fg(self.palette.dim));
+        if legend_w > 0 {
+            chart = chart
+                .legend(LegendEntry::top(Span::styled(
+                    fmt_rate(y_max as u64),
+                    Style::new().fg(self.palette.dim),
+                )))
+                .legend(LegendEntry::center(Span::styled(
+                    fmt_rate(y_max as u64 / 2),
+                    Style::new().fg(self.palette.dim),
+                )))
+                .legend(LegendEntry::bottom(Span::styled(
+                    "0".to_string(),
+                    Style::new().fg(self.palette.dim),
+                )));
+        }
 
         frame.render_widget(chart, sections[2]);
 
@@ -631,6 +639,43 @@ mod tests {
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn rect_text(buf: &ratatui::buffer::Buffer, rect: Rect) -> String {
+        (rect.top()..rect.bottom())
+            .flat_map(|y| (rect.left()..rect.right()).map(move |x| (x, y)))
+            .map(|(x, y)| buf[(x, y)].symbol().to_string())
+            .collect()
+    }
+
+    fn has_content(buf: &ratatui::buffer::Buffer, rect: Rect) -> bool {
+        (rect.top()..rect.bottom())
+            .any(|y| (rect.left()..rect.right()).any(|x| buf[(x, y)].symbol() != " "))
+    }
+
+    #[test]
+    fn disk_detail_narrow() {
+        let mut comp = DiskComponent::default();
+        comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
+            .unwrap();
+        let name = comp.history.keys().next().unwrap().clone();
+        let (read, write) = comp.history.get_mut(&name).unwrap();
+        for i in 0..60u64 {
+            read.push_back(10_000 + i * 1_000);
+            write.push_back(5_000 + i * 500);
+        }
+        comp.view = ListView::Detail { name };
+        // 20x16: inner 18x14. Graph section is below 4 stats rows + 1 separator
+        // (inner rows 5..13, 8 high, above the summary line) and is 18 wide <
+        // DISK_LEGEND_W (11) + MIN_GRAPH_W (12) = 23, so no legend.
+        let mut terminal = Terminal::new(TestBackend::new(20, 16)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        assert!(has_content(
+            terminal.backend().buffer(),
+            Rect::new(1, 6, 18, 8)
+        ));
+        // The legend rows would carry a "/s" rate; none means the graph is full-width.
+        assert!(!rect_text(terminal.backend().buffer(), Rect::new(1, 6, 18, 8)).contains("/s"));
     }
 
     fn device(name: &str) -> DiskDeviceSnapshot {
