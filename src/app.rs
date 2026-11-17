@@ -546,7 +546,7 @@ impl App {
                     layout::{Constraint, Layout},
                     style::{Modifier, Style},
                     text::{Line, Span},
-                    widgets::{Block, Borders, Clear, Paragraph},
+                    widgets::{Block, BorderType, Borders, Clear, Paragraph},
                 };
                 const W: u16 = 26;
                 const H: u16 = 3;
@@ -565,6 +565,7 @@ impl App {
                 frame.render_widget(Clear, popup);
                 let block = Block::default()
                     .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
                     .border_style(Style::new().fg(palette.accent));
                 let inner = block.inner(popup);
                 frame.render_widget(block, popup);

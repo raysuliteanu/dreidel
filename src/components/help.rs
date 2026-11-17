@@ -12,7 +12,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph},
 };
 use std::path::PathBuf;
 
@@ -95,6 +95,7 @@ impl Component for HelpComponent {
                     .add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
             .border_style(Style::new().fg(self.palette.accent));
         let inner = block.inner(popup);
         frame.render_widget(block, popup);

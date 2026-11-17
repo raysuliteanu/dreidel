@@ -21,7 +21,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, Paragraph},
+    widgets::{Block, BorderType, Borders, Gauge, Paragraph},
 };
 
 use crate::{
@@ -96,6 +96,7 @@ impl Component for StatusBarComponent {
                     .add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
             .border_style(Style::new().fg(self.palette.border));
         let inner = block.inner(area);
         frame.render_widget(block, area);

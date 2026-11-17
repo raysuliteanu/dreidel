@@ -23,7 +23,7 @@ use crate::{
     action::Action,
     components::chart::{HistoryChart, LegendEntry},
     components::{
-        Component, FilterEvent, FilterInput, HISTORY_LEN, SERIES_COLORS, fmt_bytes, keyed_title,
+        Component, FilterEvent, FilterInput, HISTORY_LEN, SERIES_COLORS, fmt_bytes, panel_block,
     },
     stats::snapshots::{CpuSnapshot, GpuInfo},
     theme::ColorPalette,
@@ -478,21 +478,12 @@ impl Component for CpuComponent {
             return self.draw_compact_background(frame, area);
         }
 
-        let border_color = if self.focused {
-            self.palette.accent
-        } else {
-            self.palette.border
-        };
         let title_rest = match &self.state {
             CpuState::FilterMode { input } => format!("PU [/{}▌]", input),
             CpuState::Normal if !self.filter.is_empty() => format!("PU [/{}]", self.filter),
             CpuState::Normal => "PU".to_string(),
         };
-        let title: Line = keyed_title(self.focus_key, &title_rest, &self.palette);
-        let block = Block::default()
-            .title(title)
-            .borders(Borders::ALL)
-            .border_style(Style::new().fg(border_color));
+        let block = panel_block(self.focus_key, &title_rest, &self.palette, self.focused);
         let inner = block.inner(area);
         frame.render_widget(block, area);
 

@@ -14,7 +14,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders},
+    widgets::{Block, BorderType, Borders},
 };
 use strum::{Display, EnumIter};
 
@@ -234,10 +234,8 @@ pub(crate) fn handle_detail_key(key: KeyEvent, is_fullscreen: bool, view: &mut L
     }
 }
 
-/// Build the focused/unfocused border block used by list panels (Net, Disk).
-///
-/// Shared between `NetComponent` and `DiskComponent` — identical implementation.
-pub(crate) fn list_border_block(
+/// Build the focused/unfocused rounded border block used by all main panels.
+pub(crate) fn panel_block(
     focus_key: char,
     rest: &str,
     palette: &ColorPalette,
@@ -251,6 +249,7 @@ pub(crate) fn list_border_block(
     Block::default()
         .title(keyed_title(focus_key, rest, palette))
         .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
         .border_style(Style::new().fg(border_color))
 }
 

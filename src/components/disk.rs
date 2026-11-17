@@ -23,7 +23,7 @@ use crate::{
     components::{
         Component, FilterEvent, FilterInput, HISTORY_LEN, ListView, MIN_CHART_FLOOR, PAGE_SCROLL,
         chart::{HistoryChart, LegendEntry},
-        fmt_bytes, fmt_rate, handle_detail_key, list_border_block, truncate,
+        fmt_bytes, fmt_rate, handle_detail_key, panel_block, truncate,
     },
     stats::snapshots::DiskSnapshot,
     theme::ColorPalette,
@@ -325,7 +325,7 @@ impl DiskComponent {
     }
 
     fn border_block(&self, rest: &str) -> Block<'static> {
-        list_border_block(self.focus_key, rest, &self.palette, self.focused)
+        panel_block(self.focus_key, rest, &self.palette, self.focused)
     }
 
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {

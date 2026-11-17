@@ -23,7 +23,7 @@ use ratatui::{
 
 use crate::{
     action::Action,
-    components::{Component, PAGE_SCROLL, fmt_bytes, fmt_rate_col, keyed_title},
+    components::{Component, PAGE_SCROLL, fmt_bytes, fmt_rate_col, panel_block},
     config::ProcessConfig,
     stats::snapshots::ProcessEntry,
     theme::ColorPalette,
@@ -610,15 +610,7 @@ impl Component for ProcessComponent {
             }
             _ => format!("rocesses{tree_tag}"),
         };
-        let border_color = if self.focused {
-            self.palette.accent
-        } else {
-            self.palette.border
-        };
-        let block = Block::default()
-            .title(keyed_title(self.focus_key, &title_rest, &self.palette))
-            .borders(Borders::ALL)
-            .border_style(Style::new().fg(border_color));
+        let block = panel_block(self.focus_key, &title_rest, &self.palette, self.focused);
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
