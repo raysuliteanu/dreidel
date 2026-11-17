@@ -2,7 +2,7 @@
 source: src/components/disk.rs
 expression: terminal.backend()
 ---
-"╭ [I]DISK: sda ──────────────────────────────────────────────────────────────────────────╮"
+"╭ [I]ISK: sda ───────────────────────────────────────────────────────────────────────────╮"
 "│Mount:       /             Type:        SSD                                             │"
 "│FS:          ext4          RO:          no            Removable:   no                   │"
 "│Total:       500.1 GB      Free:        275.1 GB      Used:        45.0%                │"

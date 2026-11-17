@@ -330,9 +330,9 @@ impl DiskComponent {
 
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let title_rest = match &self.view {
-            ListView::Filter { input } => format!("DISK [/{}▌]", input),
-            _ if !self.filter.is_empty() => format!("DISK [/{}]", self.filter),
-            _ => "DISK".to_string(),
+            ListView::Filter { input } => format!("ISK [/{}▌]", input),
+            _ if !self.filter.is_empty() => format!("ISK [/{}]", self.filter),
+            _ => "ISK".to_string(),
         };
         let block = self.border_block(&title_rest);
         let inner = block.inner(area);
@@ -480,7 +480,7 @@ impl DiskComponent {
     }
 
     fn draw_detail(&mut self, frame: &mut Frame, area: Rect, name: &str) -> Result<()> {
-        let rest = format!("DISK: {name}");
+        let rest = format!("ISK: {name}");
         let block = self.border_block(&rest);
         let inner = block.inner(area);
         frame.render_widget(block, area);
