@@ -123,12 +123,12 @@ reassigned to a different component via config.
 `fit_layout(preset, area, overrides, hints, visible, focused) → FitResult` is what
 `App::render_to()` calls each frame. With all four components visible it tries the
 preset; with fewer it uses `compute_adaptive`. If any placed rect is below its
-`ComponentId::min_size()`, it first tries stacking the current components
-vertically at full width (`compute_stacked`: CPU at its preferred height, Net/Disk at
-their minimum height, Process taking the rest). Only if that also fails is a
-component dropped in `DROP_ORDER` (Disk, Net, Cpu, Process — never the focused one);
-the rest are re-laid out adaptively, and the stack is tried again, until all fit or
-one remains. `FitResult { placed, dropped }` drives drawing, `App::rendered_ids`
+`ComponentId::min_size()`, a component is dropped in `DROP_ORDER` (Disk, Net, Cpu,
+Process — never the focused one) and the rest are re-laid out adaptively, until all
+fit or one remains. Side-by-side is preferred while it fits: only when two
+components remain and the adaptive split fails does it try stacking them vertically
+at full width (`compute_stacked`: CPU at its preferred height, Net/Disk at their
+minimum height, Process taking the rest) before the final drop. `FitResult { placed, dropped }` drives drawing, `App::rendered_ids`
 (Tab cycling) and `App::dropped_ids` (focus keys still accepted; shown as `+[X]name`
 hints in the status bar's bottom border). A component that a slot override leaves
 without a slot stays hidden and is not reported as dropped.

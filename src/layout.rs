@@ -183,9 +183,10 @@ fn compute_stacked(
 /// never the `focused` one) until every placed rect meets its minimum size.
 ///
 /// With all four components visible the preset is tried first; after any drop, or
-/// with fewer than four visible, [`compute_adaptive`] is used. Before each drop a
-/// vertically stacked arrangement ([`compute_stacked`]) of the remaining candidates
-/// is tried. A single remaining component fills `area` even if it is below its
+/// with fewer than four visible, [`compute_adaptive`] is used. Only when two
+/// candidates remain and the adaptive split fails is a vertically stacked
+/// arrangement ([`compute_stacked`]) tried before the final drop, so side-by-side
+/// layouts win whenever they fit. A single remaining component fills `area` even if it is below its
 /// minimum.
 pub fn fit_layout(
     preset: LayoutPreset,
@@ -218,12 +219,15 @@ pub fn fit_layout(
     };
 
     while candidates.len() > 1 && !meets_min_size(&placed) {
-        // Before dropping anything, see whether stacking the candidates
-        // vertically (each full width) satisfies every minimum.
-        let stacked = compute_stacked(area, &candidates, hints);
-        if meets_min_size(&stacked) {
-            placed = stacked;
-            break;
+        // Side-by-side is preferred while it fits; only when the next drop would
+        // leave a single panel, try stacking the last two vertically (each full
+        // width) so a narrow terminal still shows two panels.
+        if candidates.len() == 2 {
+            let stacked = compute_stacked(area, &candidates, hints);
+            if meets_min_size(&stacked) {
+                placed = stacked;
+                break;
+            }
         }
         let Some(victim) = DROP_ORDER
             .iter()
@@ -536,13 +540,29 @@ mod tests {
 
     #[test]
     fn fit_drops_disk_first() {
-        // Sidebar at 80x16: the left column is ~28 wide (< 31 for Net), so the
-        // preset fails, and stacking all four needs 19 rows. The adaptive 3-panel
-        // [Cpu, Net, Process] layout puts Net in a 40-wide column with 8 rows
-        // (>= 31x5) and Process in 40x16, so it fits.
-        let r = fit(LayoutPreset::Sidebar, 80, 16, ComponentId::Process);
+        // Sidebar at 80x24: the left column is ~28 wide (< 31 for Net), so the
+        // preset fails. The adaptive 3-panel [Cpu, Net, Process] layout puts Net
+        // in a 40-wide column with 12 rows (>= 31x5) and Process in 40x24, so it fits.
+        let r = fit(LayoutPreset::Sidebar, 80, 24, ComponentId::Process);
         assert_eq!(r.dropped, vec![ComponentId::Disk]);
         assert_eq!(r.placed.len(), 3);
+    }
+
+    #[test]
+    fn fit_prefers_side_by_side_over_stacking_at_80x24() {
+        // Stacking all four would fit at 80x24 but leaves Process only a few rows;
+        // the side-by-side 3-panel layout must win and give Process full height.
+        let r = fit(LayoutPreset::Sidebar, 80, 24, ComponentId::Process);
+        let (_, process) = r
+            .placed
+            .iter()
+            .find(|(id, _)| *id == ComponentId::Process)
+            .expect("Process is focused so it is always placed");
+        assert_eq!(process.height, 24);
+        assert!(
+            process.width < 80,
+            "Process shares the width with another column"
+        );
     }
 
     #[test]
@@ -620,11 +640,11 @@ mod tests {
     fn fit_keeps_override_hidden_component_hidden_after_drops() {
         // Override LeftTop to Net so Cpu has no slot in the preset. When drops force
         // the adaptive layout, Cpu must not reappear (nor be reported as dropped).
-        // At 60x14 stacking [Net, Disk, Process] needs 16 rows, so Disk is dropped.
+        // At 60x20 the 30-wide adaptive columns are too narrow, so Disk is dropped.
         let overrides = SlotOverrides(HashMap::from([(SlotId::LeftTop, ComponentId::Net)]));
         let r = fit_layout(
             LayoutPreset::Sidebar,
-            Rect::new(0, 0, 60, 14),
+            Rect::new(0, 0, 60, 20),
             &overrides,
             &LayoutHints::default(),
             &all_four(),
