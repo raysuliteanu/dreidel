@@ -3,11 +3,11 @@ source: src/app.rs
 expression: terminal.backend()
 ---
 "╭ [P]rocesses ─────────────────────────╮"
-"│PID    UID    CPU%▼  MEM     Status   │"
-"│12345  ray    18.4   3.2%    running  │"
-"│1      root   0.1    0.1%    sleeping │"
-"│501    ray    0.1    0.0%    sleeping │"
-"│500    root   0.0    0.0%    sleeping │"
+"│PID     Name          CPU%▼   MEM     │"
+"│12345   firefox       18.4    3.2%    │"
+"│1       systemd       0.1     0.1%    │"
+"│501     bash          0.1     0.0%    │"
+"│500     sshd          0.0     0.0%    │"
 "│                                      │"
 "│                                      │"
 "│                                      │"

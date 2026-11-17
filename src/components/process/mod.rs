@@ -897,13 +897,14 @@ impl ProcessComponent {
         } else {
             "▲"
         };
-        // Below this width the Fill(1) Name column would shrink to a sliver (and
-        // the over-constrained fixed columns would solve nondeterministically),
-        // so the Name column is dropped.
+        // With all six columns the fixed widths plus spacers exceed the inner
+        // width below ~50 columns; the over-constrained table solved
+        // differently from run to run. In narrow mode drop UID and Status so
+        // the fixed columns fit and Name keeps the remainder.
         let narrow = area.width < 50;
         let header_cells = ["PID", "UID", "Name", "CPU%", "MEM", "Status"]
             .iter()
-            .filter(|h| !(narrow && **h == "Name"))
+            .filter(|h| !(narrow && matches!(**h, "UID" | "Status")))
             .map(|h| {
                 let label = match *h {
                     "CPU%" if self.sort_col == SortColumn::Cpu => format!("CPU%{}", dir_sym),
@@ -961,19 +962,21 @@ impl ProcessComponent {
                     p.status.to_string(),
                 ];
                 if narrow {
-                    cells.remove(2);
+                    // Drop Status (5) then UID (1), keeping indices valid.
+                    cells.remove(5);
+                    cells.remove(1);
                 }
                 Row::new(cells).style(Style::new().fg(cpu_color(p.cpu_pct, &self.palette)))
             })
             .collect();
 
         let widths: &[Constraint] = if narrow {
+            // PID(7) + Name(Fill) + CPU%(7) + MEM(8) + 3 spacers = 25 fixed.
             &[
-                Constraint::Length(6),
-                Constraint::Length(6),
-                Constraint::Length(6),
                 Constraint::Length(7),
                 Constraint::Fill(1),
+                Constraint::Length(7),
+                Constraint::Length(8),
             ]
         } else {
             &[
@@ -1459,6 +1462,25 @@ mod tests {
         assert!(
             !rendered.contains("VIRT") && !rendered.contains("Command"),
             "narrow area must not render extended columns; got: {rendered}"
+        );
+    }
+
+    /// At narrow widths the Name column is kept (UID and Status are dropped).
+    #[test]
+    fn narrow_width_keeps_name_column() {
+        let mut comp = ProcessComponent::default();
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+            .unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(40, 12)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        let rendered = format!("{:?}", terminal.backend());
+        assert!(
+            rendered.contains("Name"),
+            "header must keep Name: {rendered}"
+        );
+        assert!(
+            rendered.contains("firefox"),
+            "process name must show: {rendered}"
         );
     }
 

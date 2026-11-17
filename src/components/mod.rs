@@ -45,7 +45,12 @@ impl ComponentId {
         match self {
             ComponentId::Process => (40, 6),
             ComponentId::Cpu => (16, 3),
-            ComponentId::Net | ComponentId::Disk => (30, 5),
+            // Net compact table: "Iface"(5) + TX/RX columns (2 x COL_W=12) = 29
+            // inner columns, + 2 border columns = 31.
+            ComponentId::Net => (31, 5),
+            // Disk compact table: "Device"(6) + 1 gap + "Mount"(5) + 2 x SIZE_W(10)
+            // + 2 x PCT_W(7) = 46 inner columns, + 2 border columns = 48.
+            ComponentId::Disk => (48, 5),
             ComponentId::StatusBar => (0, 0),
         }
     }
