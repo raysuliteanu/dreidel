@@ -615,6 +615,7 @@ impl App {
 mod tests {
     use super::*;
     use crossterm::event::{KeyCode, KeyModifiers};
+    use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
 
     use crate::stats::snapshots::{
@@ -982,6 +983,41 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Render every preset across a range of terminal sizes. The status bar is
+    /// hidden (it is platform-dependent and covered by its own tests) and the
+    /// platform-neutral `stub()` data is used so snapshots match on any OS.
+    fn render_matrix(preset: LayoutPreset) {
+        for (w, h) in [(200, 50), (120, 40), (80, 24), (60, 20), (40, 12), (30, 8)] {
+            let mut app = make_app();
+            app.preset = preset;
+            app.status_pos = StatusBarPosition::Hidden;
+            feed_stubs(&mut app);
+            let mut terminal = Terminal::new(TestBackend::new(w, h)).expect("terminal");
+            app.render_to(&mut terminal).expect("render");
+            assert_snapshot!(format!("{preset}_{w}x{h}"), terminal.backend());
+        }
+    }
+
+    #[test]
+    fn size_matrix_sidebar() {
+        render_matrix(LayoutPreset::Sidebar);
+    }
+
+    #[test]
+    fn size_matrix_classic() {
+        render_matrix(LayoutPreset::Classic);
+    }
+
+    #[test]
+    fn size_matrix_dashboard() {
+        render_matrix(LayoutPreset::Dashboard);
+    }
+
+    #[test]
+    fn size_matrix_grid() {
+        render_matrix(LayoutPreset::Grid);
     }
 
     #[test]

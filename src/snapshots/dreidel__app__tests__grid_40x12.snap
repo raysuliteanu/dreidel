@@ -1,0 +1,16 @@
+---
+source: src/app.rs
+expression: terminal.backend()
+---
+"╭ [P]rocesses ─────────────────────────╮"
+"│PID    UID     CPU%▼   MEM     Status │"
+"│12345  ray     18.4    3.2%    running│"
+"│1      root    0.1     0.1%    sleepin│"
+"│501    ray     0.1     0.0%    sleepin│"
+"│500    root    0.0     0.0%    sleepin│"
+"│                                      │"
+"│                                      │"
+"│                                      │"
+"│                                      │"
+"│                                      │"
+"╰──────────────────────────────────────╯"
