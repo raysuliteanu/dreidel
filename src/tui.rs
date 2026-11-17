@@ -23,8 +23,15 @@ use std::{
     ops::{Deref, DerefMut},
     time::Duration,
 };
-use tokio::{sync::mpsc, task::JoinHandle, time::interval};
+use tokio::{
+    sync::mpsc,
+    task::JoinHandle,
+    time::{Instant, interval, sleep_until},
+};
 use tokio_util::sync::CancellationToken;
+
+/// Quiet period after the last resize event before one `Event::Resize` is sent.
+const RESIZE_DEBOUNCE: Duration = Duration::from_millis(25);
 
 // These variants are part of the event vocabulary even if not all are
 // dispatched to app logic yet; suppress dead-code lint for the whole enum.
@@ -96,15 +103,28 @@ impl Tui {
         let mut stream = EventStream::new();
         let mut render = interval(Duration::from_secs_f64(1.0 / frame_rate));
 
+        // Latest unsent terminal size and when to flush it; `deadline` is only
+        // awaited while `pending` is set, so its initial value is irrelevant.
+        let mut pending: Option<(u16, u16)> = None;
+        let mut deadline = Instant::now();
+
         let _ = tx.send(Event::Init).await;
         loop {
             let event = tokio::select! {
                 _ = token.cancelled() => break,
                 _ = render.tick() => Event::Render,
+                _ = sleep_until(deadline), if pending.is_some() => {
+                    let (x, y) = pending.take().expect("guarded by pending.is_some()");
+                    Event::Resize(x, y)
+                }
                 ev = stream.next().fuse() => match ev {
                     Some(Ok(CrosstermEvent::Key(k))) if k.kind == KeyEventKind::Press => Event::Key(k),
                     Some(Ok(CrosstermEvent::Mouse(m)))     => Event::Mouse(m),
-                    Some(Ok(CrosstermEvent::Resize(x, y))) => Event::Resize(x, y),
+                    Some(Ok(CrosstermEvent::Resize(x, y))) => {
+                        pending = Some((x, y));
+                        deadline = Instant::now() + RESIZE_DEBOUNCE;
+                        continue;
+                    }
                     Some(Ok(CrosstermEvent::FocusLost))    => Event::FocusLost,
                     Some(Ok(CrosstermEvent::FocusGained))  => Event::FocusGained,
                     Some(Ok(CrosstermEvent::Paste(s)))     => Event::Paste(s),
