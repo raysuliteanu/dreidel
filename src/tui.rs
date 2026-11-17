@@ -32,6 +32,9 @@ use tokio_util::sync::CancellationToken;
 
 /// Quiet period after the last resize event before one `Event::Resize` is sent.
 const RESIZE_DEBOUNCE: Duration = Duration::from_millis(25);
+/// Longest a pending resize waits (from the first event of a burst) before it is
+/// sent anyway, so a continuous drag still redraws.
+const RESIZE_MAX_WAIT: Duration = Duration::from_millis(50);
 
 // These variants are part of the event vocabulary even if not all are
 // dispatched to app logic yet; suppress dead-code lint for the whole enum.
@@ -103,9 +106,11 @@ impl Tui {
         let mut stream = EventStream::new();
         let mut render = interval(Duration::from_secs_f64(1.0 / frame_rate));
 
-        // Latest unsent terminal size and when to flush it; `deadline` is only
-        // awaited while `pending` is set, so its initial value is irrelevant.
+        // Latest unsent terminal size, when the first unsent resize arrived, and
+        // when to flush it; `first` and `deadline` are only used while `pending`
+        // is set, so their initial values are irrelevant.
         let mut pending: Option<(u16, u16)> = None;
+        let mut first = Instant::now();
         let mut deadline = Instant::now();
 
         let _ = tx.send(Event::Init).await;
@@ -121,8 +126,12 @@ impl Tui {
                     Some(Ok(CrosstermEvent::Key(k))) if k.kind == KeyEventKind::Press => Event::Key(k),
                     Some(Ok(CrosstermEvent::Mouse(m)))     => Event::Mouse(m),
                     Some(Ok(CrosstermEvent::Resize(x, y))) => {
+                        let now = Instant::now();
+                        if pending.is_none() {
+                            first = now;
+                        }
                         pending = Some((x, y));
-                        deadline = Instant::now() + RESIZE_DEBOUNCE;
+                        deadline = (now + RESIZE_DEBOUNCE).min(first + RESIZE_MAX_WAIT);
                         continue;
                     }
                     Some(Ok(CrosstermEvent::FocusLost))    => Event::FocusLost,
