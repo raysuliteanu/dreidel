@@ -163,5 +163,6 @@ serde defaults).
 appear as children of their owning process in tree view only. `k` on a thread
 row targets the owning process.
 - Disk compact view shows: device name, mount point, total size, free space,
-%used, %free. Read/write rate history is available in the per-device detail
+%used, %free; narrower panels drop trailing columns (%free, then %used, then
+free space). Read/write rate history is available in the per-device detail
 view.

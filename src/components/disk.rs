@@ -354,7 +354,17 @@ impl DiskComponent {
             .unwrap_or(0)
             .max("Device".len());
         // Mount column: all remaining space after name, separator, and right-fixed columns.
-        let fixed_right = (SIZE_W * 2 + PCT_W * 2) as usize;
+        // Narrow panels drop trailing columns, in order %Free, %Used, Free, so
+        // name, mount and total size stay readable and the row never overflows.
+        let core = name_w + 1 + "Mount".len() + SIZE_W as usize;
+        let avail = inner.width as usize;
+        let show_free = avail >= core + SIZE_W as usize;
+        let show_used = avail >= core + (SIZE_W + PCT_W) as usize;
+        let show_pct_free = avail >= core + (SIZE_W + PCT_W * 2) as usize;
+        let fixed_right = SIZE_W as usize
+            + if show_free { SIZE_W as usize } else { 0 }
+            + if show_used { PCT_W as usize } else { 0 }
+            + if show_pct_free { PCT_W as usize } else { 0 };
         let mount_w = (inner.width as usize)
             .saturating_sub(name_w + 1 + fixed_right)
             .max("Mount".len());
@@ -365,7 +375,7 @@ impl DiskComponent {
         let accent_bold = Style::new()
             .fg(self.palette.accent)
             .add_modifier(Modifier::BOLD);
-        let header = Line::from(vec![
+        let mut header_spans = vec![
             Span::styled(format!("{:<width$}", "Device", width = name_w), accent_bold),
             Span::styled(
                 format!(" {:<width$}", "Mount", width = mount_w),
@@ -375,19 +385,20 @@ impl DiskComponent {
                 format!("{:>width$}", "Size", width = SIZE_W as usize),
                 accent_bold,
             ),
-            Span::styled(
-                format!("{:>width$}", "Free", width = SIZE_W as usize),
-                accent_bold,
-            ),
-            Span::styled(
-                format!("{:>width$}", "%Used", width = PCT_W as usize),
-                accent_bold,
-            ),
-            Span::styled(
-                format!("{:>width$}", "%Free", width = PCT_W as usize),
-                accent_bold,
-            ),
-        ]);
+        ];
+        for (show, label, w) in [
+            (show_free, "Free", SIZE_W),
+            (show_used, "%Used", PCT_W),
+            (show_pct_free, "%Free", PCT_W),
+        ] {
+            if show {
+                header_spans.push(Span::styled(
+                    format!("{:>width$}", label, width = w as usize),
+                    accent_bold,
+                ));
+            }
+        }
+        let header = Line::from(header_spans);
         frame.render_widget(header, chunks[0]);
 
         let palette = &self.palette;
@@ -406,7 +417,7 @@ impl DiskComponent {
                     palette.accent
                 };
                 let free_pct = 100.0 - dev.usage_pct;
-                let line = Line::from(vec![
+                let mut spans = vec![
                     Span::styled(
                         format!("{:<width$}", truncate(&dev.name, name_w), width = name_w),
                         Style::new().fg(palette.fg),
@@ -427,23 +438,30 @@ impl DiskComponent {
                         ),
                         Style::new().fg(palette.fg),
                     ),
-                    Span::styled(
+                ];
+                if show_free {
+                    spans.push(Span::styled(
                         format!(
                             "{:>width$}",
                             fmt_bytes(dev.available_space),
                             width = SIZE_W as usize
                         ),
                         Style::new().fg(palette.accent),
-                    ),
-                    Span::styled(
+                    ));
+                }
+                if show_used {
+                    spans.push(Span::styled(
                         format!("{:>width$.1}%", dev.usage_pct, width = PCT_W as usize - 1),
                         Style::new().fg(usage_color),
-                    ),
-                    Span::styled(
+                    ));
+                }
+                if show_pct_free {
+                    spans.push(Span::styled(
                         format!("{:>width$.1}%", free_pct, width = PCT_W as usize - 1),
                         Style::new().fg(palette.dim),
-                    ),
-                ]);
+                    ));
+                }
+                let line = Line::from(spans);
                 ListItem::new(line)
             })
             .collect();
@@ -676,6 +694,39 @@ mod tests {
         ));
         // The legend rows would carry a "/s" rate; none means the graph is full-width.
         assert!(!rect_text(terminal.backend().buffer(), Rect::new(1, 6, 18, 8)).contains("/s"));
+    }
+
+    fn compact_text(width: u16) -> String {
+        let mut comp = DiskComponent::default();
+        comp.update(&Action::DiskUpdate(DiskSnapshot::stub()))
+            .unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(width, 6)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        let buf = terminal.backend().buffer();
+        rect_text(buf, Rect::new(0, 0, width, 6))
+    }
+
+    #[test]
+    fn compact_drops_trailing_columns_when_narrow() {
+        let text = compact_text(40);
+        assert!(text.contains("Device") && text.contains("Mount"));
+        assert!(text.contains("Size") && text.contains("Free"));
+        assert!(!text.contains("%Used") && !text.contains("%Free"), "{text}");
+        assert!(
+            text.contains("275.1 GB"),
+            "values must be untruncated: {text}"
+        );
+        let min = compact_text(24);
+        assert!(min.contains("Size") && !min.contains("Free"), "{min}");
+        assert!(min.contains("500.1 GB"), "{min}");
+    }
+
+    #[test]
+    fn compact_shows_all_columns_when_wide() {
+        let text = compact_text(70);
+        for col in ["Device", "Mount", "Size", "Free", "%Used", "%Free"] {
+            assert!(text.contains(col), "missing {col}: {text}");
+        }
     }
 
     fn device(name: &str) -> DiskDeviceSnapshot {

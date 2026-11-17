@@ -303,6 +303,10 @@ The Disk panel lists storage devices with capacity and usage
 information. Usage is color-coded green → orange (≥70%) → red
 (≥90%). Read/write rate history is shown in the detail view.
 
+In narrow panels the list drops trailing columns to stay readable: `%Free`
+first, then `%Used`, then `Free`. Device, mount point and total size are
+always shown.
+
 **List view:**
 
 <!-- screenshot:disk_list:begin -->
