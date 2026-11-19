@@ -105,20 +105,48 @@ else
         esac
     fi
 
+    # A rollback abandons everything after the starting commit, so refuse to start
+    # with uncommitted work that it would throw away.
+    if [[ -n "$(jj diff --summary)" ]]; then
+        printf 'error: working copy has uncommitted changes; commit or discard them first\n' >&2
+        exit 1
+    fi
+    start_commit=$(jj log --no-graph -r @- -T commit_id)
+
     # Regenerate CHANGELOG and commit it before the cargo-release version-bump
     # commit. Done here (not in a cargo-release pre-release-hook) so we can use
     # jj to commit rather than git add, keeping the workflow jj-native.
     git-cliff --tag "$TAG" --output CHANGELOG.md
     jj commit -m "chore: update changelog for $TAG"
 
-    # Bump version in Cargo.toml, commit, and create the git tag.
+    # Bump version in Cargo.toml, commit, publish, and create the git tag.
     # Confirmation already happened above, so don't let cargo release prompt.
-    cargo release "$LEVEL" --execute --no-confirm
+    release_ok=true
+    cargo release "$LEVEL" --execute --no-confirm || release_ok=false
 
     # Never push unless cargo release really produced the tag.
-    if ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-        printf 'error: cargo release did not create tag %s; nothing was pushed.\n' "$TAG" >&2
-        printf 'The local changelog/version commits are left in place for inspection.\n' >&2
+    if ! "$release_ok" || ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+        # If the version reached crates.io, the release can't be undone: keep the
+        # commits and finish by hand rather than orphaning a published version.
+        if curl -sfA "dreidel-release-script" -o /dev/null \
+            "https://crates.io/api/v1/crates/dreidel/$next_version"; then
+            printf '\nerror: dreidel %s was published, but tagging/pushing did not complete.\n' "$next_version" >&2
+            printf 'Finish by hand:\n' >&2
+            printf '  git tag -a %s -m "Release %s" <release commit>   # if the tag is missing\n' "$TAG" "$TAG" >&2
+            printf '  jj git fetch && jj bookmark set main -r @- && jj git push --bookmark main\n' >&2
+            printf '  git push origin %s\n' "$TAG" >&2
+            exit 1
+        fi
+
+        # Nothing was published: undo the local changelog/version commits and tag
+        # so a plain re-run starts clean.
+        printf '\nerror: cargo release failed; nothing was published or pushed. Rolling back...\n' >&2
+        git tag -d "$TAG" >/dev/null 2>&1 || true
+        jj abandon "${start_commit}..@" >/dev/null
+        jj new "$start_commit" >/dev/null 2>&1 || true
+        printf 'Rolled back to %s.\n' "${start_commit:0:12}" >&2
+        printf 'If the error above was a crates.io authentication failure (403), run\n' >&2
+        printf "'cargo login' with a fresh token, then re-run this script.\n" >&2
         exit 1
     fi
 
