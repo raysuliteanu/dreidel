@@ -248,6 +248,47 @@ mod tests {
         assert!(toml::from_str::<Config>("[general]\nrefresh_rate_ms = \"-1s\"").is_err());
     }
 
+    /// The `--init-config` template must only mention real config keys: serde
+    /// silently ignores unknown keys, so a typo there would make a user's edit a no-op.
+    #[test]
+    fn init_config_template_uses_real_keys() {
+        // Uncomment every `# key = value` line, as a user editing the template would.
+        let uncommented: String = include_str!("default-config.toml")
+            .lines()
+            .map(|line| match line.strip_prefix("# ") {
+                Some(rest)
+                    if rest.split_once('=').is_some_and(|(key, _)| {
+                        let key = key.trim();
+                        !key.is_empty() && key.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+                    }) =>
+                {
+                    rest
+                }
+                _ => line,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let template: toml::Table = toml::from_str(&uncommented).expect("template is valid TOML");
+        let mut all_fields = Config::default();
+        // Optional slot overrides are omitted when `None`; set the one the template shows.
+        all_fields.layout.left_top = Some("cpu".into());
+        let known: toml::Table =
+            toml::from_str(&toml::to_string(&all_fields).expect("config serializes"))
+                .expect("serialized config is valid TOML");
+
+        for (section, keys) in &template {
+            let known_keys = known[section].as_table().expect("known section");
+            for key in keys.as_table().expect("template section is a table").keys() {
+                assert!(
+                    known_keys.contains_key(key),
+                    "template key [{section}].{key} is not a config field"
+                );
+            }
+        }
+        toml::from_str::<Config>(&uncommented).expect("uncommented template deserializes");
+    }
+
     #[test]
     fn default_config_is_valid() {
         let c = Config::default();

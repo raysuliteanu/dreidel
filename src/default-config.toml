@@ -4,12 +4,12 @@
 
 [general]
 # Refresh interval for all components. Examples: "500ms", "1s", "2s"
-# refresh_rate = "1s"
+# refresh_rate_ms = "1s"
 
 # How often to enumerate per-process threads (/proc/<pid>/task/).
 # Thread enumeration is expensive; a slower cadence avoids thousands
 # of syscalls every tick while still keeping thread data visible.
-# thread_refresh = "5s"
+# thread_refresh_ms = "5s"
 
 # Color theme. "auto" detects light/dark from terminal background.
 # theme = "auto"   # "auto" | "light" | "dark"
