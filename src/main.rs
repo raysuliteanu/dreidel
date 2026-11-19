@@ -139,14 +139,14 @@ fn apply_cli_overrides(cfg: &mut config::Config, args: &cli::Args) -> anyhow::Re
         cfg.general.theme = theme;
     }
     if let Some(r) = &args.refresh_rate
-        && let Ok(d) = humantime::parse_duration(r)
+        && let Ok(ms) = config::parse_duration_ms(r)
     {
-        cfg.general.refresh_rate_ms = d.as_millis() as u64;
+        cfg.general.refresh_rate_ms = ms;
     }
     if let Some(r) = &args.thread_refresh
-        && let Ok(d) = humantime::parse_duration(r)
+        && let Ok(ms) = config::parse_duration_ms(r)
     {
-        cfg.general.thread_refresh_ms = d.as_millis() as u64;
+        cfg.general.thread_refresh_ms = ms;
     }
     if let Some(p) = &args.preset {
         cfg.layout.preset = p.clone();

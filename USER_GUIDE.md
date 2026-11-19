@@ -746,7 +746,7 @@ can save and edit.
 
 ```toml
 [general]
-# Stats refresh interval. Humantime format: "500ms", "1s", "2s", etc.
+# Stats refresh interval, e.g. "500ms", "1s", "2s", "1m 30s".
 refresh_rate_ms = "1s"
 
 # How often to enumerate per-process threads (Linux only).

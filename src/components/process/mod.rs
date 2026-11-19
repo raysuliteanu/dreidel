@@ -11,7 +11,6 @@ pub mod sort;
 pub mod tree;
 
 use anyhow::{Context, Result};
-use chrono::TimeZone;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
@@ -1178,10 +1177,14 @@ fn fmt_start_time(unix_secs: u64) -> String {
     if unix_secs == 0 {
         return "-".into();
     }
-    chrono::Local
-        .timestamp_opt(unix_secs as i64, 0)
-        .single()
-        .map(|ts| ts.format("%Y-%m-%d %H:%M:%S").to_string())
+    i64::try_from(unix_secs)
+        .ok()
+        .and_then(|secs| jiff::Timestamp::from_second(secs).ok())
+        .map(|ts| {
+            ts.to_zoned_datetime(jiff::tz::TimeZone::system())
+                .strftime("%Y-%m-%d %H:%M:%S")
+                .to_string()
+        })
         .unwrap_or_else(|| "-".into())
 }
 
@@ -1230,7 +1233,6 @@ fn kill_process(pid: u32) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
     use crossterm::event::{KeyCode, KeyModifiers};
     use insta::assert_snapshot;
     use ratatui::{Terminal, backend::TestBackend};
@@ -1670,11 +1672,12 @@ mod tests {
 
     #[test]
     fn fmt_start_time_formats_local_timestamp() {
-        let ts = chrono::Local
-            .with_ymd_and_hms(2026, 4, 4, 12, 34, 56)
-            .single()
+        let ts = jiff::civil::date(2026, 4, 4)
+            .at(12, 34, 56, 0)
+            .to_zoned_datetime(jiff::tz::TimeZone::system())
             .expect("local timestamp must exist");
-        assert_eq!(fmt_start_time(ts.timestamp() as u64), "2026-04-04 12:34:56");
+        let secs = u64::try_from(ts.timestamp().as_second()).expect("2026 is after the epoch");
+        assert_eq!(fmt_start_time(secs), "2026-04-04 12:34:56");
         assert_eq!(fmt_start_time(0), "-");
     }
 

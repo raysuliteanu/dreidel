@@ -23,10 +23,9 @@ The crate is a dual lib+bin package:
 | `libproc` / `libc`              | macOS-only; `libproc` provides per-process fd count, priority, nice, tty, thread count, CPU times, and page-fault counters; `libc` is used for network drop counters via `NET_RT_IFLIST2` |
 | `clap`                           | CLI argument parsing (derive macro)                                                 |
 | `serde` / `toml`                 | Config file deserialization                                                         |
-| `humantime`                      | Parses human-readable durations (`"1s"`, `"500ms"`) in config                       |
+| `jiff`                           | Duration parsing (`"1s"`, `"500ms"`) and local timestamps                           |
 | `anyhow`                         | Application-level error context                                                     |
 | `strum`                          | Derive `Display`, `EnumString`, `EnumIter` on enums (`ComponentId`, `LayoutPreset`) |
-| `chrono`                         | Timestamps in `SysSnapshot`                                                         |
 | `dirs`                           | Home and data directory resolution (config path, log file)                          |
 | `tracing` / `tracing-subscriber` | Structured logging to `dreidel/dreidel.log` in the platform data dir                |
 | `futures`                        | `StreamExt`/`FutureExt` used in the `Tui` event loop                                |
@@ -371,8 +370,8 @@ else `~/.config/dreidel/config.toml`, on every platform (not
 `dirs::config_dir()`, which is `~/Library/Application Support` on macOS). All fields have serde defaults
 so a missing file is fine. Sub-structs:
 
-- `GeneralConfig` — `refresh_rate_ms` (humantime), `thread_refresh_ms` (humantime,
-  default 5s), `theme`, `channel_capacity`
+- `GeneralConfig` — `refresh_rate_ms` (duration string, parsed by
+  `config::parse_duration_ms`), `thread_refresh_ms` (same, default 5s), `theme`, `channel_capacity`
 - `LayoutConfig` — `preset`, `status_bar` position, `show` component list, per-slot
   overrides
 - `ProcessConfig` — `default_sort`, `default_sort_dir`, `show_tree`

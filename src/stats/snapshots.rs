@@ -305,7 +305,7 @@ pub struct SysSnapshot {
     pub hostname: String,
     pub uptime: u64,
     pub load_avg: [f64; 3],
-    pub timestamp: chrono::DateTime<chrono::Local>,
+    pub timestamp: jiff::ZonedDateTime,
 }
 
 #[cfg(any(test, feature = "test-stubs"))]
@@ -316,7 +316,7 @@ impl SysSnapshot {
             hostname: "dev-box".into(),
             uptime: 273_600,
             load_avg: [1.24, 0.98, 0.87],
-            timestamp: chrono::Local::now(),
+            timestamp: jiff::ZonedDateTime::now(),
         }
     }
 }

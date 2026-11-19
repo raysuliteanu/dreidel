@@ -26,11 +26,22 @@ pub struct GeneralConfig {
     pub channel_capacity: usize,
 }
 
+/// Parse a human-friendly duration such as `"500ms"`, `"2s"` or `"1m 30s"` into
+/// whole milliseconds. Negative durations are rejected.
+pub fn parse_duration_ms(s: &str) -> Result<u64, String> {
+    let d: jiff::SignedDuration = s
+        .trim()
+        .parse()
+        .map_err(|e| format!("invalid duration {s:?}: {e}"))?;
+    if d.is_negative() {
+        return Err(format!("duration must not be negative: {s:?}"));
+    }
+    u64::try_from(d.as_millis()).map_err(|_| format!("duration too large: {s:?}"))
+}
+
 fn deserialize_duration<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
     let s = String::deserialize(d)?;
-    humantime::parse_duration(&s)
-        .map(|d| d.as_millis() as u64)
-        .map_err(serde::de::Error::custom)
+    parse_duration_ms(&s).map_err(serde::de::Error::custom)
 }
 
 // TODO: address magic number; it's duplicated below in default()
@@ -206,6 +217,35 @@ mod tests {
             p,
             std::path::PathBuf::from("/Users/u/.config/dreidel/config.toml")
         );
+    }
+
+    #[test]
+    fn parse_duration_accepts_humantime_style_inputs() {
+        assert_eq!(parse_duration_ms("2s"), Ok(2000));
+        assert_eq!(parse_duration_ms("500ms"), Ok(500));
+        assert_eq!(parse_duration_ms("1m 30s"), Ok(90_000));
+        assert_eq!(parse_duration_ms("1h30m"), Ok(5_400_000));
+        assert_eq!(parse_duration_ms("1min"), Ok(60_000));
+        assert_eq!(parse_duration_ms("2secs"), Ok(2000));
+        assert_eq!(parse_duration_ms(" 5s "), Ok(5000));
+    }
+
+    #[test]
+    fn parse_duration_rejects_bad_inputs() {
+        assert!(parse_duration_ms("-2s").is_err(), "negative");
+        assert!(parse_duration_ms("2").is_err(), "missing unit");
+        assert!(parse_duration_ms("fast").is_err(), "not a duration");
+        assert!(parse_duration_ms("").is_err(), "empty");
+    }
+
+    #[test]
+    fn config_duration_fields_parse_from_toml() {
+        let c: Config =
+            toml::from_str("[general]\nrefresh_rate_ms = \"1500ms\"\nthread_refresh_ms = \"10s\"")
+                .expect("valid durations");
+        assert_eq!(c.general.refresh_rate_ms, 1500);
+        assert_eq!(c.general.thread_refresh_ms, 10_000);
+        assert!(toml::from_str::<Config>("[general]\nrefresh_rate_ms = \"-1s\"").is_err());
     }
 
     #[test]

@@ -176,15 +176,14 @@ fn key(code: KeyCode) -> KeyEvent {
 }
 
 fn fixed_sys_snapshot() -> SysSnapshot {
-    use chrono::TimeZone;
     SysSnapshot {
         hostname: "dev-box".into(),
         uptime: 273_600,
         load_avg: [1.24, 0.98, 0.87],
-        timestamp: chrono::Local
-            .with_ymd_and_hms(2026, 4, 6, 14, 52, 7)
-            .single()
-            .expect("fixed timestamp must be valid"),
+        timestamp: jiff::civil::date(2026, 4, 6)
+            .at(14, 52, 7, 0)
+            .to_zoned_datetime(jiff::tz::TimeZone::system())
+            .expect("fixed local time is valid"),
     }
 }
 

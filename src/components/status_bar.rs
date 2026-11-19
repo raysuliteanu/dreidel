@@ -171,7 +171,7 @@ impl StatusBarComponent {
             "{:.2} {:.2} {:.2}",
             sys.load_avg[0], sys.load_avg[1], sys.load_avg[2]
         );
-        let time = sys.timestamp.format("%Y-%m-%d %H:%M:%S").to_string();
+        let time = sys.timestamp.strftime("%Y-%m-%d %H:%M:%S").to_string();
 
         // Left span (uptime + load) fills, right span (timestamp) is fixed width.
         let halves =
@@ -421,14 +421,14 @@ mod tests {
     use ratatui::{Terminal, backend::TestBackend};
 
     fn fixed_sys() -> SysSnapshot {
-        use chrono::TimeZone;
         SysSnapshot {
             hostname: "dev-box".into(),
             uptime: 273_600,
             load_avg: [1.24, 0.98, 0.87],
-            timestamp: chrono::Local
-                .with_ymd_and_hms(2026, 3, 25, 12, 0, 0)
-                .unwrap(),
+            timestamp: jiff::civil::date(2026, 3, 25)
+                .at(12, 0, 0, 0)
+                .to_zoned_datetime(jiff::tz::TimeZone::system())
+                .expect("fixed local time is valid"),
         }
     }
 

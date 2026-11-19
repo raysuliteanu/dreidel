@@ -27,14 +27,14 @@ fn cpu_component_snapshot() {
 #[test]
 #[cfg(target_os = "linux")]
 fn status_bar_snapshot() {
-    use chrono::TimeZone;
     let sys = SysSnapshot {
         hostname: "dev-box".into(),
         uptime: 273_600,
         load_avg: [1.24, 0.98, 0.87],
-        timestamp: chrono::Local
-            .with_ymd_and_hms(2026, 3, 25, 12, 0, 0)
-            .unwrap(),
+        timestamp: jiff::civil::date(2026, 3, 25)
+            .at(12, 0, 0, 0)
+            .to_zoned_datetime(jiff::tz::TimeZone::system())
+            .expect("fixed local time is valid"),
     };
     let mut comp = StatusBarComponent::new(ColorPalette::dark());
     comp.update(&Action::SysUpdate(sys)).unwrap();
@@ -52,14 +52,14 @@ fn status_bar_snapshot() {
 #[test]
 #[cfg(target_os = "macos")]
 fn status_bar_snapshot_macos() {
-    use chrono::TimeZone;
     let sys = SysSnapshot {
         hostname: "dev-box".into(),
         uptime: 273_600,
         load_avg: [1.24, 0.98, 0.87],
-        timestamp: chrono::Local
-            .with_ymd_and_hms(2026, 3, 25, 12, 0, 0)
-            .unwrap(),
+        timestamp: jiff::civil::date(2026, 3, 25)
+            .at(12, 0, 0, 0)
+            .to_zoned_datetime(jiff::tz::TimeZone::system())
+            .expect("fixed local time is valid"),
     };
     let mut comp = StatusBarComponent::new(ColorPalette::dark());
     comp.update(&Action::SysUpdate(sys)).unwrap();

@@ -185,7 +185,7 @@ fn build_sys(_sys: &System) -> SysSnapshot {
         load_avg: System::load_average()
             .map(|la| [la.one, la.five, la.fifteen])
             .unwrap_or_default(),
-        timestamp: chrono::Local::now(),
+        timestamp: jiff::ZonedDateTime::now(),
     }
 }
 
