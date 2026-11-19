@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Release script for dreidel.
 #
-# Usage: scripts/release [-n|--dry-run] [patch|minor|major]
+# Usage: scripts/release [-n|--dry-run] [-y|--yes] [patch|minor|major]
 #
 # Regenerates CHANGELOG.md via git-cliff, commits it, then runs cargo-release
 # to bump the version, commit, and tag, then syncs jj and pushes the bookmark
@@ -12,19 +12,30 @@
 #   - git-cliff/jj commit steps are echoed but not run
 #   - cargo release runs without --execute (its own dry-run)
 #   - jj/git push commands are echoed with the real resolved values but not run
+#
+# Confirmation:
+#   A real release asks once, before changing anything (cargo release itself is
+#   run with --no-confirm). Pass -y / --yes to skip the question, e.g. when
+#   running without a terminal.
 
 set -euo pipefail
 
 DRY_RUN=false
+ASSUME_YES=false
 LEVEL="patch"
+
+usage() {
+    printf 'usage: scripts/release [-n|--dry-run] [-y|--yes] [patch|minor|major]\n' >&2
+}
 
 for arg in "$@"; do
     case "$arg" in
         -n | --dry-run) DRY_RUN=true ;;
+        -y | --yes) ASSUME_YES=true ;;
         patch | minor | major) LEVEL="$arg" ;;
         *)
             printf 'error: unknown argument "%s"\n' "$arg" >&2
-            printf 'usage: scripts/release [-n|--dry-run] [patch|minor|major]\n' >&2
+            usage
             exit 1
             ;;
     esac
@@ -77,6 +88,23 @@ if "$DRY_RUN"; then
     printf '  git push origin %s\n' "$TAG"
     printf '  # cargo-dist CI workflow triggers on the tag push and creates the GitHub release\n'
 else
+    if ! "$ASSUME_YES"; then
+        if [[ ! -t 0 ]]; then
+            printf 'error: no terminal to confirm on; re-run with -y/--yes to release without asking\n' >&2
+            exit 1
+        fi
+        printf 'Release dreidel %s -> %s: commit changelog, bump, tag %s, publish to crates.io, push? [y/N] ' \
+            "$current_version" "$next_version" "$TAG"
+        read -r answer
+        case "$answer" in
+            y | Y | yes | YES) ;;
+            *)
+                printf 'Aborted; nothing changed.\n'
+                exit 1
+                ;;
+        esac
+    fi
+
     # Regenerate CHANGELOG and commit it before the cargo-release version-bump
     # commit. Done here (not in a cargo-release pre-release-hook) so we can use
     # jj to commit rather than git add, keeping the workflow jj-native.
@@ -84,7 +112,15 @@ else
     jj commit -m "chore: update changelog for $TAG"
 
     # Bump version in Cargo.toml, commit, and create the git tag.
-    cargo release "$LEVEL" --execute
+    # Confirmation already happened above, so don't let cargo release prompt.
+    cargo release "$LEVEL" --execute --no-confirm
+
+    # Never push unless cargo release really produced the tag.
+    if ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+        printf 'error: cargo release did not create tag %s; nothing was pushed.\n' "$TAG" >&2
+        printf 'The local changelog/version commits are left in place for inspection.\n' >&2
+        exit 1
+    fi
 
     printf '\nPushing %s to origin...\n' "$TAG"
 
