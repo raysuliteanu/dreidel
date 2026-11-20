@@ -21,14 +21,22 @@ This repo uses **jj (jujutsu)** in co-located mode — always use `jj` commands,
 never `git commit`. Commits use conventional-commits format (`feat:`, `fix:`,
 `refactor:`, etc.).
 
-```bash jj status jj diff jj commit -m 'fix: description'```
+```bash
+jj status
+jj diff
+jj commit -m 'fix: description'
+```
 
 ## Build & Test
 
-```bash cargo build cargo test                          # all tests cargo test
-components::cpu          # filter by module/name INSTA_UPDATE=always cargo test
-# accept updated insta snapshots cargo run -- --help                 # CLI flags
-cargo run -- --init-config          # print default config template ```
+```bash
+cargo build
+cargo test                          # all tests
+cargo test components::cpu          # filter by module/name
+INSTA_UPDATE=always cargo test      # accept updated insta snapshots
+cargo run -- --help                 # CLI flags
+cargo run -- --init-config          # print default config template
+```
 
 ## Architecture
 
@@ -37,8 +45,11 @@ The codebase is a dual lib+bin crate (`src/lib.rs` exports modules;
 
 ### Data flow
 
-``` sysinfo → stats/mod.rs (spawn_collector) → Action::*Update →
-App::handle_actions → Component::update() → render() → draw() ```
+```
+sysinfo → stats/mod.rs (spawn_collector) → Action::*Update → App::handle_actions
+                                                              → Component::update()
+                                                              → render() → draw()
+```
 
 `spawn_collector` owns a `sysinfo::System` on a dedicated `stats-collector` OS
 thread (current-thread Tokio runtime; needed because `sysinfo::Gpus` is not
@@ -63,11 +74,14 @@ channel. Key variants:
 
 Every panel implements `src/components/mod.rs::Component`:
 
-```rust fn set_focused(&mut self, focused: bool) {}          // called before
-every render fn preferred_height(&self) -> Option<u16> { None }   // compact
-layout hint fn handle_key_event(&mut self, key) -> Result<Option<Action>> fn
-update(&mut self, action: Action) -> Result<Option<Action>> fn draw(&mut self,
-    frame: &mut Frame, area: Rect) -> Result<()> ```
+```rust
+fn set_focused(&mut self, focused: bool) {}          // called before every render
+fn preferred_height(&self) -> Option<u16> { None }   // compact layout hint
+fn handle_key_event(&mut self, key) -> Result<Option<Action>>
+fn update(&mut self, action: &Action) -> Result<Option<Action>>
+fn begin_overlay_render(&mut self) {}                // before the fullscreen overlay pass
+fn draw(&mut self, frame: &mut Frame, area: Rect) -> Result<()>
+```
 
 `App::render()` calls `set_focused` on all components before drawing and reads
 `preferred_height` to compute `LayoutHints` for the sidebar left-column split.
