@@ -100,7 +100,7 @@ fall below `ComponentId::min_size()`.
 
 ### Key dispatch
 
-In `App::handle_events`, `Event::Key` goes to the _focused component_ first via
+In `App::handle_event`, `Event::Key` goes to the _focused component_ first via
 `handle_key_event`. If the component returns `Ok(None)`, the global handler runs
 (focus-switch keys `p/c/n/d`, `Tab`/`Shift-Tab`, `f` fullscreen, `?` help, `q`
 quit).

@@ -185,12 +185,10 @@ impl App {
     }
 
     pub async fn run(&mut self) -> Result<()> {
-        // Render and tick at the same rate as the stats collector so we don't
-        // burn CPU redrawing frames that are identical to the previous one.
-        // Key presses trigger an immediate render (see handle_events) to keep
-        // UI response snappy independent of this rate.
-        let fps = 1000.0 / self.config.general.refresh_rate_ms as f64;
-        let mut tui = Tui::new()?.mouse(true).frame_rate(fps);
+        // There is no render timer: the UI redraws when a collector batch
+        // arrives (see `ProcUpdate` in handle_actions), on key presses, and on
+        // resize, so frames are never redundant and new data is drawn at once.
+        let mut tui = Tui::new()?.mouse(true);
         tui.enter().context("entering TUI")?;
 
         let collector_token = tokio_util::sync::CancellationToken::new();
@@ -202,10 +200,17 @@ impl App {
         );
 
         loop {
-            self.handle_events(&mut tui)
-                .await
-                .context("handling events")?;
-            self.handle_actions(&mut tui).context("handling actions")?;
+            // Wake on terminal input or collector data, whichever comes first;
+            // both receivers are cancel-safe.
+            let (event, first_action) = tokio::select! {
+                event = tui.next_event() => (event, None),
+                action = self.action_rx.recv() => (None, action),
+            };
+            if let Some(event) = event {
+                self.handle_event(event).context("handling event")?;
+            }
+            self.handle_actions(&mut tui, first_action)
+                .context("handling actions")?;
 
             if self.should_suspend {
                 tui.exit().context("suspending TUI")?;
@@ -220,33 +225,22 @@ impl App {
         Ok(())
     }
 
-    async fn handle_events(&mut self, tui: &mut Tui) -> Result<()> {
-        let Some(event) = tui.next_event().await else {
-            return Ok(());
-        };
-
+    fn handle_event(&mut self, event: Event) -> Result<()> {
         // When the help overlay is visible, only Esc/? /h close it; all other
-        // keys are swallowed so nothing behind the overlay reacts.
-        // Render and Tick events are still forwarded so the dashboard keeps
-        // refreshing behind the overlay.
+        // keys are swallowed so nothing behind the overlay reacts. Data-driven
+        // renders still happen, so the dashboard keeps refreshing behind it.
         if self.show_help {
-            match &event {
-                Event::Key(key) => {
-                    use crossterm::event::KeyCode;
-                    let is_close = key.code == KeyCode::Esc
-                        || key.code == KeyCode::Char(self.config.keybindings.help)
-                        || key.code == KeyCode::Char('h')
-                        || key.code == KeyCode::Char('H')
-                        || key.code == KeyCode::Char('q')
-                        || key.code == KeyCode::Char('Q');
-                    if is_close {
-                        let _ = self.action_tx.try_send(Action::ToggleHelp);
-                    }
+            if let Event::Key(key) = &event {
+                use crossterm::event::KeyCode;
+                let is_close = key.code == KeyCode::Esc
+                    || key.code == KeyCode::Char(self.config.keybindings.help)
+                    || key.code == KeyCode::Char('h')
+                    || key.code == KeyCode::Char('H')
+                    || key.code == KeyCode::Char('q')
+                    || key.code == KeyCode::Char('Q');
+                if is_close {
+                    let _ = self.action_tx.try_send(Action::ToggleHelp);
                 }
-                Event::Render => {
-                    let _ = self.action_tx.try_send(Action::Render);
-                }
-                _ => {}
             }
             return Ok(());
         }
@@ -256,7 +250,8 @@ impl App {
             Event::Quit => {
                 let _ = tx.try_send(Action::Quit);
             }
-            Event::Render => {
+            // First frame (loading overlay) before any data arrives.
+            Event::Init => {
                 let _ = tx.try_send(Action::Render);
             }
             Event::Resize(x, y) => {
@@ -386,8 +381,11 @@ impl App {
         Ok(())
     }
 
-    fn handle_actions(&mut self, tui: &mut Tui) -> Result<()> {
-        while let Ok(action) = self.action_rx.try_recv() {
+    /// Process `first` (an action already received by the run loop), then
+    /// drain everything else queued.
+    fn handle_actions(&mut self, tui: &mut Tui, first: Option<Action>) -> Result<()> {
+        let mut first = first;
+        while let Some(action) = first.take().or_else(|| self.action_rx.try_recv().ok()) {
             if !matches!(action, Action::Render) {
                 debug!("action: {action}");
             }
@@ -441,6 +439,11 @@ impl App {
                 us = start.elapsed().as_micros() as u64,
                 "component update"
             );
+            // ProcUpdate is the last action of each collector batch, so one
+            // render here draws the complete tick.
+            if matches!(action, Action::ProcUpdate(_)) {
+                let _ = self.action_tx.try_send(Action::Render);
+            }
         }
         Ok(())
     }

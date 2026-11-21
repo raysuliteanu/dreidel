@@ -26,7 +26,7 @@ use std::{
 use tokio::{
     sync::mpsc,
     task::JoinHandle,
-    time::{Instant, interval, sleep_until},
+    time::{Instant, sleep_until},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -45,7 +45,6 @@ pub enum Event {
     Quit,
     Error,
     Closed,
-    Render,
     FocusGained,
     FocusLost,
     Paste(String),
@@ -60,7 +59,6 @@ pub struct Tui {
     cancellation_token: CancellationToken,
     event_rx: mpsc::Receiver<Event>,
     event_tx: mpsc::Sender<Event>,
-    frame_rate: f64,
     mouse: bool,
     paste: bool,
 }
@@ -75,15 +73,9 @@ impl Tui {
             cancellation_token: CancellationToken::new(),
             event_rx,
             event_tx,
-            frame_rate: 1.0,
             mouse: false,
             paste: false,
         })
-    }
-
-    pub fn frame_rate(mut self, r: f64) -> Self {
-        self.frame_rate = r;
-        self
     }
 
     pub fn mouse(mut self, m: bool) -> Self {
@@ -94,17 +86,12 @@ impl Tui {
     pub fn start(&mut self) {
         self.cancel();
         self.cancellation_token = CancellationToken::new();
-        let event_loop = Self::event_loop(
-            self.event_tx.clone(),
-            self.cancellation_token.clone(),
-            self.frame_rate,
-        );
+        let event_loop = Self::event_loop(self.event_tx.clone(), self.cancellation_token.clone());
         self.task = tokio::spawn(event_loop);
     }
 
-    async fn event_loop(tx: mpsc::Sender<Event>, token: CancellationToken, frame_rate: f64) {
+    async fn event_loop(tx: mpsc::Sender<Event>, token: CancellationToken) {
         let mut stream = EventStream::new();
-        let mut render = interval(Duration::from_secs_f64(1.0 / frame_rate));
 
         // Latest unsent terminal size, when the first unsent resize arrived, and
         // when to flush it; `first` and `deadline` are only used while `pending`
@@ -117,7 +104,6 @@ impl Tui {
         loop {
             let event = tokio::select! {
                 _ = token.cancelled() => break,
-                _ = render.tick() => Event::Render,
                 _ = sleep_until(deadline), if pending.is_some() => {
                     let (x, y) = pending.take().expect("guarded by pending.is_some()");
                     Event::Resize(x, y)
