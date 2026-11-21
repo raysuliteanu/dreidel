@@ -44,7 +44,7 @@ pub struct StatusBarComponent {
     sys: Option<SysSnapshot>,
     cpu: Option<CpuSnapshot>,
     mem: Option<MemSnapshot>,
-    proc: Option<ProcSnapshot>,
+    proc: Option<std::sync::Arc<ProcSnapshot>>,
     /// Focus key + id of each panel dropped from the layout, shown as
     /// `+[X]name` hints in the bottom border.
     dropped: Vec<(char, ComponentId)>,
@@ -453,7 +453,7 @@ mod tests {
         comp.update(&Action::CpuUpdate(snap)).unwrap();
         comp.update(&Action::MemUpdate(MemSnapshot::stub()))
             .unwrap();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
 
         let mut terminal = Terminal::new(TestBackend::new(120, 7)).unwrap();
@@ -482,7 +482,7 @@ mod tests {
         comp.update(&Action::CpuUpdate(snap)).unwrap();
         comp.update(&Action::MemUpdate(MemSnapshot::stub()))
             .unwrap();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
 
         let mut terminal = Terminal::new(TestBackend::new(120, 7)).unwrap();
@@ -499,7 +499,7 @@ mod tests {
             .unwrap();
         comp.update(&Action::MemUpdate(MemSnapshot::stub()))
             .unwrap();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
 
         assert_eq!(comp.preferred_height(), Some(7));
@@ -517,7 +517,7 @@ mod tests {
             .unwrap();
         comp.update(&Action::MemUpdate(MemSnapshot::stub_macos()))
             .unwrap();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
 
         assert_eq!(comp.preferred_height(), Some(7));
@@ -552,7 +552,7 @@ mod tests {
         comp.update(&Action::CpuUpdate(CpuSnapshot::stub()))
             .unwrap();
         comp.update(&Action::MemUpdate(mem)).unwrap();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
 
         assert_eq!(comp.preferred_height(), Some(6));

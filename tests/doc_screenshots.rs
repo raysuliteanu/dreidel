@@ -263,7 +263,7 @@ fn screenshot_disk_list() {
 #[test]
 fn screenshot_process_list() {
     let mut comp = ProcessComponent::new(ColorPalette::dark(), 'p', &ProcessConfig::default());
-    comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+    comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
         .unwrap();
     comp.set_focused(true);
 
@@ -275,7 +275,7 @@ fn screenshot_process_list() {
 #[test]
 fn screenshot_process_detail() {
     let mut comp = ProcessComponent::new(ColorPalette::dark(), 'p', &ProcessConfig::default());
-    comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+    comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
         .unwrap();
     comp.set_focused(true);
     // Row 0 is auto-selected; press Enter to open detail view.
@@ -296,7 +296,7 @@ fn screenshot_process_tree() {
             ..ProcessConfig::default()
         },
     );
-    comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+    comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
         .unwrap();
     comp.set_focused(true);
 

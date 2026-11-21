@@ -42,7 +42,7 @@ fn status_bar_snapshot() {
         .unwrap();
     comp.update(&Action::MemUpdate(MemSnapshot::stub()))
         .unwrap();
-    comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+    comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
         .unwrap();
     let mut t = Terminal::new(TestBackend::new(120, 7)).unwrap();
     t.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
@@ -67,7 +67,7 @@ fn status_bar_snapshot_macos() {
         .unwrap();
     comp.update(&Action::MemUpdate(MemSnapshot::stub_macos()))
         .unwrap();
-    comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+    comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
         .unwrap();
     let mut t = Terminal::new(TestBackend::new(120, 7)).unwrap();
     t.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();

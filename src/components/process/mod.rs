@@ -24,7 +24,7 @@ use crate::{
     action::Action,
     components::{Component, PAGE_SCROLL, fmt_bytes, fmt_rate_col, panel_block},
     config::ProcessConfig,
-    stats::snapshots::ProcessEntry,
+    stats::snapshots::{ProcSnapshot, ProcessEntry},
     theme::ColorPalette,
 };
 use filter::ProcessFilter;
@@ -92,7 +92,7 @@ struct ProcessCompactSnapshot {
 pub struct ProcessComponent {
     palette: ColorPalette,
     focus_key: char,
-    raw: Vec<ProcessEntry>,
+    raw: std::sync::Arc<ProcSnapshot>,
     displayed: Vec<ProcessEntry>,
     table_state: TableState,
     filter: ProcessFilter,
@@ -139,7 +139,9 @@ impl Default for ProcessComponent {
         Self {
             palette: ColorPalette::dark(),
             focus_key: 'p',
-            raw: Vec::new(),
+            raw: std::sync::Arc::new(ProcSnapshot {
+                processes: Vec::new(),
+            }),
             displayed: Vec::new(),
             table_state,
             filter: ProcessFilter::None,
@@ -188,6 +190,7 @@ impl ProcessComponent {
                 self.tree_rows.clear();
                 let mut list: Vec<ProcessEntry> = self
                     .raw
+                    .processes
                     .iter()
                     .filter(|p| !p.is_thread && self.filter.matches(p))
                     .cloned()
@@ -201,13 +204,13 @@ impl ProcessComponent {
                 // and must stay that way.
                 let known: std::collections::HashSet<u32> =
                     self.tree_rows.iter().map(|r| r.entry.pid).collect();
-                for p in &self.raw {
+                for p in &self.raw.processes {
                     if !known.contains(&p.pid) {
                         self.expanded.insert(p.pid);
                     }
                 }
                 self.tree_rows = tree::build_tree(
-                    &self.raw,
+                    &self.raw.processes,
                     self.sort_col,
                     self.sort_dir,
                     &self.filter,
@@ -467,6 +470,7 @@ impl Component for ProcessComponent {
                         let (kill_pid, kill_name) = if p.is_thread {
                             let owner_pid = p.parent_pid.unwrap_or(p.pid);
                             self.raw
+                                .processes
                                 .iter()
                                 .find(|e| e.pid == owner_pid)
                                 .map(|o| (o.pid, o.name.clone()))
@@ -568,7 +572,7 @@ impl Component for ProcessComponent {
     fn update(&mut self, action: &Action) -> Result<Option<Action>> {
         match action {
             Action::ProcUpdate(snap) => {
-                self.raw = snap.processes.clone();
+                self.raw = std::sync::Arc::clone(snap);
                 self.refresh_display();
             }
             Action::ToggleFullScreen if self.focused => {
@@ -1250,7 +1254,7 @@ mod tests {
     #[test]
     fn renders_process_list() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
@@ -1291,7 +1295,7 @@ mod tests {
     #[test]
     fn first_row_selected_on_proc_update() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         assert_eq!(comp.table_state.selected(), Some(0));
     }
@@ -1311,7 +1315,7 @@ mod tests {
 
         let mut comp = ProcessComponent::default();
         comp.set_focused(true);
-        comp.update(&Action::ProcUpdate(snap)).unwrap();
+        comp.update(&Action::ProcUpdate(snap.into())).unwrap();
         comp.table_state.select(Some(2));
 
         // PageDown must clamp to last row (index 4, not 12).
@@ -1336,7 +1340,7 @@ mod tests {
     #[test]
     fn enter_opens_detail_view() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         comp.table_state.select(Some(0));
         comp.handle_key_event(key_code(KeyCode::Enter)).unwrap();
@@ -1346,7 +1350,7 @@ mod tests {
     #[test]
     fn detail_view_renders_two_column_process_fields() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         comp.table_state.select(Some(0));
         comp.handle_key_event(key_code(KeyCode::Enter)).unwrap();
@@ -1428,7 +1432,7 @@ mod tests {
     #[test]
     fn fullscreen_renders_without_panic() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         comp.set_focused(true);
         comp.update(&Action::ToggleFullScreen).unwrap();
@@ -1442,7 +1446,7 @@ mod tests {
     #[test]
     fn wide_area_uses_extended_columns_without_fullscreen() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         // 120-col area meets the threshold; is_fullscreen stays false.
         let mut terminal = Terminal::new(TestBackend::new(120, 30)).unwrap();
@@ -1463,7 +1467,7 @@ mod tests {
     #[test]
     fn narrow_area_uses_normal_columns() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         // 80-col area is well below the threshold.
         let mut terminal = Terminal::new(TestBackend::new(80, 30)).unwrap();
@@ -1484,7 +1488,7 @@ mod tests {
     #[test]
     fn narrow_width_keeps_name_column() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         let mut terminal = Terminal::new(TestBackend::new(40, 12)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
@@ -1504,7 +1508,7 @@ mod tests {
     #[test]
     fn narrow_sort_cycle_skips_hidden_columns() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         let mut terminal = Terminal::new(TestBackend::new(40, 12)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
@@ -1530,7 +1534,7 @@ mod tests {
     #[test]
     fn extended_view_sort_cycle_follows_column_order() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         comp.set_focused(true);
 
@@ -1587,7 +1591,7 @@ mod tests {
     #[test]
     fn normal_view_sort_cycle_follows_column_order() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         comp.set_focused(true);
 
@@ -1687,7 +1691,7 @@ mod tests {
         // global app handler never sees them and cannot shift focus or close
         // the modal.
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         // Enter detail view for the first process.
         comp.table_state.select(Some(0));
@@ -1728,7 +1732,7 @@ mod tests {
     #[test]
     fn kill_confirm_default_focuses_cancel() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         comp.table_state.select(Some(0));
         comp.handle_key_event(key('k')).unwrap();
@@ -1862,7 +1866,7 @@ mod tests {
     #[test]
     fn compact_state_restored_after_fullscreen_exit() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         comp.set_focused(true);
         // Record initial state
@@ -1887,7 +1891,7 @@ mod tests {
     #[test]
     fn kill_confirm_state_not_saved_in_compact_snapshot() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         comp.set_focused(true);
         // Put component in KillConfirm state
@@ -1915,7 +1919,7 @@ mod tests {
     #[test]
     fn compact_background_shows_frozen_sort_during_fullscreen() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         comp.set_focused(true);
 
@@ -1966,7 +1970,7 @@ mod tests {
     #[test]
     fn compact_background_shows_frozen_filter_during_fullscreen() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         comp.set_focused(true);
         comp.update(&Action::ToggleFullScreen).unwrap();
@@ -2009,7 +2013,7 @@ mod tests {
     #[test]
     fn tree_mode_title_shows_tag() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         comp.handle_key_event(key('t')).unwrap();
         let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
@@ -2024,7 +2028,7 @@ mod tests {
     #[test]
     fn tree_mode_renders_hierarchy() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         comp.handle_key_event(key('t')).unwrap();
         let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
@@ -2035,7 +2039,7 @@ mod tests {
     #[test]
     fn tree_mode_fullscreen_renders_hierarchy() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         comp.set_focused(true);
         comp.handle_key_event(key('t')).unwrap();
@@ -2049,7 +2053,7 @@ mod tests {
     #[test]
     fn space_collapses_tree_node() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         comp.handle_key_event(key('t')).unwrap();
 
@@ -2087,7 +2091,7 @@ mod tests {
     #[test]
     fn space_in_flat_mode_is_ignored() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         assert_eq!(comp.view_mode, ProcessViewMode::Flat);
         // Space should return Ok(None) and not panic.
@@ -2101,7 +2105,7 @@ mod tests {
     #[test]
     fn tree_mode_preserved_across_fullscreen_toggle() {
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(ProcSnapshot::stub()))
+        comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         comp.set_focused(true);
         // Switch to tree mode
@@ -2146,7 +2150,7 @@ mod tests {
         });
 
         let mut comp = ProcessComponent::default();
-        comp.update(&Action::ProcUpdate(snap)).unwrap();
+        comp.update(&Action::ProcUpdate(snap.into())).unwrap();
 
         assert!(
             comp.displayed.iter().all(|p| !p.is_thread),
@@ -2180,7 +2184,7 @@ mod tests {
             ..Default::default()
         };
         let mut comp = ProcessComponent::new(ColorPalette::dark(), 'p', &config);
-        comp.update(&Action::ProcUpdate(snap)).unwrap();
+        comp.update(&Action::ProcUpdate(snap.into())).unwrap();
 
         // Navigate to the thread row (it will be a child of the parent process).
         let thread_idx = comp

@@ -662,7 +662,7 @@ mod tests {
             let _ = comp.update(&Action::MemUpdate(MemSnapshot::stub()));
             let _ = comp.update(&Action::NetUpdate(NetSnapshot::stub()));
             let _ = comp.update(&Action::DiskUpdate(DiskSnapshot::stub()));
-            let _ = comp.update(&Action::ProcUpdate(ProcSnapshot::stub()));
+            let _ = comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()));
             let _ = comp.update(&Action::SysUpdate(SysSnapshot::stub()));
         }
         app.loading = false;

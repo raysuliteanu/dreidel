@@ -36,5 +36,7 @@ pub enum Action {
     MemUpdate(MemSnapshot),
     NetUpdate(NetSnapshot),
     DiskUpdate(DiskSnapshot),
-    ProcUpdate(ProcSnapshot),
+    /// Shared because several components keep the latest snapshot and it holds
+    /// thousands of entries; deep-copying it per receiver was a measurable cost.
+    ProcUpdate(std::sync::Arc<ProcSnapshot>),
 }

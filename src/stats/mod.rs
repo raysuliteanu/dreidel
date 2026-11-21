@@ -195,7 +195,7 @@ async fn run_collector(
             Action::MemUpdate(build_mem(&sys)),
             Action::NetUpdate(build_net(&nets, since_last_refresh)),
             Action::DiskUpdate(build_disk(&disks, since_last_refresh)),
-            Action::ProcUpdate(proc_snap),
+            Action::ProcUpdate(proc_snap.into()),
         ];
         let t_build_rest = lap.split();
 
