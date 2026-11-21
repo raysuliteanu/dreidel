@@ -278,7 +278,7 @@ Linux (it holds `dlopen`ed NVML/Vulkan handles), and it also keeps sysinfo's
 blocking refreshes off the main runtime's workers. The collector runs two
 `tokio::time::interval` timers:
 
-- **Fast interval** (`refresh_ms`, default 1s) — refreshes `sysinfo::System`,
+- **Fast interval** (`refresh_ms`, default 2s) — refreshes `sysinfo::System`,
   `Networks`, `Disks`, `Components` (Linux only — temperatures aren't shown on
   macOS), and `Gpus`, then builds and sends six
   `Action::*Update` variants. Process data includes the full process list but

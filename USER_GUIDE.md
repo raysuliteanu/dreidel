@@ -701,7 +701,7 @@ dreidel [OPTIONS]
 | Flag                    | Default                         | Description                                                        |
 | ----------------------- | ------------------------------- | ------------------------------------------------------------------ |
 | `--theme <THEME>`       | `auto`                          | Color theme: `auto` \| `light` \| `dark`                           |
-| `--refresh-rate <RATE>` | `1s`                            | Stats refresh interval, e.g. `500ms`, `2s`                         |
+| `--refresh-rate <RATE>` | `2s`                            | Stats refresh interval, e.g. `500ms`, `1s`                         |
 | `--thread-refresh <RATE>` | `5s`                          | Thread enumeration interval (Linux), e.g. `5s`, `10s`             |
 | `--preset <LAYOUT>`     | `sidebar`                       | Layout: `sidebar` \| `classic` \| `dashboard` \| `grid`            |
 | `--show <COMPONENTS>`   | _(all)_                         | Comma-separated list of components to show: `cpu,net,disk,process` |
@@ -747,7 +747,7 @@ can save and edit.
 ```toml
 [general]
 # Stats refresh interval, e.g. "500ms", "1s", "2s", "1m 30s".
-refresh_rate_ms = "1s"
+refresh_rate_ms = "2s"
 
 # How often to enumerate per-process threads (Linux only).
 # Thread enumeration is expensive; a slower cadence avoids thousands
@@ -827,7 +827,7 @@ help       = "?"   # Open help overlay
 | Process list empty | Check that `process` is in `layout.show` and not in `--hide` |
 | Filter not matching | Press `/` first to enter filter mode; `Esc` clears the filter (works in CPU, Net, Disk, and Process panels) |
 | Can't kill a process | You need to own the process or run dreidel as root; the error dialog will explain |
-| High CPU use by dreidel | Increase `--refresh-rate` to `2s` or more |
+| High CPU use by dreidel | Increase `--refresh-rate` (default `2s`) to `3s` or more |
 | Temperature not shown | Temperature collection requires Linux and a supported CPU sensor |
 
 **Log file:** `~/.local/share/dreidel/dreidel.log` on Linux,

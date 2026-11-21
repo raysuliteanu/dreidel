@@ -4,7 +4,7 @@
 
 [general]
 # Refresh interval for all components. Examples: "500ms", "1s", "2s"
-# refresh_rate_ms = "1s"
+# refresh_rate_ms = "2s"
 
 # How often to enumerate per-process threads (/proc/<pid>/task/).
 # Thread enumeration is expensive; a slower cadence avoids thousands

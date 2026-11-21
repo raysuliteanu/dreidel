@@ -44,9 +44,10 @@ fn deserialize_duration<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u64, D
     parse_duration_ms(&s).map_err(serde::de::Error::custom)
 }
 
-// TODO: address magic number; it's duplicated below in default()
+// 2s matches btop's default and halves collector work versus 1s; key presses
+// still render immediately.
 fn default_refresh() -> u64 {
-    1000
+    2000
 }
 
 fn default_thread_refresh() -> u64 {
@@ -56,7 +57,7 @@ fn default_thread_refresh() -> u64 {
 impl Default for GeneralConfig {
     fn default() -> Self {
         Self {
-            refresh_rate_ms: 1000,
+            refresh_rate_ms: default_refresh(),
             thread_refresh_ms: 5000,
             theme: Theme::Auto,
             // TODO: address magic number
@@ -292,7 +293,7 @@ mod tests {
     #[test]
     fn default_config_is_valid() {
         let c = Config::default();
-        assert_eq!(c.general.refresh_rate_ms, 1000);
+        assert_eq!(c.general.refresh_rate_ms, 2000);
     }
 
     #[test]

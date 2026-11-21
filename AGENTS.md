@@ -55,7 +55,7 @@ sysinfo → stats/mod.rs (spawn_collector) → Action::*Update → App::handle_a
 thread (current-thread Tokio runtime; needed because `sysinfo::Gpus` is not
 `Send` on Linux) and sends typed `Action::*Update(Snapshot)` variants on a
 bounded `mpsc::Sender<Action>`.
-It runs two intervals: a **fast interval** (`refresh_rate_ms`, default 1s) that
+It runs two intervals: a **fast interval** (`refresh_rate_ms`, default 2s) that
 refreshes CPU/GPU/mem/net/disk/process data, and a **slow interval**
 (`thread_refresh_ms`, default 5s) that enumerates per-process threads via
 `/proc/<pid>/task/` on Linux and `libproc` on macOS. Thread entries are cached
