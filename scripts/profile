@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+#
+# Record a CPU profile of dreidel (or any TUI that quits on `q`) with samply.
+#
+# The program runs in a detached, fixed-size tmux session on a private tmux
+# server; after the recording window `q` is sent so it exits cleanly and samply
+# writes the profile. Analyze the result with scripts/profile-report.
+
+set -euo pipefail
+
+usage() {
+  cat >&2 <<EOF
+usage: $0 [-d duration_s] [-o out.json.gz] [-W cols] [-H rows] -- command [args...]
+
+  -d  recording window in seconds (default 60)
+  -o  output profile path (default target/profile.json.gz)
+  -W  terminal width (default 200)
+  -H  terminal height (default 50)
+
+example:
+  cargo build --profile profiling
+  $0 -- target/profiling/dreidel --refresh-rate 1s
+  scripts/profile-report target/profile.json.gz
+EOF
+  exit 1
+}
+
+duration=60
+out=target/profile.json.gz
+cols=200
+rows=50
+
+while getopts ':d:o:W:H:h' opt; do
+  case "$opt" in
+    d) duration="$OPTARG" ;;
+    o) out="$OPTARG" ;;
+    W) cols="$OPTARG" ;;
+    H) rows="$OPTARG" ;;
+    *) usage ;;
+  esac
+done
+shift $((OPTIND - 1))
+[[ "${1:-}" == "--" ]] && shift
+(( $# > 0 )) || usage
+
+for n in "$duration" "$cols" "$rows"; do
+  [[ "$n" =~ ^[0-9]+$ ]] || { printf 'error: numeric option expected, got %q\n' "$n" >&2; exit 1; }
+done
+
+for tool in tmux samply "$1"; do
+  command -v "$tool" >/dev/null 2>&1 || { printf 'error: command not found: %s\n' "$tool" >&2; exit 1; }
+done
+
+socket="profile-$$"
+tmux_() { tmux -L "$socket" -f /dev/null "$@"; }
+cleanup() { tmux_ kill-server 2>/dev/null || true; }
+trap cleanup EXIT
+
+mkdir -p "$(dirname "$out")"
+cmd=$(printf '%q ' samply record --save-only --unstable-presymbolicate -o "$out" "$@")
+done_flag="${out}.done"
+rm -f "$done_flag"
+tmux_ new-session -d -x "$cols" -y "$rows" "$cmd; touch $(printf '%q' "$done_flag")"
+
+printf 'recording %ss -> %s\n' "$duration" "$out"
+sleep "$duration"
+tmux_ send-keys q
+
+# samply writes the profile after the child exits; give it time to finish.
+for _ in $(seq 1 60); do
+  [[ -e "$done_flag" ]] && break
+  sleep 1
+done
+rm -f "$done_flag"
+[[ -s "$out" ]] || { printf 'error: no profile written to %s\n' "$out" >&2; exit 1; }
+printf 'wrote %s\n' "$out"

@@ -415,17 +415,32 @@ impl App {
                     tui.resize(Rect::new(0, 0, *w, *h)).context("resizing")?;
                     self.render(tui).context("re-rendering after resize")?;
                 }
-                Action::Render => self.render(tui).context("rendering")?,
+                Action::Render => {
+                    let start = std::time::Instant::now();
+                    self.render(tui).context("rendering")?;
+                    debug!(
+                        target: "dreidel::perf",
+                        us = start.elapsed().as_micros() as u64,
+                        "render"
+                    );
+                }
                 Action::SysUpdate(_) => self.loading = false,
                 _ => {}
             }
             // Fan out to all components
+            let start = std::time::Instant::now();
             for (_, comp) in &mut self.components {
                 if let Some(new_action) = comp.update(&action)? {
                     let _ = self.action_tx.try_send(new_action);
                 }
             }
             self.status_bar.update(&action)?;
+            debug!(
+                target: "dreidel::perf",
+                action = %action,
+                us = start.elapsed().as_micros() as u64,
+                "component update"
+            );
         }
         Ok(())
     }

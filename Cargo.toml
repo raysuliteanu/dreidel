@@ -84,6 +84,11 @@ harness = false
 inherits = "release"
 lto = "thin"
 
+# Release build with debug symbols for sampling profilers (samply, perf, Instruments).
+[profile.profiling]
+inherits = "release"
+debug = true
+
 [package.metadata.docs.rs]
 # This crate uses Linux-specific APIs; only build docs for Linux targets.
 targets = ["x86_64-unknown-linux-gnu"]

@@ -33,9 +33,10 @@ This number is the target metric for every later phase.
 ## Phase 1 — Profile
 
 1. Add a `[profile.profiling]` that inherits `release` with `debug = true`.
-2. Sample with `samply record target/profiling/dreidel` (macOS/Linux) or
-   `xctrace record --template 'Time Profiler'` (macOS); `perf record -g` /
-   `cargo flamegraph` on Linux.
+2. Sample with samply: `scripts/profile -- target/profiling/dreidel` records
+   60 s in a detached tmux session, and `scripts/profile-report
+   target/profile.json.gz` summarizes on-CPU time by thread and function
+   (`--grep PAT…`, `--callers LEAF`). `xctrace` or `perf record -g` also work.
 3. Add `tracing` debug spans with timings around each collector step
    (`refresh_specifics`, nets, disks, components, gpus, `enumerate_threads`,
    `build_proc`, `build_cpu`, `cached_threads.clone()`) and around
@@ -120,3 +121,58 @@ Takeaways:
   **~8.5%** is per-fast-tick work (~85 ms CPU per tick), so hypotheses 1–3
   (process refresh, sensor refresh, allocation) are where the bulk is.
 - Single runs; repeat before relying on differences under ~0.5%.
+
+### Phase 1 profile (2026-11-21)
+
+Same machine. `cargo build --profile profiling`, 60 s under
+`samply record --save-only --unstable-presymbolicate`, CPU attributed by
+`threadCPUDelta` (on-CPU time, not wall time). Total 5.54 s CPU ≈ 92 ms/s.
+Per-step wall times come from the `dreidel::perf` debug logs (`-vv`).
+
+| Where                                                     | % of CPU | Wall/tick | Notes |
+| --------------------------------------------------------- | -------: | --------: | ----- |
+| **stats-collector thread**                                |  **84%** |    139 ms | |
+| ↳ process refresh (`refresh_processes_specifics`)         |      37% |     33 ms | see below |
+| &nbsp;&nbsp;↳ `KERN_PROCARGS2` sysctl in `get_process_infos` |    20% |           | per process, every tick |
+| &nbsp;&nbsp;↳ `proc_pidinfo` task info                    |       8% |           | needed for cpu/mem |
+| &nbsp;&nbsp;↳ `get_cwd_root`                              |       7% |           | |
+| &nbsp;&nbsp;↳ `get_exe_and_name_backup`                   |       2% |           | |
+| ↳ `Disks::refresh`                                        |      28% |     21 ms | CacheDelete IPC for "available capacity for important usage" |
+| ↳ `macos::read_net_drops`                                 |       6% |           | full `NET_RT_IFLIST2` dump per interface → O(ifaces²) |
+| ↳ `Components::refresh`                                   |       4% |     74 ms | mostly blocked in SMC IPC; result unused on macOS |
+| ↳ `Networks::refresh`                                     |       3% |      2 ms | |
+| ↳ `macos::enrich_process_entry`                           |       2% |           | |
+| ↳ `macos::enumerate_threads` (every 5 s)                  |       1% |      4 ms | |
+| **main thread** (`App::handle_actions`)                   |  **15%** |           | |
+| ↳ `App::render`                                           |     8.5% |      8 ms | ProcessComponent draw ≈ 5% |
+| ↳ `ProcessComponent::update`                              |     3.5% |      5 ms | `refresh_display` 2%, `ProcessEntry::clone` 1.8% |
+
+Findings that change the Phase 3 plan:
+
+- **Slow ticks do a full extra refresh.** The slow interval is its own
+  `select!` arm, so each slow tick runs every refresh (sysinfo, disks,
+  components…) in addition to the fast ticks: 78 ticks in ~65 s. That's ~20%
+  extra collector work at the default 1 s / 5 s, and explains the fixed cost
+  that doesn't scale with refresh rate in the Phase 0 numbers.
+- **Disk refresh is the single most expensive call** (28%), driven by
+  CacheDelete's purgeable-space computation for free space. Storage numbers
+  barely change second to second.
+- **`UpdateKind::OnlyIfNotSet` won't remove the `KERN_PROCARGS2` sysctl on
+  macOS.** In sysinfo 0.40.4 `get_process_infos` issues the sysctl for every
+  process on every refresh and only checks `cmd()`/`environ()` afterwards, to
+  decide what to parse. `OnlyIfNotSet` for cwd/root (7%) and dropping environ
+  still help; avoiding the 20% needs an upstream change or not refreshing
+  every process every tick.
+- **`Components::refresh` is 74 ms wall but only ~4% CPU** — it's blocked, not
+  busy. Skip it on macOS anyway, since `build_cpu_macos` never reads it.
+- UI work is only ~15%, so UI optimizations come last.
+
+Revised Phase 3 order (estimated CPU saved, as % of the current total):
+
+1. Slow tick should only enumerate threads, not repeat the full refresh (~15–20%).
+2. Refresh disk storage on a slow cadence; keep I/O counters per tick (up to ~25%).
+3. `read_net_drops`: one sysctl dump per tick, look up each interface (~5%).
+4. Process refresh: `OnlyIfNotSet` for cwd/root/exe, no environ (~7–9%).
+5. Skip `Components::refresh` on macOS (~4%, plus 74 ms less wall time per tick).
+6. Look into the `KERN_PROCARGS2` cost upstream in sysinfo (~20%, needs an upstream change).
+7. UI: avoid the `ProcUpdate` deep clone; cache `refresh_display` (~3%).

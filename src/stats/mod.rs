@@ -94,6 +94,10 @@ async fn run_collector(
             _ = fast_interval.tick() => false,
         };
 
+        // Per-step timings, logged at debug level under the `dreidel::perf`
+        // target (`-vv`) to attribute collector CPU cost without a profiler.
+        let mut lap = Lap::start();
+
         // Equivalent to `refresh_all()` minus per-process GPU stats, which the
         // `gpu` feature would otherwise collect (a `/proc/<pid>/fd` walk per
         // process on Linux) and which nothing displays.
@@ -104,12 +108,17 @@ async fn run_collector(
                     .without_gpu_memory(),
             ),
         );
+        let t_sys = lap.split();
         nets.refresh(false);
+        let t_nets = lap.split();
         disks.refresh(false);
+        let t_disks = lap.split();
         components.refresh(false);
+        let t_components = lap.split();
         if let Some(gpus) = gpus.as_mut() {
             gpus.refresh(false);
         }
+        let t_gpus = lap.split();
 
         // Enumerate threads only on the slow cadence.
         #[cfg(target_os = "linux")]
@@ -122,9 +131,12 @@ async fn run_collector(
         }
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         let _ = slow_tick;
+        let t_threads = lap.split();
 
         let mut proc_snap = build_proc(&sys);
+        let t_build_proc = lap.split();
         proc_snap.processes.extend(cached_threads.clone());
+        let t_merge_threads = lap.split();
 
         #[cfg(target_os = "linux")]
         let mut cpu_snap = build_cpu(&sys, &components, &mut prev_cpu_total);
@@ -133,6 +145,7 @@ async fn run_collector(
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         let mut cpu_snap = build_cpu_stub(&sys, &components);
         cpu_snap.gpus = gpus.as_ref().map(build_gpus).unwrap_or_default();
+        let t_build_cpu = lap.split();
 
         let actions = [
             Action::SysUpdate(build_sys(&sys)),
@@ -142,6 +155,24 @@ async fn run_collector(
             Action::DiskUpdate(build_disk(&disks)),
             Action::ProcUpdate(proc_snap),
         ];
+        let t_build_rest = lap.split();
+
+        debug!(
+            target: "dreidel::perf",
+            slow_tick,
+            total_us = lap.total_us(),
+            sys_refresh_us = t_sys,
+            nets_us = t_nets,
+            disks_us = t_disks,
+            components_us = t_components,
+            gpus_us = t_gpus,
+            threads_us = t_threads,
+            build_proc_us = t_build_proc,
+            merge_threads_us = t_merge_threads,
+            build_cpu_us = t_build_cpu,
+            build_rest_us = t_build_rest,
+            "collector tick"
+        );
 
         for action in actions {
             match tx.try_send(action) {
@@ -155,6 +186,33 @@ async fn run_collector(
                 }
             }
         }
+    }
+}
+
+/// Stopwatch that reports microseconds elapsed since the previous split.
+struct Lap {
+    start: std::time::Instant,
+    last: std::time::Instant,
+}
+
+impl Lap {
+    fn start() -> Self {
+        let now = std::time::Instant::now();
+        Self {
+            start: now,
+            last: now,
+        }
+    }
+
+    fn split(&mut self) -> u64 {
+        let now = std::time::Instant::now();
+        let us = now.duration_since(self.last).as_micros() as u64;
+        self.last = now;
+        us
+    }
+
+    fn total_us(&self) -> u64 {
+        self.last.duration_since(self.start).as_micros() as u64
     }
 }
 

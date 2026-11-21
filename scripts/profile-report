@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""Summarize a samply profile recorded with --unstable-presymbolicate.
+
+CPU is attributed by each sample's threadCPUDelta (on-CPU time), so blocked
+time is excluded. Default output: per-thread totals, top inclusive and self
+functions. --grep shows inclusive cost for functions matching patterns;
+--callers attributes a leaf symbol (e.g. __sysctl) to its nearest
+sysinfo/dreidel caller.
+
+usage:
+  scripts/profile-report target/profile.json.gz
+  scripts/profile-report target/profile.json.gz --grep Disks Components
+  scripts/profile-report target/profile.json.gz --callers __sysctl
+"""
+
+import argparse
+import bisect
+import collections
+import gzip
+import json
+import re
+import sys
+
+
+def load(profile_path, syms_path):
+    profile = json.load(gzip.open(profile_path))
+    syms = json.load(open(syms_path))
+    strtab = syms["string_table"]
+    libsyms = {}
+    for d in syms["data"]:
+        tab = sorted(d["symbol_table"], key=lambda e: e["rva"])
+        libsyms[d["debug_name"]] = ([e["rva"] for e in tab], tab)
+    return profile, strtab, libsyms
+
+
+def symbolizer(profile, strtab, libsyms):
+    libs = profile["libs"]
+
+    def sym(lib, addr):
+        if lib in libsyms:
+            rvas, tab = libsyms[lib]
+            i = bisect.bisect_right(rvas, addr) - 1
+            if i >= 0 and addr < tab[i]["rva"] + tab[i]["size"]:
+                return re.sub(r"::h[0-9a-f]{16}$", "", strtab[tab[i]["symbol"]])[:150]
+        return f"{lib}!{addr:#x}"
+
+    def frames(thread):
+        ft, fn, st, rt = (thread[k] for k in ("frameTable", "funcTable", "stackTable", "resourceTable"))
+        cache = {}
+
+        def name(frame):
+            if frame not in cache:
+                res = fn["resource"][ft["func"][frame]]
+                lib = libs[rt["lib"][res]]["debugName"] if res is not None and res >= 0 else "?"
+                cache[frame] = sym(lib, ft["address"][frame])
+            return cache[frame]
+
+        def stack(idx):
+            out = []
+            while idx is not None:
+                out.append(name(st["frame"][idx]))
+                idx = st["prefix"][idx]
+            return out
+
+        return stack
+
+    return frames
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("profile")
+    ap.add_argument("--syms", help="symbol sidecar (default: <profile minus .gz/.json>.json.syms.json)")
+    ap.add_argument("--top", type=int, default=40)
+    ap.add_argument("--grep", nargs="+", metavar="PAT")
+    ap.add_argument("--callers", metavar="LEAF")
+    args = ap.parse_args()
+
+    syms_path = args.syms or re.sub(r"(\.json)?(\.gz)?$", "", args.profile) + ".json.syms.json"
+    profile, strtab, libsyms = load(args.profile, syms_path)
+    frames = symbolizer(profile, strtab, libsyms)
+
+    incl, selfc, per_thread, callers = (collections.Counter() for _ in range(4))
+    total = 0
+    for thread in profile["threads"]:
+        stack_of = frames(thread)
+        s = thread["samples"]
+        for idx, cpu in zip(s["stack"], s.get("threadCPUDelta") or s["weight"]):
+            if idx is None or not cpu:
+                continue
+            names = stack_of(idx)
+            total += cpu
+            per_thread[thread["name"]] += cpu
+            selfc[names[0]] += cpu
+            for n in set(names):
+                incl[n] += cpu
+            if args.callers and names[0] == args.callers:
+                caller = next((n for n in names[1:] if "sysinfo" in n or "dreidel" in n), "?")
+                callers[caller] += cpu
+
+    if total == 0:
+        sys.exit("error: profile has no CPU samples")
+    pct = lambda v: f"{100 * v / total:5.1f}%"
+
+    if args.callers:
+        for k, v in callers.most_common(args.top):
+            print(f"{pct(v)}  {k}")
+        return
+    if args.grep:
+        for pat in args.grep:
+            for k, v in sorted(((k, v) for k, v in incl.items() if pat in k), key=lambda kv: -kv[1])[:3]:
+                print(f"{pct(v)}  [{pat}] {k}")
+        return
+
+    print(f"total cpu {total / 1e6:.2f}s")
+    for k, v in per_thread.most_common(6):
+        print(f"  {pct(v)}  thread {k}")
+    print(f"\n-- inclusive (top {args.top})")
+    for k, v in incl.most_common(args.top):
+        print(f"{pct(v)}  {k}")
+    print(f"\n-- self (top {args.top // 2})")
+    for k, v in selfc.most_common(args.top // 2):
+        print(f"{pct(v)}  {k}")
+
+
+if __name__ == "__main__":
+    main()
