@@ -176,3 +176,13 @@ Revised Phase 3 order (estimated CPU saved, as % of the current total):
 5. Skip `Components::refresh` on macOS (~4%, plus 74 ms less wall time per tick).
 6. Look into the `KERN_PROCARGS2` cost upstream in sysinfo (~20%, needs an upstream change).
 7. UI: avoid the `ProcUpdate` deep clone; cache `refresh_display` (~3%).
+
+### Phase 3 results
+
+`scripts/cpu-bench -w 10 -d 60`, release build, same machine. Each row is
+cumulative (includes the fixes above it).
+
+| Change                                   | 1 s refresh | 2 s refresh |
+| ---------------------------------------- | ----------: | ----------: |
+| Baseline (v0.8.2)                        |       9.65% |       5.68% |
+| Slow tick only enumerates threads        |       8.87% |       4.62% |

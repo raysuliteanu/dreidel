@@ -85,14 +85,33 @@ async fn run_collector(
     let mut prev_cpu_ticks: Option<macos::MacosCpuTicks> = None;
 
     loop {
-        // Wait for whichever interval fires first.  When both are ready
-        // simultaneously tokio::select! picks one — the slow tick runs its
-        // enumeration and the fast tick runs on the next iteration.
-        let slow_tick = tokio::select! {
+        // Wait for whichever interval fires first.  A slow tick only
+        // re-enumerates threads against the process list from the last fast
+        // refresh; the result is published with the next fast tick. Running
+        // the full refresh on slow ticks too would add a whole extra
+        // collection cycle every `thread_refresh_ms`.
+        tokio::select! {
             _ = token.cancelled() => break,
-            _ = slow_interval.tick() => true,
-            _ = fast_interval.tick() => false,
-        };
+            _ = slow_interval.tick() => {
+                let start = std::time::Instant::now();
+                #[cfg(target_os = "linux")]
+                {
+                    cached_threads = enumerate_threads(&sys);
+                }
+                #[cfg(target_os = "macos")]
+                {
+                    cached_threads = macos::enumerate_threads(&sys);
+                }
+                debug!(
+                    target: "dreidel::perf",
+                    us = start.elapsed().as_micros() as u64,
+                    threads = cached_threads.len(),
+                    "thread enumeration"
+                );
+                continue;
+            }
+            _ = fast_interval.tick() => {}
+        }
 
         // Per-step timings, logged at debug level under the `dreidel::perf`
         // target (`-vv`) to attribute collector CPU cost without a profiler.
@@ -120,19 +139,6 @@ async fn run_collector(
         }
         let t_gpus = lap.split();
 
-        // Enumerate threads only on the slow cadence.
-        #[cfg(target_os = "linux")]
-        if slow_tick {
-            cached_threads = enumerate_threads(&sys);
-        }
-        #[cfg(target_os = "macos")]
-        if slow_tick {
-            cached_threads = macos::enumerate_threads(&sys);
-        }
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-        let _ = slow_tick;
-        let t_threads = lap.split();
-
         let mut proc_snap = build_proc(&sys);
         let t_build_proc = lap.split();
         proc_snap.processes.extend(cached_threads.clone());
@@ -159,14 +165,12 @@ async fn run_collector(
 
         debug!(
             target: "dreidel::perf",
-            slow_tick,
             total_us = lap.total_us(),
             sys_refresh_us = t_sys,
             nets_us = t_nets,
             disks_us = t_disks,
             components_us = t_components,
             gpus_us = t_gpus,
-            threads_us = t_threads,
             build_proc_us = t_build_proc,
             merge_threads_us = t_merge_threads,
             build_cpu_us = t_build_cpu,
@@ -893,5 +897,28 @@ mod tests {
         }
         token.cancel();
         assert!(got_cpu, "expected CpuUpdate from collector");
+    }
+
+    /// Slow (thread-enumeration) ticks must not trigger an extra full refresh
+    /// and publish: only the fast interval drives updates.
+    #[tokio::test]
+    async fn slow_tick_does_not_publish_updates() {
+        let (tx, mut rx) = mpsc::channel(1024);
+        let token = tokio_util::sync::CancellationToken::new();
+        spawn_collector(tx, token.child_token(), 1000, 100);
+
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(1500);
+        let mut sys_updates = 0;
+        while let Ok(Some(action)) = tokio::time::timeout_at(deadline, rx.recv()).await {
+            if matches!(action, crate::action::Action::SysUpdate(_)) {
+                sys_updates += 1;
+            }
+        }
+        token.cancel();
+        // Fast ticks at ~0 ms and ~1000 ms; allow one extra for timing jitter.
+        assert!(
+            (1..=3).contains(&sys_updates),
+            "expected 1-3 SysUpdates from fast ticks in 1.5 s, got {sys_updates}"
+        );
     }
 }
