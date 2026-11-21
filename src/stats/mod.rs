@@ -562,6 +562,8 @@ fn read_vmstat_field(field: &str) -> Option<u64> {
 fn build_net(nets: &Networks) -> NetSnapshot {
     #[cfg(target_os = "linux")]
     let dev_stats = procfs::net::dev_status().unwrap_or_default();
+    #[cfg(target_os = "macos")]
+    let mac_drops = macos::read_net_drops();
 
     NetSnapshot {
         interfaces: nets
@@ -583,7 +585,7 @@ fn build_net(nets: &Networks) -> NetSnapshot {
                 ipv6_addresses.sort_unstable();
 
                 #[cfg(target_os = "macos")]
-                let (mac_rx_drop, mac_tx_drop) = macos::read_net_drops(&name);
+                let (mac_rx_drop, mac_tx_drop) = mac_drops.get(&name).copied().unwrap_or((0, 0));
 
                 InterfaceSnapshot {
                     name: name.clone(),

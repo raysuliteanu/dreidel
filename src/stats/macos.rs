@@ -194,8 +194,11 @@ pub fn read_mem_details() -> (u64, u64, u64, u64, u64, u64, u64, u64) {
     )
 }
 
-/// Returns (rx_dropped, tx_dropped) for the named interface via `sysctl(NET_RT_IFLIST2)`.
-pub fn read_net_drops(iface_name: &str) -> (u64, u64) {
+/// Returns interface name → (rx_dropped, tx_dropped) for every interface, from a
+/// single `sysctl(NET_RT_IFLIST2)` dump. Call once per tick and look interfaces
+/// up in the map; the dump covers all interfaces, so per-interface calls would
+/// repeat it once per interface.
+pub fn read_net_drops() -> std::collections::HashMap<String, (u64, u64)> {
     use libc::{CTL_NET, NET_RT_IFLIST2, PF_ROUTE, RTM_IFINFO2, if_msghdr2, sysctl};
     use std::mem;
 
@@ -214,8 +217,9 @@ pub fn read_net_drops(iface_name: &str) -> (u64, u64) {
             0,
         )
     };
+    let mut drops = std::collections::HashMap::new();
     if ret != 0 || buf_len == 0 {
-        return (0, 0);
+        return drops;
     }
 
     let mut buf = vec![0u8; buf_len];
@@ -233,7 +237,7 @@ pub fn read_net_drops(iface_name: &str) -> (u64, u64) {
         )
     };
     if ret != 0 {
-        return (0, 0);
+        return drops;
     }
 
     let mut offset = 0usize;
@@ -258,10 +262,11 @@ pub fn read_net_drops(iface_name: &str) -> (u64, u64) {
                     let name_bytes = unsafe {
                         std::slice::from_raw_parts(sdl.sdl_data.as_ptr() as *const u8, nlen)
                     };
-                    if let Ok(name) = std::str::from_utf8(name_bytes)
-                        && name == iface_name
-                    {
-                        return (hdr.ifm_data.ifi_iqdrops, hdr.ifm_snd_drops as u64);
+                    if let Ok(name) = std::str::from_utf8(name_bytes) {
+                        drops.insert(
+                            name.to_owned(),
+                            (hdr.ifm_data.ifi_iqdrops, hdr.ifm_snd_drops as u64),
+                        );
                     }
                 }
             }
@@ -269,7 +274,7 @@ pub fn read_net_drops(iface_name: &str) -> (u64, u64) {
         offset += msg_len;
     }
 
-    (0, 0)
+    drops
 }
 
 pub fn enrich_process_entry(entry: &mut ProcessEntry, pid: u32) {
@@ -388,4 +393,19 @@ pub fn enumerate_threads(sys: &System) -> Vec<ProcessEntry> {
     }
 
     thread_entries
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_net_drops_lists_loopback() {
+        let drops = read_net_drops();
+        assert!(
+            drops.contains_key("lo0"),
+            "expected lo0 among {:?}",
+            drops.keys().collect::<Vec<_>>()
+        );
+    }
 }
