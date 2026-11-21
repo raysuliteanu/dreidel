@@ -906,6 +906,25 @@ impl Component for ProcessComponent {
 }
 
 impl ProcessComponent {
+    /// Index range of `displayed` that fits in a table body of `body_height`
+    /// rows, scrolled so the selection stays visible (the same rule ratatui's
+    /// `Table` applies to its offset). The offset is kept in `table_state` and
+    /// only these rows are built, instead of formatting every process each
+    /// frame.
+    fn visible_range(&mut self, body_height: usize) -> std::ops::Range<usize> {
+        let len = self.displayed.len();
+        let mut offset = self.table_state.offset().min(len.saturating_sub(1));
+        if let Some(sel) = self.table_state.selected() {
+            if sel < offset {
+                offset = sel;
+            } else if body_height > 0 && sel >= offset + body_height {
+                offset = sel + 1 - body_height;
+            }
+        }
+        *self.table_state.offset_mut() = offset;
+        offset..(offset + body_height).min(len)
+    }
+
     fn draw_normal(&mut self, frame: &mut Frame, area: Rect) -> Result<()> {
         let dir_sym = if self.sort_dir == SortDir::Desc {
             "▼"
@@ -939,11 +958,13 @@ impl ProcessComponent {
             });
         let header = Row::new(header_cells).height(1);
 
-        let rows: Vec<Row> = self
-            .displayed
+        let visible = self.visible_range(area.height.saturating_sub(1) as usize);
+        let first = visible.start;
+        let rows: Vec<Row> = self.displayed[visible]
             .iter()
             .enumerate()
             .map(|(i, p)| {
+                let i = first + i;
                 let name = if self.view_mode == ProcessViewMode::Tree {
                     let prefix = self
                         .tree_rows
@@ -1009,7 +1030,12 @@ impl ProcessComponent {
             .header(header)
             .row_highlight_style(Style::new().bg(self.palette.border).fg(self.palette.fg));
 
-        frame.render_stateful_widget(table, area, &mut self.table_state);
+        let mut state = TableState::default().with_selected(
+            self.table_state
+                .selected()
+                .and_then(|sel| sel.checked_sub(first)),
+        );
+        frame.render_stateful_widget(table, area, &mut state);
         Ok(())
     }
 
@@ -1066,11 +1092,13 @@ impl ProcessComponent {
             Constraint::Fill(1),
         ];
 
-        let rows: Vec<Row> = self
-            .displayed
+        let visible = self.visible_range(area.height.saturating_sub(1) as usize);
+        let first = visible.start;
+        let rows: Vec<Row> = self.displayed[visible]
             .iter()
             .enumerate()
             .map(|(i, p)| {
+                let i = first + i;
                 let status_char = match p.status {
                     crate::stats::snapshots::ProcessStatus::Running => "R",
                     crate::stats::snapshots::ProcessStatus::Sleeping => "S",
@@ -1152,7 +1180,12 @@ impl ProcessComponent {
             .header(header)
             .row_highlight_style(Style::new().bg(self.palette.border).fg(self.palette.fg));
 
-        frame.render_stateful_widget(table, area, &mut self.table_state);
+        let mut state = TableState::default().with_selected(
+            self.table_state
+                .selected()
+                .and_then(|sel| sel.checked_sub(first)),
+        );
+        frame.render_stateful_widget(table, area, &mut state);
         Ok(())
     }
 }
@@ -1298,6 +1331,53 @@ mod tests {
         comp.update(&Action::ProcUpdate(ProcSnapshot::stub().into()))
             .unwrap();
         assert_eq!(comp.table_state.selected(), Some(0));
+    }
+
+    /// Only visible rows are built; scrolling must still keep the selection
+    /// on screen and only move the window when the selection leaves it.
+    #[test]
+    fn table_scrolls_to_keep_selection_visible() {
+        let mut snap = ProcSnapshot::stub();
+        let base = snap.processes[0].clone();
+        snap.processes = (0..100)
+            .map(|i| ProcessEntry {
+                pid: 1000 + i,
+                name: format!("p{i:03}x"),
+                cmd: Vec::new(),
+                is_thread: false,
+                parent_pid: None,
+                ..base.clone()
+            })
+            .collect();
+
+        // Narrow (normal) and wide (extended) layouts build rows separately.
+        for width in [80, 150] {
+            let mut comp = ProcessComponent::default();
+            comp.update(&Action::ProcUpdate(snap.clone().into()))
+                .unwrap();
+            // 12 rows - 2 border - 1 header = 9 body rows.
+            let mut terminal = Terminal::new(TestBackend::new(width, 12)).unwrap();
+            let mut draw_and_check = |comp: &mut ProcessComponent, sel: usize| {
+                comp.table_state.select(Some(sel));
+                terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+                let screen = format!("{}", terminal.backend());
+                let name = &comp.displayed[sel].name;
+                assert!(
+                    screen.contains(name.as_str()),
+                    "{name} not visible:\n{screen}"
+                );
+                comp.table_state.offset()
+            };
+
+            assert_eq!(
+                draw_and_check(&mut comp, 50),
+                42,
+                "scrolls down to selection"
+            );
+            assert_eq!(draw_and_check(&mut comp, 45), 42, "stays put within window");
+            assert_eq!(draw_and_check(&mut comp, 10), 10, "scrolls up to selection");
+            assert_eq!(draw_and_check(&mut comp, 99), 91, "last row at bottom");
+        }
     }
 
     #[test]

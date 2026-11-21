@@ -190,6 +190,7 @@ cumulative (includes the fixes above it).
 | One `NET_RT_IFLIST2` dump per tick       |       7.18% |       3.80% |
 | No `Components` (sensors) off Linux      |       6.12% |       3.15% |
 | `ProcUpdate(Arc<ProcSnapshot>)`          |       5.80% |       3.10% |
+| Build only visible process table rows   |       5.47% |       2.75% |
 
 Tried and reverted: `UpdateKind::OnlyIfNotSet` for cmd/exe/cwd/root plus no
 environ measured 7.13% / 3.80% on top of the `NET_RT_IFLIST2` row — within noise. Likely
