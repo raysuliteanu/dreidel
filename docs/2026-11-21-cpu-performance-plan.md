@@ -217,3 +217,26 @@ sysctl runs regardless. Not worth a stale cwd in the detail view.
 Remaining levers: the per-process sysctl/`proc_pidinfo` calls inside sysinfo
 (needs an upstream change to skip `KERN_PROCARGS2` when cmd/exe/environ are
 already known), then UI render/update work.
+
+## Startup time
+
+`scripts/startup-bench -p 'tasks +[0-9]+ total'` (time until the status bar
+shows the task count; btop measured with `-p 'btop +btop'`), median of 5,
+tmux 200×50, same machine.
+
+| Build                                       | First stats on screen |
+| ------------------------------------------- | --------------------: |
+| v0.8.2 + CPU fixes above                    |               2173 ms |
+| Render on data arrival + early second tick  |                312 ms |
+| btop                                        |                235 ms |
+
+Timeline before the fix (from `-vv` logs): theme detection 115 ms (OSC 11
+timeout — tmux doesn't answer), loading frame at 126 ms, collector ready at
+283 ms (`System::new_all` 143 ms, `Disks` 21 ms), but the first data was only
+drawn at the next render-timer tick, ~2.1 s. The app loop now wakes on
+collector actions and renders after each batch, and the second sample is
+taken ~300 ms after the first so CPU percentages are real by ~0.6 s.
+
+Remaining startup levers: the theme query timeout (100 ms, only when the
+terminal doesn't answer — could overlap with collector init by spawning the
+collector before detection) and `System::new_all` (143 ms).
