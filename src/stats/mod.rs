@@ -83,6 +83,10 @@ async fn run_collector(
         .ok();
 
     let mut last_disk_storage_refresh = std::time::Instant::now();
+    // sysinfo's network and disk I/O counters are deltas since the previous
+    // refresh; the UI shows them per second, so they are scaled by the
+    // measured time between refreshes.
+    let mut last_refresh = std::time::Instant::now();
 
     let mut fast_interval = tokio::time::interval(std::time::Duration::from_millis(refresh_ms));
     let mut slow_interval =
@@ -136,6 +140,8 @@ async fn run_collector(
         // Per-step timings, logged at debug level under the `dreidel::perf`
         // target (`-vv`) to attribute collector CPU cost without a profiler.
         let mut lap = Lap::start();
+        let since_last_refresh = lap.start.duration_since(last_refresh);
+        last_refresh = lap.start;
 
         // Equivalent to `refresh_all()` minus per-process GPU stats, which the
         // `gpu` feature would otherwise collect (a `/proc/<pid>/fd` walk per
@@ -187,8 +193,8 @@ async fn run_collector(
             Action::SysUpdate(build_sys(&sys)),
             Action::CpuUpdate(cpu_snap),
             Action::MemUpdate(build_mem(&sys)),
-            Action::NetUpdate(build_net(&nets)),
-            Action::DiskUpdate(build_disk(&disks)),
+            Action::NetUpdate(build_net(&nets, since_last_refresh)),
+            Action::DiskUpdate(build_disk(&disks, since_last_refresh)),
             Action::ProcUpdate(proc_snap),
         ];
         let t_build_rest = lap.split();
@@ -247,6 +253,16 @@ impl Lap {
 
     fn total_us(&self) -> u64 {
         self.last.duration_since(self.start).as_micros() as u64
+    }
+}
+
+/// Convert a counter delta accumulated over `elapsed` into a per-second rate.
+fn per_second(delta: u64, elapsed: std::time::Duration) -> u64 {
+    let secs = elapsed.as_secs_f64();
+    if secs > 0.0 {
+        (delta as f64 / secs).round() as u64
+    } else {
+        delta
     }
 }
 
@@ -570,7 +586,7 @@ fn read_vmstat_field(field: &str) -> Option<u64> {
         .ok()
 }
 
-fn build_net(nets: &Networks) -> NetSnapshot {
+fn build_net(nets: &Networks, elapsed: std::time::Duration) -> NetSnapshot {
     #[cfg(target_os = "linux")]
     let dev_stats = procfs::net::dev_status().unwrap_or_default();
     #[cfg(target_os = "macos")]
@@ -600,10 +616,10 @@ fn build_net(nets: &Networks) -> NetSnapshot {
 
                 InterfaceSnapshot {
                     name: name.clone(),
-                    rx_bytes: data.received(),
-                    tx_bytes: data.transmitted(),
-                    rx_packets: data.packets_received(),
-                    tx_packets: data.packets_transmitted(),
+                    rx_bytes: per_second(data.received(), elapsed),
+                    tx_bytes: per_second(data.transmitted(), elapsed),
+                    rx_packets: per_second(data.packets_received(), elapsed),
+                    tx_packets: per_second(data.packets_transmitted(), elapsed),
                     rx_errors: data.errors_on_received(),
                     tx_errors: data.errors_on_transmitted(),
                     total_rx_bytes: data.total_received(),
@@ -630,7 +646,7 @@ fn build_net(nets: &Networks) -> NetSnapshot {
     }
 }
 
-fn build_disk(disks: &Disks) -> DiskSnapshot {
+fn build_disk(disks: &Disks, elapsed: std::time::Duration) -> DiskSnapshot {
     // sysinfo iterates mount points, so the same physical device can appear
     // multiple times (e.g. bind mounts). Keep only the first occurrence of
     // each device name so the UI doesn't show duplicates.
@@ -643,8 +659,8 @@ fn build_disk(disks: &Disks) -> DiskSnapshot {
                 let usage = d.usage();
                 DiskDeviceSnapshot {
                     name: d.name().to_string_lossy().into_owned(),
-                    read_bytes: usage.read_bytes,
-                    write_bytes: usage.written_bytes,
+                    read_bytes: per_second(usage.read_bytes, elapsed),
+                    write_bytes: per_second(usage.written_bytes, elapsed),
                     usage_pct: if d.total_space() > 0 {
                         100.0 * (d.total_space() - d.available_space()) as f32
                             / d.total_space() as f32
@@ -928,6 +944,17 @@ mod tests {
         }
         token.cancel();
         assert!(got_cpu, "expected CpuUpdate from collector");
+    }
+
+    #[test]
+    fn per_second_scales_delta_by_elapsed_time() {
+        use std::time::Duration;
+        assert_eq!(per_second(2000, Duration::from_secs(2)), 1000);
+        assert_eq!(per_second(1000, Duration::from_secs(1)), 1000);
+        assert_eq!(per_second(300, Duration::from_millis(500)), 600);
+        // Zero elapsed (should not happen) leaves the delta untouched rather
+        // than dividing by zero.
+        assert_eq!(per_second(42, Duration::ZERO), 42);
     }
 
     /// Slow (thread-enumeration) ticks must not trigger an extra full refresh

@@ -208,9 +208,13 @@ pub struct NetSnapshot {
 #[derive(Debug, Clone)]
 pub struct InterfaceSnapshot {
     pub name: String,
+    /// Bytes per second since the previous refresh.
     pub rx_bytes: u64,
+    /// Bytes per second since the previous refresh.
     pub tx_bytes: u64,
+    /// Packets per second since the previous refresh.
     pub rx_packets: u64,
+    /// Packets per second since the previous refresh.
     pub tx_packets: u64,
     pub rx_errors: u64,
     pub tx_errors: u64,
@@ -257,7 +261,9 @@ impl NetSnapshot {
 #[derive(Debug, Clone, Default)]
 pub struct DiskDeviceSnapshot {
     pub name: String,
+    /// Bytes per second since the previous refresh.
     pub read_bytes: u64,
+    /// Bytes per second since the previous refresh.
     pub write_bytes: u64,
     pub usage_pct: f32,
     pub total_read_bytes: u64,
