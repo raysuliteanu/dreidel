@@ -38,6 +38,7 @@ fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer().with_writer(log_file))
         .with(tracing_subscriber::filter::LevelFilter::from_level(level))
         .init();
+    tracing::debug!(target: "dreidel::perf", "startup: logging initialized");
 
     if args.init_config {
         print!("{}", DEFAULT_CONFIG_TEMPLATE);

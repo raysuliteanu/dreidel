@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+#
+# Measure how long a TUI takes to show a given piece of content after launch.
+#
+# Runs the command in a detached, fixed-size tmux session on a private tmux
+# server, polls the screen until it matches a regex, and reports the elapsed
+# time. Repeats N times and prints each run plus the median.
+
+set -euo pipefail
+
+usage() {
+  cat >&2 <<EOF
+usage: $0 -p regex [-n runs] [-t timeout_s] [-W cols] [-H rows] -- command [args...]
+
+  -p  regex (rg syntax) that marks "content is shown" (required)
+  -n  number of runs (default 5)
+  -t  per-run timeout in seconds (default 10)
+  -W  terminal width (default 200)
+  -H  terminal height (default 50)
+
+example (time until each tool lists itself in its process table):
+  $0 -p 'target/release/dreidel' -- target/release/dreidel
+  $0 -p 'btop +btop' -- btop
+EOF
+  exit 1
+}
+
+pattern=""
+runs=5
+timeout=10
+cols=200
+rows=50
+
+while getopts ':p:n:t:W:H:h' opt; do
+  case "$opt" in
+    p) pattern="$OPTARG" ;;
+    n) runs="$OPTARG" ;;
+    t) timeout="$OPTARG" ;;
+    W) cols="$OPTARG" ;;
+    H) rows="$OPTARG" ;;
+    *) usage ;;
+  esac
+done
+shift $((OPTIND - 1))
+[[ "${1:-}" == "--" ]] && shift
+(( $# > 0 )) && [[ -n "$pattern" ]] || usage
+
+for n in "$runs" "$timeout" "$cols" "$rows"; do
+  [[ "$n" =~ ^[0-9]+$ ]] || { printf 'error: numeric option expected, got %q\n' "$n" >&2; exit 1; }
+done
+for tool in tmux rg python3 "$1"; do
+  command -v "$tool" >/dev/null 2>&1 || { printf 'error: command not found: %s\n' "$tool" >&2; exit 1; }
+done
+
+socket="startup-bench-$$"
+tmux_() { tmux -L "$socket" -f /dev/null "$@"; }
+cleanup() { tmux_ kill-server 2>/dev/null || true; }
+trap cleanup EXIT
+
+now_ms() { python3 -c 'import time; print(int(time.monotonic() * 1000))'; }
+
+cmd=$(printf '%q ' "$@")
+printf 'command:  %s\n' "$cmd"
+printf 'pattern:  %s\n' "$pattern"
+
+results=()
+for i in $(seq 1 "$runs"); do
+  start=$(now_ms)
+  tmux_ new-session -d -x "$cols" -y "$rows" "exec $cmd"
+  elapsed=""
+  while :; do
+    now=$(now_ms)
+    if (( now - start > timeout * 1000 )); then
+      break
+    fi
+    if tmux_ capture-pane -p 2>/dev/null | rg -q -- "$pattern"; then
+      elapsed=$(( now - start ))
+      break
+    fi
+    sleep 0.02
+  done
+  cleanup
+  if [[ -z "$elapsed" ]]; then
+    printf 'run %d:   timed out after %ss\n' "$i" "$timeout"
+    exit 1
+  fi
+  printf 'run %d:   %d ms\n' "$i" "$elapsed"
+  results+=("$elapsed")
+  sleep 0.5
+done
+
+median=$(printf '%s\n' "${results[@]}" | sort -n | awk '{ a[NR] = $1 } END { print a[int((NR + 1) / 2)] }')
+printf 'median:   %d ms\n' "$median"

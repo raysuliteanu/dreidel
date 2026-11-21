@@ -60,6 +60,7 @@ async fn run_collector(
     refresh_ms: u64,
     thread_refresh_ms: u64,
 ) {
+    let mut init_lap = Lap::start();
     let (mut sys, mut nets, mut disks) = match init_sources() {
         Ok(sources) => sources,
         Err(e) => {
@@ -67,6 +68,7 @@ async fn run_collector(
             return;
         }
     };
+    let t_init_sources = init_lap.split();
     // Temperature sensors are only read on Linux; on macOS refreshing them is
     // SMC IPC (~75 ms wall per tick) for data nothing displays.
     #[cfg(target_os = "linux")]
@@ -81,6 +83,14 @@ async fn run_collector(
     let mut gpus = Gpus::new_with_refreshed_list()
         .inspect_err(|e| warn!("stats collector: GPU enumeration unavailable: {e}"))
         .ok();
+    let t_init_gpus = init_lap.split();
+    debug!(
+        target: "dreidel::perf",
+        total_us = init_lap.total_us(),
+        sources_us = t_init_sources,
+        gpus_us = t_init_gpus,
+        "collector init"
+    );
 
     let mut last_disk_storage_refresh = std::time::Instant::now();
     // sysinfo's network and disk I/O counters are deltas since the previous
@@ -88,7 +98,12 @@ async fn run_collector(
     // measured time between refreshes.
     let mut last_refresh = std::time::Instant::now();
 
-    let mut fast_interval = tokio::time::interval(std::time::Duration::from_millis(refresh_ms));
+    let refresh_period = std::time::Duration::from_millis(refresh_ms);
+    let mut fast_interval = tokio::time::interval(refresh_period);
+    // The first fast tick runs right after System::new_all(), so its CPU
+    // deltas cover only a few ms. Take the second sample as soon as sysinfo
+    // allows, so real CPU numbers appear well before a full refresh interval.
+    let mut early_second_tick = true;
     let mut slow_interval =
         tokio::time::interval(std::time::Duration::from_millis(thread_refresh_ms));
 
@@ -189,6 +204,8 @@ async fn run_collector(
         cpu_snap.gpus = gpus.as_ref().map(build_gpus).unwrap_or_default();
         let t_build_cpu = lap.split();
 
+        // ProcUpdate must stay last: App renders once when it arrives, so it
+        // marks the end of a complete batch.
         let actions = [
             Action::SysUpdate(build_sys(&sys)),
             Action::CpuUpdate(cpu_snap),
@@ -225,6 +242,12 @@ async fn run_collector(
                     return;
                 }
             }
+        }
+
+        if std::mem::take(&mut early_second_tick) {
+            let early =
+                sysinfo::MINIMUM_CPU_UPDATE_INTERVAL + std::time::Duration::from_millis(100);
+            fast_interval.reset_after(early.min(refresh_period));
         }
     }
 }
@@ -267,11 +290,21 @@ fn per_second(delta: u64, elapsed: std::time::Duration) -> u64 {
 }
 
 fn init_sources() -> Result<(System, Networks, Disks), sysinfo::Error> {
-    Ok((
-        System::new_all()?,
-        Networks::new_with_refreshed_list()?,
-        Disks::new_with_refreshed_list()?,
-    ))
+    let mut lap = Lap::start();
+    let sys = System::new_all()?;
+    let t_sys = lap.split();
+    let nets = Networks::new_with_refreshed_list()?;
+    let t_nets = lap.split();
+    let disks = Disks::new_with_refreshed_list()?;
+    let t_disks = lap.split();
+    debug!(
+        target: "dreidel::perf",
+        sys_us = t_sys,
+        nets_us = t_nets,
+        disks_us = t_disks,
+        "init sources"
+    );
+    Ok((sys, nets, disks))
 }
 
 fn build_gpus(gpus: &Gpus) -> Vec<GpuInfo> {
@@ -957,6 +990,29 @@ mod tests {
         assert_eq!(per_second(42, Duration::ZERO), 42);
     }
 
+    /// The first tick follows initialization by a few ms, so its CPU deltas
+    /// are meaningless; a second sample must follow shortly rather than a full
+    /// refresh interval later.
+    #[tokio::test]
+    async fn second_tick_follows_soon_after_startup() {
+        let (tx, mut rx) = mpsc::channel(1024);
+        let token = tokio_util::sync::CancellationToken::new();
+        spawn_collector(tx, token.child_token(), 10_000, 60_000);
+
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(1500);
+        let mut sys_updates = 0;
+        while let Ok(Some(action)) = tokio::time::timeout_at(deadline, rx.recv()).await {
+            if matches!(action, crate::action::Action::SysUpdate(_)) {
+                sys_updates += 1;
+            }
+        }
+        token.cancel();
+        assert_eq!(
+            sys_updates, 2,
+            "expected an early second tick, then the 10 s interval"
+        );
+    }
+
     /// Slow (thread-enumeration) ticks must not trigger an extra full refresh
     /// and publish: only the fast interval drives updates.
     #[tokio::test]
@@ -973,7 +1029,7 @@ mod tests {
             }
         }
         token.cancel();
-        // Fast ticks at ~0 ms and ~1000 ms; allow one extra for timing jitter.
+        // Fast ticks at ~0 ms, the early second tick (~300 ms), and ~1300 ms.
         assert!(
             (1..=3).contains(&sys_updates),
             "expected 1-3 SysUpdates from fast ticks in 1.5 s, got {sys_updates}"

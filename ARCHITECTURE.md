@@ -73,7 +73,12 @@ The top-level application struct. Owns:
 - Focus state (`FocusState::Normal` / `FocusState::FullScreen`)
 - Layout preset and visibility set
 
-`App::run()` is the main loop: `handle_events → handle_actions` per iteration.
+`App::run()` is the main loop. Each iteration waits (`tokio::select!`) for either
+a terminal event (`handle_event`) or a collector action, then `handle_actions`
+drains the action queue. There is no render timer: the UI renders on startup
+(`Event::Init`), after each `ProcUpdate` (the last action of every collector
+batch), on key presses, and on resize — so new data is drawn as soon as it
+arrives and no frame is redundant.
 `App::render()` calls `render_to()` internally, which accepts any `ratatui::Backend`
 — this seam is what allows `TestBackend`-based render tests in `app.rs`.
 
@@ -91,7 +96,8 @@ The single enum that all app logic communicates through:
 - UI state: `FocusComponent(ComponentId)`, `ToggleFullScreen`, `ToggleHelp`
 - Metric payloads: `CpuUpdate(CpuSnapshot)`, `MemUpdate`, `NetUpdate`, `DiskUpdate`,
   `ProcUpdate`, `SysUpdate` — these carry the snapshot structs from the stats collector
-  to every component
+  to every component. `ProcUpdate` holds an `Arc<ProcSnapshot>` so components can
+  keep the (large) snapshot without deep-copying it
 
 `Action` derives `Clone` for cases where the app needs to re-queue an action (e.g.
 `Render`). It is **not** cloned to fan-out to components — `App::handle_actions` passes
@@ -102,7 +108,7 @@ for debug/logging purposes only.
 
 Wraps the `ratatui::Terminal` and owns the crossterm event loop Tokio task.
 Handles alternate screen, raw mode, mouse capture, and clean teardown.
-`Tui::next_event()` is how `App::handle_events` reads the next input event.
+`Tui::next_event()` is how `App::run` reads the next input event.
 
 ### `src/layout.rs` — `LayoutPreset` / `SlotId` / `SlotMap`
 
@@ -183,7 +189,7 @@ method. Inside `draw()`, the flag is consumed:
 - `is_fullscreen=true, rendering_as_overlay=true` → overlay pass: component renders
   normally with live state, showing the current fullscreen view to the user.
 
-Key events are not involved in this isolation: `App::handle_events` already dispatches
+Key events are not involved in this isolation: `App::handle_event` already dispatches
 key events only to the focused component, which is the fullscreen modal when active.
 The compact "view" never receives key events during fullscreen; it only needs render
 isolation, which Part 2 provides.
@@ -285,7 +291,11 @@ blocking refreshes off the main runtime's workers. The collector runs two
   *not* per-process threads. Disk I/O counters are refreshed per disk every
   tick; the disk list and total/free space are refreshed every
   `DISK_STORAGE_REFRESH` (10s), since a full `Disks` refresh re-enumerates
-  volumes (and on macOS queries CacheDelete for purgeable space).
+  volumes (and on macOS queries CacheDelete for purgeable space). `ProcUpdate`
+  is sent last so `App` can render once per complete batch. The first tick runs
+  immediately after initialization; the second is pulled forward to
+  `MINIMUM_CPU_UPDATE_INTERVAL + 100ms` so real CPU percentages appear well
+  before a full refresh interval at startup.
 - **Slow interval** (`thread_refresh_ms`, default 5s) — only enumerates threads
   for every process (`/proc/<pid>/task/` on Linux, `libproc` on macOS) against
   the process list from the last fast refresh; it does not refresh or publish
