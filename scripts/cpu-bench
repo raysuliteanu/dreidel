@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+#
+# Measure the average CPU usage of a long-running TUI program.
+#
+# The program runs in a detached tmux session of fixed size (render cost
+# depends on terminal size), on a private tmux server so the user's own
+# sessions and config are untouched. CPU% is computed from accumulated CPU time
+# sampled after a warm-up and again after the measurement window, which avoids
+# relying on each tool's self-reported (and differently computed) CPU%.
+
+set -euo pipefail
+
+usage() {
+  cat >&2 <<EOF
+usage: $0 [-w warmup_s] [-d duration_s] [-W cols] [-H rows] -- command [args...]
+
+  -w  warm-up seconds before the first sample (default 10)
+  -d  measurement window in seconds (default 120)
+  -W  terminal width (default 200)
+  -H  terminal height (default 50)
+
+example:
+  $0 -d 60 -- target/release/dreidel --refresh-rate 1s
+  $0 -d 60 -- btop --update 1000
+EOF
+  exit 1
+}
+
+warmup=10
+duration=120
+cols=200
+rows=50
+
+while getopts ':w:d:W:H:h' opt; do
+  case "$opt" in
+    w) warmup="$OPTARG" ;;
+    d) duration="$OPTARG" ;;
+    W) cols="$OPTARG" ;;
+    H) rows="$OPTARG" ;;
+    *) usage ;;
+  esac
+done
+shift $((OPTIND - 1))
+[[ "${1:-}" == "--" ]] && shift
+(( $# > 0 )) || usage
+
+for n in "$warmup" "$duration" "$cols" "$rows"; do
+  [[ "$n" =~ ^[0-9]+$ ]] || { printf 'error: numeric option expected, got %q\n' "$n" >&2; exit 1; }
+done
+(( duration > 0 )) || { printf 'error: duration must be > 0\n' >&2; exit 1; }
+
+command -v tmux >/dev/null 2>&1 || { printf 'error: tmux is required\n' >&2; exit 1; }
+command -v "$1" >/dev/null 2>&1 || { printf 'error: command not found: %s\n' "$1" >&2; exit 1; }
+
+socket="cpu-bench-$$"
+session="bench"
+tmux_() { tmux -L "$socket" -f /dev/null "$@"; }
+cleanup() { tmux_ kill-server 2>/dev/null || true; }
+trap cleanup EXIT
+
+# Print accumulated CPU time (user + sys) of a pid in seconds.
+cpu_seconds() {
+  local pid=$1
+  if [[ -r "/proc/$pid/stat" ]]; then
+    # Fields 14/15 are utime/stime in clock ticks; strip the "(comm)" field
+    # first since it may contain spaces.
+    local stat hz
+    stat=$(<"/proc/$pid/stat")
+    hz=$(getconf CLK_TCK)
+    awk -v hz="$hz" '{ print ($12 + $13) / hz }' <<<"${stat##*) }"
+  else
+    # macOS/BSD ps prints [[dd-]hh:]mm:ss.ss
+    ps -o time= -p "$pid" | awk '{
+      t = $1; days = 0
+      if (index(t, "-")) { split(t, d, "-"); days = d[1]; t = d[2] }
+      n = split(t, p, ":"); s = 0
+      for (i = 1; i <= n; i++) s = s * 60 + p[i]
+      print s + days * 86400
+    }'
+  fi
+}
+
+cmd=$(printf '%q ' "$@")
+# `exec` makes the pane's pid the program's pid.
+pid=$(tmux_ new-session -d -P -F '#{pane_pid}' -s "$session" -x "$cols" -y "$rows" "exec $cmd")
+
+alive() { kill -0 "$pid" 2>/dev/null; }
+
+printf 'command:  %s\n' "$cmd"
+printf 'pid:      %s  (terminal %sx%s)\n' "$pid" "$cols" "$rows"
+printf 'warm-up:  %ss\n' "$warmup"
+sleep "$warmup"
+alive || { printf 'error: process exited during warm-up\n' >&2; exit 1; }
+
+t0=$(cpu_seconds "$pid")
+printf 'measure:  %ss\n' "$duration"
+sleep "$duration"
+alive || { printf 'error: process exited during measurement\n' >&2; exit 1; }
+t1=$(cpu_seconds "$pid")
+
+awk -v a="$t0" -v b="$t1" -v d="$duration" 'BEGIN {
+  printf "cpu time: %.2fs over %ds\n", b - a, d
+  printf "avg cpu:  %.2f%%\n", 100 * (b - a) / d
+}'
