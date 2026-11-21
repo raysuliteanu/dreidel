@@ -195,3 +195,23 @@ environ measured 7.13% / 3.80% on top of the `NET_RT_IFLIST2` row — within noi
 because most processes on macOS belong to other users, so their cwd/root
 stay unset and sysinfo retries every tick anyway, and the `KERN_PROCARGS2`
 sysctl runs regardless. Not worth a stale cwd in the detail view.
+
+### Re-profile after Phase 3 fixes 1–5
+
+3.53 s CPU / 60 s (≈5.9%). Collector 77%, main thread 23%.
+
+| Where                                         | % of CPU |
+| --------------------------------------------- | -------: |
+| Process refresh (`refresh_processes_specifics`) |    56% |
+| ↳ `KERN_PROCARGS2` sysctl (`get_process_infos`) |    29% |
+| ↳ `get_cwd_root`                               |     11% |
+| `App::render`                                  |     12% |
+| `ProcessComponent::update` (incl. clone 3.7%)  |      5% |
+| `Disks` (list/storage, now every 10 s)         |      4% |
+| `Networks::refresh`                            |      4% |
+| `macos::enrich_process_entry`                  |      4% |
+| `macos::enumerate_threads`                     |      3% |
+
+Remaining levers: the per-process sysctl/`proc_pidinfo` calls inside sysinfo
+(needs an upstream change to skip `KERN_PROCARGS2` when cmd/exe/environ are
+already known), then UI render/update work.
