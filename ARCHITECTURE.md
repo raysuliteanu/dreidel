@@ -281,10 +281,15 @@ blocking refreshes off the main runtime's workers. The collector runs two
 - **Fast interval** (`refresh_ms`, default 1s) — refreshes `sysinfo::System`,
   `Networks`, `Disks`, `Components`, and `Gpus`, then builds and sends six
   `Action::*Update` variants. Process data includes the full process list but
-  *not* per-process threads.
-- **Slow interval** (`thread_refresh_ms`, default 5s) — enumerates threads for
-  every process via `/proc/<pid>/task/` (Linux only). The resulting thread entries
-  are cached and merged into every subsequent `ProcUpdate` on the fast cadence.
+  *not* per-process threads. Disk I/O counters are refreshed per disk every
+  tick; the disk list and total/free space are refreshed every
+  `DISK_STORAGE_REFRESH` (10s), since a full `Disks` refresh re-enumerates
+  volumes (and on macOS queries CacheDelete for purgeable space).
+- **Slow interval** (`thread_refresh_ms`, default 5s) — only enumerates threads
+  for every process (`/proc/<pid>/task/` on Linux, `libproc` on macOS) against
+  the process list from the last fast refresh; it does not refresh or publish
+  anything else. The resulting thread entries are cached and merged into every
+  subsequent `ProcUpdate` on the fast cadence.
 
 This dual-interval design avoids thousands of `/proc` syscalls on every tick while
 still keeping thread data visible in the UI.

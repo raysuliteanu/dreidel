@@ -22,11 +22,18 @@ mod macos;
 
 use crate::action::Action;
 use sysinfo::{
-    Components, DiskKind, Disks, Gpus, Networks, ProcessRefreshKind, RefreshKind, System,
+    Components, DiskKind, DiskRefreshKind, Disks, Gpus, Networks, ProcessRefreshKind, RefreshKind,
+    System,
 };
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, warn};
+
+/// How often the disk list and storage (total/free space) are refreshed. I/O
+/// counters are refreshed every tick. Storage rarely changes second to second,
+/// and on macOS each full refresh re-enumerates volumes and asks CacheDelete
+/// for purgeable space, which was the single most expensive collector step.
+const DISK_STORAGE_REFRESH: std::time::Duration = std::time::Duration::from_secs(10);
 
 pub fn spawn_collector(
     tx: Sender<Action>,
@@ -63,6 +70,8 @@ async fn run_collector(
     let mut gpus = Gpus::new_with_refreshed_list()
         .inspect_err(|e| warn!("stats collector: GPU enumeration unavailable: {e}"))
         .ok();
+
+    let mut last_disk_storage_refresh = std::time::Instant::now();
 
     let mut fast_interval = tokio::time::interval(std::time::Duration::from_millis(refresh_ms));
     let mut slow_interval =
@@ -130,7 +139,16 @@ async fn run_collector(
         let t_sys = lap.split();
         nets.refresh(false);
         let t_nets = lap.split();
-        disks.refresh(false);
+        if last_disk_storage_refresh.elapsed() >= DISK_STORAGE_REFRESH {
+            disks.refresh(false);
+            last_disk_storage_refresh = std::time::Instant::now();
+        } else {
+            // Per-disk refresh skips re-enumerating the volume list.
+            let io_only = DiskRefreshKind::nothing().with_io_usage();
+            for disk in disks.iter_mut() {
+                disk.refresh_specifics(io_only);
+            }
+        }
         let t_disks = lap.split();
         components.refresh(false);
         let t_components = lap.split();

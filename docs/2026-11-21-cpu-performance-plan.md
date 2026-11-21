@@ -186,3 +186,4 @@ cumulative (includes the fixes above it).
 | ---------------------------------------- | ----------: | ----------: |
 | Baseline (v0.8.2)                        |       9.65% |       5.68% |
 | Slow tick only enumerates threads        |       8.87% |       4.62% |
+| Disk storage refresh every 10 s          |       7.82% |       4.13% |
