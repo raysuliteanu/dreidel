@@ -21,9 +21,10 @@ pub use snapshots::*;
 mod macos;
 
 use crate::action::Action;
+#[cfg(target_os = "linux")]
+use sysinfo::Components;
 use sysinfo::{
-    Components, DiskKind, DiskRefreshKind, Disks, Gpus, Networks, ProcessRefreshKind, RefreshKind,
-    System,
+    DiskKind, DiskRefreshKind, Disks, Gpus, Networks, ProcessRefreshKind, RefreshKind, System,
 };
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
@@ -59,10 +60,20 @@ async fn run_collector(
     refresh_ms: u64,
     thread_refresh_ms: u64,
 ) {
-    let (mut sys, mut nets, mut disks, mut components) = match init_sources() {
+    let (mut sys, mut nets, mut disks) = match init_sources() {
         Ok(sources) => sources,
         Err(e) => {
             error!("stats collector: failed to initialize sysinfo: {e}");
+            return;
+        }
+    };
+    // Temperature sensors are only read on Linux; on macOS refreshing them is
+    // SMC IPC (~75 ms wall per tick) for data nothing displays.
+    #[cfg(target_os = "linux")]
+    let mut components = match Components::new_with_refreshed_list() {
+        Ok(components) => components,
+        Err(e) => {
+            error!("stats collector: failed to initialize sensors: {e}");
             return;
         }
     };
@@ -150,6 +161,7 @@ async fn run_collector(
             }
         }
         let t_disks = lap.split();
+        #[cfg(target_os = "linux")]
         components.refresh(false);
         let t_components = lap.split();
         if let Some(gpus) = gpus.as_mut() {
@@ -167,7 +179,7 @@ async fn run_collector(
         #[cfg(target_os = "macos")]
         let mut cpu_snap = macos::build_cpu_macos(&sys, &mut prev_cpu_ticks);
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-        let mut cpu_snap = build_cpu_stub(&sys, &components);
+        let mut cpu_snap = build_cpu_stub(&sys);
         cpu_snap.gpus = gpus.as_ref().map(build_gpus).unwrap_or_default();
         let t_build_cpu = lap.split();
 
@@ -238,12 +250,11 @@ impl Lap {
     }
 }
 
-fn init_sources() -> Result<(System, Networks, Disks, Components), sysinfo::Error> {
+fn init_sources() -> Result<(System, Networks, Disks), sysinfo::Error> {
     Ok((
         System::new_all()?,
         Networks::new_with_refreshed_list()?,
         Disks::new_with_refreshed_list()?,
-        Components::new_with_refreshed_list()?,
     ))
 }
 
@@ -367,7 +378,7 @@ fn build_cpu(
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn build_cpu_stub(sys: &System, _components: &Components) -> CpuSnapshot {
+fn build_cpu_stub(sys: &System) -> CpuSnapshot {
     let cpus = sys.cpus();
     CpuSnapshot {
         per_core: cpus.iter().map(|c| c.usage()).collect(),

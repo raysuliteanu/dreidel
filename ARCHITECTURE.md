@@ -279,7 +279,8 @@ blocking refreshes off the main runtime's workers. The collector runs two
 `tokio::time::interval` timers:
 
 - **Fast interval** (`refresh_ms`, default 1s) — refreshes `sysinfo::System`,
-  `Networks`, `Disks`, `Components`, and `Gpus`, then builds and sends six
+  `Networks`, `Disks`, `Components` (Linux only — temperatures aren't shown on
+  macOS), and `Gpus`, then builds and sends six
   `Action::*Update` variants. Process data includes the full process list but
   *not* per-process threads. Disk I/O counters are refreshed per disk every
   tick; the disk list and total/free space are refreshed every

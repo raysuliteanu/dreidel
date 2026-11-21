@@ -188,3 +188,10 @@ cumulative (includes the fixes above it).
 | Slow tick only enumerates threads        |       8.87% |       4.62% |
 | Disk storage refresh every 10 s          |       7.82% |       4.13% |
 | One `NET_RT_IFLIST2` dump per tick       |       7.18% |       3.80% |
+| No `Components` (sensors) off Linux      |       6.12% |       3.15% |
+
+Tried and reverted: `UpdateKind::OnlyIfNotSet` for cmd/exe/cwd/root plus no
+environ measured 7.13% / 3.80% on top of the `NET_RT_IFLIST2` row — within noise. Likely
+because most processes on macOS belong to other users, so their cwd/root
+stay unset and sysinfo retries every tick anyway, and the `KERN_PROCARGS2`
+sysctl runs regardless. Not worth a stale cwd in the detail view.
