@@ -221,7 +221,8 @@ When a filter is active but not being edited the title shows
 
 - A stats header appears at the top with: CPU brand,
   logical/physical core count, average frequency, temperature
-  (Linux), and CPU governor (Linux).
+  (Linux; package temperature on Apple Silicon Macs, updated every
+  10 s), and CPU governor (Linux).
 - All cores are visible and scrollable.
 
 <!-- screenshot:cpu_fullscreen:begin -->
@@ -565,7 +566,7 @@ detail view also exits fullscreen.
 
 | Component | Fullscreen extras |
 | --------- | ----------------- |
-| CPU       | Stats header: brand, core count, frequency, temperature (Linux), governor (Linux) |
+| CPU       | Stats header: brand, core count, frequency, temperature (Linux, macOS), governor (Linux) |
 | Network   | Per-interface graph replaces the list; extended columns (packets/sec, IP) always visible |
 | Disk      | Per-device graph replaces the list |
 | Process   | Always uses the extended 12-column layout regardless of terminal width |
@@ -828,7 +829,7 @@ help       = "?"   # Open help overlay
 | Filter not matching | Press `/` first to enter filter mode; `Esc` clears the filter (works in CPU, Net, Disk, and Process panels) |
 | Can't kill a process | You need to own the process or run dreidel as root; the error dialog will explain |
 | High CPU use by dreidel | Increase `--refresh-rate` (default `2s`) to `3s` or more |
-| Temperature not shown | Temperature collection requires Linux and a supported CPU sensor |
+| Temperature not shown | Requires a supported CPU sensor on Linux, or an Apple Silicon Mac (package temperature only, appears within a few seconds of startup) |
 
 **Log file:** `~/.local/share/dreidel/dreidel.log` on Linux,
 `~/Library/Application Support/dreidel/dreidel.log` on macOS
@@ -849,7 +850,7 @@ following table summarises what is and is not available.
 
 | Component | Fields populated |
 | --------- | ---------------- |
-| CPU       | Per-core usage, frequency, brand string, aggregate %, physical core count, CPU mode percentages (user/system/idle/nice) |
+| CPU       | Per-core usage, frequency, brand string, aggregate %, physical core count, CPU mode percentages (user/system/idle/nice), package temperature (Apple Silicon, every 10 s) |
 | Memory    | Free, active, inactive, wired, compressed; swap in/out bytes |
 | Network   | TX/RX rates, errors, drop counters (TX and RX drops via NET_RT_IFLIST2) |
 | Process   | Priority, nice value, TTY, thread count, CPU times, minor/major page faults, aggregate context switches, file descriptor count |
@@ -858,7 +859,7 @@ following table summarises what is and is not available.
 
 | Field | Reason |
 | ----- | ------ |
-| CPU temperature (package and per-core) | Requires private entitlements on Apple Silicon |
+| Per-core CPU temperature | Apple Silicon die sensors don't map to cores reliably |
 | CPU scaling governor | Not applicable on macOS |
 | Per-process I/O syscall counts (syscr/syscw) | Not exposed by libproc |
 | Per-process shared memory (SHR) | No direct equivalent |

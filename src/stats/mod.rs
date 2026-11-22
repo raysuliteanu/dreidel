@@ -21,7 +21,7 @@ pub use snapshots::*;
 mod macos;
 
 use crate::action::Action;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use sysinfo::Components;
 use sysinfo::{
     DiskKind, DiskRefreshKind, Disks, Gpus, Networks, ProcessRefreshKind, RefreshKind, System,
@@ -35,6 +35,12 @@ use tracing::{debug, error, warn};
 /// and on macOS each full refresh re-enumerates volumes and asks CacheDelete
 /// for purgeable space, which was the single most expensive collector step.
 const DISK_STORAGE_REFRESH: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// How often macOS temperature sensors are read. Each read is ~100 ms of
+/// blocking IOHID IPC on Apple Silicon, and package temperature doesn't need
+/// per-tick resolution. (btop reads every refresh, asynchronously.)
+#[cfg(target_os = "macos")]
+const MACOS_TEMP_REFRESH: std::time::Duration = std::time::Duration::from_secs(10);
 
 pub fn spawn_collector(
     tx: Sender<Action>,
@@ -69,8 +75,10 @@ async fn run_collector(
         }
     };
     let t_init_sources = init_lap.split();
-    // Temperature sensors are only read on Linux; on macOS refreshing them is
-    // SMC IPC (~75 ms wall per tick) for data nothing displays.
+    // Temperature sensors. On Linux they are refreshed every tick; on macOS
+    // they are read every MACOS_TEMP_REFRESH, after a batch is published so
+    // the slow read never delays data. On macOS they're optional: failure just
+    // means no temperature.
     #[cfg(target_os = "linux")]
     let mut components = match Components::new_with_refreshed_list() {
         Ok(components) => components,
@@ -79,6 +87,14 @@ async fn run_collector(
             return;
         }
     };
+    #[cfg(target_os = "macos")]
+    let mut components = Components::new()
+        .inspect_err(|e| warn!("stats collector: temperature sensors unavailable: {e}"))
+        .ok();
+    #[cfg(target_os = "macos")]
+    let mut package_temp: Option<f32> = None;
+    #[cfg(target_os = "macos")]
+    let mut last_temp_refresh: Option<std::time::Instant> = None;
     // GPUs are optional: a failure here just means no GPU rows in the CPU panel.
     let mut gpus = Gpus::new_with_refreshed_list()
         .inspect_err(|e| warn!("stats collector: GPU enumeration unavailable: {e}"))
@@ -199,6 +215,10 @@ async fn run_collector(
         let mut cpu_snap = build_cpu(&sys, &components, &mut prev_cpu_total);
         #[cfg(target_os = "macos")]
         let mut cpu_snap = macos::build_cpu_macos(&sys, &mut prev_cpu_ticks);
+        #[cfg(target_os = "macos")]
+        {
+            cpu_snap.package_temp = package_temp;
+        }
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         let mut cpu_snap = build_cpu_stub(&sys);
         cpu_snap.gpus = gpus.as_ref().map(build_gpus).unwrap_or_default();
@@ -242,6 +262,24 @@ async fn run_collector(
                     return;
                 }
             }
+        }
+
+        #[cfg(target_os = "macos")]
+        if let Some(components) = components.as_mut()
+            && last_temp_refresh.is_none_or(|t| t.elapsed() >= MACOS_TEMP_REFRESH)
+        {
+            let start = std::time::Instant::now();
+            components.refresh(true);
+            package_temp =
+                macos::package_temp(components.iter().map(|c| (c.label(), c.temperature())));
+            last_temp_refresh = Some(start);
+            debug!(
+                target: "dreidel::perf",
+                us = start.elapsed().as_micros() as u64,
+                sensors = components.len(),
+                ?package_temp,
+                "temperature read"
+            );
         }
 
         if std::mem::take(&mut early_second_tick) {

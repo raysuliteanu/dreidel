@@ -166,9 +166,11 @@ within one file before saving, or temporarily add `#[allow(dead_code)]` /
 - Use `expect("why this can't fail")` over `unwrap()`.
 - Platform guards use a three-way pattern: `#[cfg(target_os = "linux")]`,
 `#[cfg(target_os = "macos")]`, and `#[cfg(not(any(target_os = "linux", target_os = "macos")))]`.
-`#[cfg(target_os = "linux")]` guards per-core and package temperature
+`#[cfg(target_os = "linux")]` guards per-core temperature and governor
 (CpuSnapshot) and swap activity (MemSnapshot, `/proc/vmstat`). Thread
 enumeration is guarded for both Linux (`/proc/<pid>/task/`) and macOS (`libproc`).
+Package temperature is shown on Linux and macOS (`macos::package_temp`, read every
+10 s; ARCHITECTURE.md compares it with btop's approach).
 - Logs go to `~/.local/share/dreidel/dreidel.log` on Linux and
 `~/Library/Application Support/dreidel/dreidel.log` on macOS (never stderr —
 would corrupt the TUI).

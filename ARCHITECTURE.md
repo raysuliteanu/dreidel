@@ -285,8 +285,8 @@ blocking refreshes off the main runtime's workers. The collector runs two
 `tokio::time::interval` timers:
 
 - **Fast interval** (`refresh_ms`, default 2s) — refreshes `sysinfo::System`,
-  `Networks`, `Disks`, `Components` (Linux only — temperatures aren't shown on
-  macOS), and `Gpus`, then builds and sends six
+  `Networks`, `Disks`, `Components` (Linux; on macOS the temperature sensors
+  are read every 10 s instead — see "CPU temperature on macOS"), and `Gpus`, then builds and sends six
   `Action::*Update` variants. Process data includes the full process list but
   *not* per-process threads. Disk I/O counters are refreshed per disk every
   tick; the disk list and total/free space are refreshed every
@@ -346,9 +346,39 @@ their physical core's temperature reading.
 - **Network** — TX and RX drop counters collected via the `NET_RT_IFLIST2` sysctl using `libc`.
 - **Thread enumeration** — per-process threads enumerated via `libproc::listpidthreads` on
   the slow interval.
+- **CPU temperature** — package temperature only, from Apple Silicon thermal sensors via
+  `sysinfo::Components`; see below.
 - Fields with no macOS equivalent (SHR, per-process swap, voluntary/nonvoluntary context
-  switch split, I/O syscall counts, CPU temperatures, scaling governor) are set to
+  switch split, I/O syscall counts, per-core CPU temperatures, scaling governor) are set to
   zero or `None`.
+
+##### CPU temperature on macOS
+
+`sysinfo::Components` on Apple Silicon reads the IOHIDEventSystem thermal sensors
+(vendor usage page `0xFF00`, usage 5) — the same source btop uses. Labels are
+opaque; on an M4 Pro there are 24 sensors: `PMU tdie1`–`tdie14` (die, ~30 °C idle),
+`PMU tdev1`–`tdev8` (one reads −9201 °C), `PMU tcal` (a constant ~52 °C) and
+`NAND CH0 temp` (SSD). None match the Linux label matching ("package", "Core N").
+
+`macos::package_temp` derives one value, and `run_collector` reads the sensors every
+`MACOS_TEMP_REFRESH` (10 s), after publishing a batch so the read never delays data.
+How this compares with btop 1.4.x (`src/osx/sensors.cpp`, `btop_collect.cpp`), in case
+the approach should change later:
+
+| | dreidel | btop |
+| --- | --- | --- |
+| Sensor source (Apple Silicon) | IOHID thermal sensors via `sysinfo::Components` | Same, via its own `IOHIDEventSystemClient` code |
+| Sensor source (Intel Macs) | Same `Components` path; no direct SMC reads (untested on Intel) | Falls back to SMC keys `TC0P` (package) and `TC{n}c`/`TC{n}C` (per core) |
+| Valid readings | `0 < t < 150` °C | `0 < t < 150` °C |
+| Package temperature | Average of the first non-empty group: `eACC*`/`pACC*`, then `PMU tdie*`, then `SOC MTR Temp Sensor*` | Same groups, same order, average |
+| Per-core temperatures | Not shown on macOS | `PMU tdie*` sorted by index, assigned proportionally (`core × sensors / cores`); its source calls the mapping a guess |
+| Read frequency | Every 10 s on the collector thread (~90–110 ms blocking IPC per read) | Every refresh, asynchronously; shows the previous read's result |
+
+To switch to btop's behavior: per-core values can be built from the same `Components`
+iteration (sort `PMU tdie*` by numeric suffix, map proportionally into
+`per_core_temp`, and enable the per-core legend in `cpu.rs` for macOS); per-refresh
+reads mean lowering `MACOS_TEMP_REFRESH` (each read is ~0.3% CPU at a 2 s refresh on
+an M4 Pro when done every 10 s, so expect several times that per refresh).
 
 Process snapshots combine cross-platform `sysinfo` fields (name, cmdline, RSS,
 virtual memory, start/runtime, executable path, cwd, root, user/group IDs,

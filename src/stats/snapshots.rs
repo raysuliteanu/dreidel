@@ -58,7 +58,9 @@ pub struct CpuSnapshot {
     /// Number of physical (non-hyperthreaded) cores. `None` on platforms where it cannot be determined.
     pub physical_core_count: Option<u32>,
     pub cpu_brand: String,
-    /// Package-level CPU temperature in °C. Linux-only; `None` on other platforms.
+    /// Package-level CPU temperature in °C. Linux and macOS (Apple Silicon
+    /// thermal sensors, refreshed every 10 s); `None` elsewhere or when no
+    /// usable sensor exists.
     pub package_temp: Option<f32>,
     /// Per-logical-core temperature in °C. Linux-only; empty or all-`None` on other platforms.
     pub per_core_temp: Vec<Option<f32>>,

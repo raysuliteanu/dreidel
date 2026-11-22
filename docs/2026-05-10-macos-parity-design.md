@@ -461,7 +461,10 @@ Suggested sequencing to keep the build green at each step:
 7. **Process enrichment** — implement `enrich_process_entry()`; wire into `build_proc`.
 8. **Thread enumeration** — implement `enumerate_threads()` for macOS; wire into
    slow-tick path.
-9. **CPU temperature** — add `objc2-io-kit`/`objc2-core-foundation` deps; implement
+9. **CPU temperature** — *Implemented differently on 2026-11-21:* package
+   temperature only, from `sysinfo::Components` (IOHID thermal sensors on Apple
+   Silicon, not SMC keys), read every 10 s; see ARCHITECTURE.md "CPU temperature on
+   macOS". Original plan: add `objc2-io-kit`/`objc2-core-foundation` deps; implement
    `SmcConnection` + `read_cpu_temps()`; expand temperature cfg guards in `cpu.rs`;
    add `stub_macos()` and move the temperature snapshot test to `any(linux, macos)`.
 10. **GPU section** — **done first:** bump `sysinfo` to 0.40 and MSRV to 1.95

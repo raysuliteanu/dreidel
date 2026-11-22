@@ -277,6 +277,38 @@ pub fn read_net_drops() -> std::collections::HashMap<String, (u64, u64)> {
     drops
 }
 
+/// Package CPU temperature on Apple Silicon from `sysinfo::Components`
+/// readings, given as (label, temperature °C).
+///
+/// sysinfo reads the same IOHIDEventSystem thermal sensors btop does
+/// (vendor page 0xFF00, usage 5), so this mirrors btop's selection: ignore
+/// readings outside (0, 150) °C, then average the first non-empty group of
+/// `eACC*`/`pACC*` (cluster sensors on earlier chips), `PMU tdie*` (die
+/// sensors, e.g. 14 on an M4 Pro), or `SOC MTR Temp Sensor*`. `PMU tdev*`,
+/// `PMU tcal` and storage sensors are never used. Unlike btop, dreidel does
+/// not derive per-core temperatures from the `tdie` sensors, and reads them
+/// every 10 s instead of every refresh; see ARCHITECTURE.md ("CPU temperature
+/// on macOS") for the comparison.
+pub fn package_temp<'a>(sensors: impl IntoIterator<Item = (&'a str, Option<f32>)>) -> Option<f32> {
+    const GROUPS: [&[&str]; 3] = [&["eACC", "pACC"], &["PMU tdie"], &["SOC MTR Temp Sensor"]];
+    let mut groups: [Vec<f32>; 3] = Default::default();
+    for (label, temp) in sensors {
+        let Some(temp) = temp.filter(|t| *t > 0.0 && *t < 150.0) else {
+            continue;
+        };
+        if let Some(i) = GROUPS
+            .iter()
+            .position(|prefixes| prefixes.iter().any(|p| label.starts_with(p)))
+        {
+            groups[i].push(temp);
+        }
+    }
+    groups
+        .iter()
+        .find(|g| !g.is_empty())
+        .map(|g| g.iter().sum::<f32>() / g.len() as f32)
+}
+
 pub fn enrich_process_entry(entry: &mut ProcessEntry, pid: u32) {
     let pid_i = pid as i32;
 
@@ -398,6 +430,50 @@ pub fn enumerate_threads(sys: &System) -> Vec<ProcessEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn package_temp_averages_tdie_and_ignores_other_sensors() {
+        // Real labels and readings from an M4 Pro (sysinfo `Components`).
+        let sensors = [
+            ("PMU tdie1", Some(31.0)),
+            ("PMU tdie2", Some(33.0)),
+            ("PMU tdev1", Some(20.0)),     // not a die sensor
+            ("PMU tdev2", Some(-9201.1)),  // garbage reading
+            ("PMU tcal", Some(51.8)),      // calibration constant
+            ("NAND CH0 temp", Some(26.0)), // SSD
+            ("PMU tdie3", None),
+        ];
+        assert_eq!(package_temp(sensors), Some(32.0));
+    }
+
+    #[test]
+    fn package_temp_prefers_cluster_sensors_then_falls_back() {
+        let with_clusters = [
+            ("eACC MTR Temp Sensor0", Some(40.0)),
+            ("pACC MTR Temp Sensor2", Some(50.0)),
+            ("PMU tdie1", Some(90.0)),
+        ];
+        assert_eq!(package_temp(with_clusters), Some(45.0));
+
+        let soc_only = [
+            ("SOC MTR Temp Sensor0", Some(44.0)),
+            ("NAND CH0 temp", Some(26.0)),
+        ];
+        assert_eq!(package_temp(soc_only), Some(44.0));
+    }
+
+    #[test]
+    fn package_temp_rejects_out_of_range_and_unknown_sensors() {
+        assert_eq!(
+            package_temp([("PMU tdie1", Some(0.0)), ("PMU tdie2", Some(150.0))]),
+            None
+        );
+        assert_eq!(package_temp([("NAND CH0 temp", Some(26.0))]), None);
+        assert_eq!(
+            package_temp(std::iter::empty::<(&str, Option<f32>)>()),
+            None
+        );
+    }
 
     #[test]
     fn read_net_drops_lists_loopback() {

@@ -207,23 +207,24 @@ impl CpuComponent {
         }
         frame.render_widget(Line::from(row0_spans), row0);
 
-        // Row 1: avg frequency, then Linux-only temperature and governor
+        // Row 1: avg frequency, then temperature (Linux, macOS) and governor (Linux)
         let avg_freq = if snap.frequency.is_empty() {
             0
         } else {
             snap.frequency.iter().sum::<u64>() / snap.frequency.len() as u64
         };
-        #[allow(unused_mut)] // push only on linux
+        #[allow(unused_mut)] // push only on linux and macos
         let mut row1_spans = vec![
             Span::styled("Freq: ", dim),
             Span::styled(format!("{avg_freq} MHz"), val),
         ];
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        if let Some(temp) = snap.package_temp {
+            row1_spans.push(Span::styled("  Temp: ", dim));
+            row1_spans.push(Span::styled(format!("{temp:.0}°C"), val));
+        }
         #[cfg(target_os = "linux")]
         {
-            if let Some(temp) = snap.package_temp {
-                row1_spans.push(Span::styled("  Temp: ", dim));
-                row1_spans.push(Span::styled(format!("{temp:.0}°C"), val));
-            }
             if let Some(ref gov) = snap.governor {
                 row1_spans.push(Span::styled("  Governor: ", dim));
                 row1_spans.push(Span::styled(gov.clone(), val));
@@ -631,6 +632,24 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(60, 10)).unwrap();
         terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
         assert_snapshot!("cpu_no_data", terminal.backend());
+    }
+
+    /// Package temperature is shown in the header on Linux and macOS.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn header_shows_package_temp() {
+        let mut comp = CpuComponent::default();
+        let snap = CpuSnapshot {
+            package_temp: Some(31.4),
+            ..CpuSnapshot::stub()
+        };
+        comp.update(&Action::CpuUpdate(snap)).unwrap();
+        comp.update(&Action::ToggleFullScreen).unwrap();
+        comp.begin_overlay_render();
+        let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+        terminal.draw(|f| comp.draw(f, f.area()).unwrap()).unwrap();
+        let screen = format!("{}", terminal.backend());
+        assert!(screen.contains("Temp: 31°C"), "{screen}");
     }
 
     #[cfg(target_os = "linux")]
