@@ -30,6 +30,11 @@ split_commits = false
 commit_preprocessors = [
     # Strip issue/PR refs from end of message (e.g. "(#42)")
     { pattern = '\s*\(#\d+\)$', replace = "" },
+    # Merge and empty commits aren't conventional, so they'd fail parsing (and
+    # warn) before any commit_parsers skip rule is reached. Preprocessors run on
+    # the raw message first: turn them into chores, which are skipped below.
+    { pattern = '^Merge .*', replace = "chore: merge" },
+    { pattern = '^$', replace = "chore: empty commit message" },
 ]
 commit_parsers = [
     { message = "^feat",     group = "Features" },
@@ -42,13 +47,9 @@ commit_parsers = [
     { message = "^ci",       group = "CI" },
     { message = "^chore",    skip = true },
     { body = ".*security",   group = "Security" },
-    # Skip empty or merge commits
-    { message = "^Merge",    skip = true },
-    { message = "^$",        skip = true },
 ]
 protect_breaking_commits = false
 filter_commits = true
-exclude_commits = "^Merge|^$"
 tag_pattern = "v[0-9].*"
 ignore_tags = ""
 topo_order = false
